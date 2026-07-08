@@ -165,6 +165,17 @@
     width:100%; padding:8px 10px; background:#000000cc; border:2px solid var(--vf-orange);
     color:#fff; border-radius:4px; font-size:13px; outline:none;
   }
+  #chatCmdSuggest{
+    display:none; margin-bottom:4px; background:#000000cc; border:2px solid var(--vf-orange);
+    border-radius:4px; overflow:hidden; font-size:12px;
+  }
+  #chatCmdSuggest .cmdRow{
+    padding:6px 10px; color:#fff; cursor:pointer; border-bottom:1px solid #ffffff1a;
+  }
+  #chatCmdSuggest .cmdRow:last-child{ border-bottom:none; }
+  #chatCmdSuggest .cmdRow:hover, #chatCmdSuggest .cmdRow.active{ background:var(--vf-orange); color:#000; }
+  #chatCmdSuggest .cmdName{ font-weight:700; }
+  #chatCmdSuggest .cmdDesc{ opacity:0.75; margin-left:6px; }
 
   #centerMsg{
     position:absolute; top:40%; left:50%; transform:translate(-50%,-50%);
@@ -335,6 +346,22 @@
   .modeBtn.selected{border-color:var(--vf-orange); color:#fff; background:#26202066;}
   .uidNote{font-size:10px; color:#6b7590; margin-top:2px; margin-bottom:10px;}
 
+  /* ---------- Seed input + live preview thumbnail on menu ---------- */
+  .seedRow{display:flex; gap:8px; align-items:center; margin-bottom:12px;}
+  .seedRow .vf-input{flex:1;}
+  #seedThumbCanvas{
+    flex:none; width:40px; height:40px; border-radius:4px; image-rendering:pixelated;
+    border:2px solid var(--vf-line); background:#0e111a; cursor:pointer;
+    transition:border-color .15s;
+  }
+  #seedThumbCanvas:hover{border-color:var(--vf-orange);}
+
+  /* ---------- Saved-world thumbnail (top-down biome preview) ---------- */
+  .worldThumb{
+    width:44px; height:44px; border-radius:4px; image-rendering:pixelated;
+    border:2px solid var(--vf-line); flex:none; background:#0e111a;
+  }
+
   /* ---------- Mining crack overlay on crosshair block ---------- */
   #mineCrack{
     position:absolute; top:50%; left:50%; width:34px; height:34px; transform:translate(-50%,-50%);
@@ -399,6 +426,12 @@
   .loadBarOuter{width:280px; height:18px; border:2px solid var(--vf-line); border-radius:3px; overflow:hidden; background:#0e111a;}
   .loadBarInner{height:100%; width:0%; background:linear-gradient(90deg,#f0954a,var(--vf-orange)); transition:width .2s;}
   #loadingScreen .loadLabel{font-size:12px; color:#9aa4c0;}
+  #loadingScreen .loadTip{
+    font-size:11px; color:#6f7994; max-width:320px; text-align:center;
+    min-height:14px; opacity:0; transition:opacity .35s ease;
+  }
+  #loadingScreen .loadTip.show{opacity:1;}
+  #loadingScreen .loadTip .tipPrefix{color:var(--vf-orange); font-weight:700;}
 
   /* ---------- Pause / Settings menu ---------- */
   #pausePanel{
@@ -460,6 +493,7 @@
   <div class="vf-title">VOXEL FORGE</div>
   <div class="loadBarOuter"><div class="loadBarInner" id="loadBarInner"></div></div>
   <div class="loadLabel" id="loadLabel">Booting engine…</div>
+  <div class="loadTip" id="loadTip"><span class="tipPrefix">Tip:</span> <span id="loadTipText"></span></div>
 </div>
 
 <div id="menuScreen" style="display:none;">
@@ -477,12 +511,18 @@
       <div class="modeBtn" data-mode="creative">CREATIVE</div>
     </div>
 
+    <div class="seedRow" id="seedRow">
+      <input id="seedInput" class="vf-input" style="margin-bottom:0;" placeholder="Seed (optional)" maxlength="20">
+      <canvas id="seedThumbCanvas" width="40" height="40" title="Preview of this seed"></canvas>
+    </div>
+    <div style="font-size:10px; color:#6b7590; margin-top:-8px; margin-bottom:12px;">Used for Create Room &amp; Play Offline — joined rooms use the host's world</div>
+
     <div class="menu-row">
-      <button class="vf-btn primary" id="createRoomBtn">Create Room</button>
+      <button class="vf-btn primary" id="createRoomBtn" style="opacity:0.5; cursor:not-allowed; filter:grayscale(60%);" title="Multiplayer is unavailable for now">Create Room</button>
     </div>
     <div class="menu-row" style="margin-top:8px;">
-      <input id="roomCodeInput" class="vf-input" style="margin-bottom:0; text-transform:uppercase; letter-spacing:3px; text-align:center;" placeholder="CODE" maxlength="4">
-      <button class="vf-btn primary" id="joinRoomBtn" style="width:auto; flex:none; padding-left:16px; padding-right:16px;">Join Room</button>
+      <input id="roomCodeInput" class="vf-input" style="margin-bottom:0; text-transform:uppercase; letter-spacing:3px; text-align:center; opacity:0.5; cursor:not-allowed;" placeholder="CODE" maxlength="4" disabled>
+      <button class="vf-btn primary" id="joinRoomBtn" style="width:auto; flex:none; padding-left:16px; padding-right:16px; opacity:0.5; cursor:not-allowed; filter:grayscale(60%);" title="Multiplayer is unavailable for now">Join Room</button>
     </div>
     <div class="menu-row" style="margin-top:8px;">
       <button class="vf-btn green" id="soloBtn">Play Offline (Solo)</button>
@@ -517,7 +557,7 @@
   <div id="centerMsg"></div>
 </div>
 
-<div id="chatInputWrap"><input id="chatInput" placeholder="Press Enter to chat, Esc to cancel" maxlength="120"></div>
+<div id="chatInputWrap"><div id="chatCmdSuggest"></div><input id="chatInput" placeholder="Press Enter to chat, Esc to cancel" maxlength="120"></div>
 
 <div id="inventoryPanel">
   <div class="panel-box">
@@ -816,7 +856,8 @@ function makeCanvas(size=TEX_SIZE){
 function canvasToTexture(canvas){
   const tex = new THREE.CanvasTexture(canvas);
   tex.magFilter = THREE.NearestFilter;
-  tex.minFilter = THREE.NearestFilter;
+  tex.minFilter = THREE.NearestMipmapLinearFilter;
+  tex.generateMipmaps = true;
   tex.wrapS = THREE.RepeatWrapping;
   tex.wrapT = THREE.RepeatWrapping;
   tex.needsUpdate = true;
@@ -895,6 +936,30 @@ const TexturePainters = {
     ctx.strokeRect(0.5,0.5,TEX_SIZE-1,TEX_SIZE-1);
   },
   water(ctx, seed){ paintNoise(ctx, '#2f6fbf', seed, {variance:16, speckleChance:0.15, speckleColor:'#4a8fdc', speckleVariance:20}); },
+  lava(ctx, seed){ paintNoise(ctx, '#e0531f', seed, {variance:26, speckleChance:0.22, speckleColor:'#ffcf3a', speckleVariance:26}); },
+  basalt(ctx, seed){ paintNoise(ctx, '#33313a', seed, {variance:14, speckleChance:0.18, speckleColor:'#1c1a20', speckleVariance:14}); },
+  volcanic_ash(ctx, seed){ paintNoise(ctx, '#4c4650', seed, {variance:12, speckleChance:0.14, speckleColor:'#6b5850', speckleVariance:20}); },
+  volcanic_rock(ctx, seed){ paintNoise(ctx, '#2a262c', seed, {variance:16, speckleChance:0.2, speckleColor:'#823a1e', speckleVariance:24}); },
+
+  // Creative-only marker block: unmistakable magenta/black checkerboard
+  // (classic "missing texture" language) plus a red "no-entry" cross, so it
+  // never gets confused with any normal placeable block at a glance.
+  barrier(ctx, seed){
+    const cell = TEX_SIZE/4;
+    for(let y=0;y<TEX_SIZE;y++){
+      for(let x=0;x<TEX_SIZE;x++){
+        const cx = Math.floor(x/cell), cy = Math.floor(y/cell);
+        ctx.fillStyle = (cx+cy)%2===0 ? '#1a1a1a' : '#e0219c';
+        ctx.fillRect(x,y,1,1);
+      }
+    }
+    ctx.strokeStyle = 'rgba(255,40,40,0.9)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(1,1); ctx.lineTo(TEX_SIZE-1,TEX_SIZE-1); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(TEX_SIZE-1,1); ctx.lineTo(1,TEX_SIZE-1); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.lineWidth=1;
+    ctx.strokeRect(0.5,0.5,TEX_SIZE-1,TEX_SIZE-1);
+  },
   brick(ctx, seed){
     paintNoise(ctx, '#9c4a3a', seed, {variance:10});
     ctx.strokeStyle='rgba(0,0,0,0.35)'; ctx.lineWidth=1;
@@ -943,7 +1008,6 @@ const TexturePainters = {
     paintNoise(ctx, '#6f6f74', seed, {variance:12});
     ctx.fillStyle='#1a1a1a'; ctx.fillRect(4,5,8,7);
   },
-  log_oak_side(ctx,seed){ TexturePainters.wood_side(ctx,seed); },
   door_wood(ctx, seed){
     paintNoise(ctx, '#9c7a44', seed, {variance:10});
     ctx.strokeStyle='rgba(0,0,0,0.35)'; ctx.lineWidth=1;
@@ -1047,7 +1111,7 @@ const BLOCKS = {
   7:  { name:'leaves',     tex:{all:'leaves'}, transparent:true, leafy:true, hardness:0.15 },
   8:  { name:'planks',     tex:{all:'planks'}, hardness:1.0, tool:'axe' },
   9:  { name:'glass',      tex:{all:'glass'}, transparent:true, hardness:0.3 },
-  10: { name:'water',      tex:{all:'water'}, transparent:true, solid:false, liquid:true, hardness:0, unbreakable:true },
+  10: { name:'water',      tex:{all:'water'}, transparent:true, solid:false, liquid:true, liquidFamily:'water', flowLevel:7, isSource:true, hardness:0, unbreakable:true },
   11: { name:'brick',      tex:{all:'brick'}, hardness:1.8, tool:'pickaxe' },
   12: { name:'snow',       tex:{all:'snow'}, hardness:0.3, tool:'shovel' },
   13: { name:'coal_ore',   tex:{all:'coal_ore'}, hardness:2.0, tool:'pickaxe' },
@@ -1057,7 +1121,7 @@ const BLOCKS = {
   17: { name:'bedrock',    tex:{all:'bedrock'}, unbreakable:true, hardness:0 },
   18: { name:'crafting_table', tex:{top:'crafting_table_top', bottom:'wood_top', side:'crafting_table_side'}, hardness:1.0, tool:'axe' },
   19: { name:'furnace',    tex:{top:'furnace_side', bottom:'furnace_side', side:'furnace_side', front:'furnace_front'}, hardness:3.0, tool:'pickaxe' },
-  20: { name:'log_oak',    tex:{top:'wood_top', bottom:'wood_top', side:'log_oak_side'}, hardness:1.0, tool:'axe' },
+  20: { name:'barrier',    tex:{all:'barrier'}, hardness:0, unbreakable:true, creativeOnly:true },
   21: { name:'door_wood',  tex:{all:'door_wood'}, transparent:true, hardness:1.0, tool:'axe' },
   22: { name:'stairs_stone', tex:{all:'stairs_stone'}, hardness:1.5, tool:'pickaxe' },
   23: { name:'stairs_wood',  tex:{all:'stairs_wood'}, hardness:1.0, tool:'axe' },
@@ -1082,6 +1146,43 @@ const BLOCKS = {
   42: { name:'stone_bricks', tex:{all:'stairs_stone'}, hardness:1.75, tool:'pickaxe' },
   43: { name:'chest',      tex:{top:'planks', bottom:'planks', side:'bookshelf'}, hardness:1.2, tool:'axe' },
   44: { name:'mossy_stone_bricks', tex:{all:'mossy_cobblestone'}, hardness:1.75, tool:'pickaxe' },
+  // Flowing water "levels" 45..51 represent decreasing distance-from-source
+  // (6 down to 0), mirroring classic voxel-liquid falloff: id 10 is the
+  // still SOURCE block (infinite, doesn't decay); 45 is one step from a
+  // source/another flowing tile, decaying by one level each step outward
+  // until level 0 (id 51) can't spread any further horizontally. All share
+  // the 'water' paint + liquid/transparent/unbreakable behavior of id 10.
+  45: { name:'flowing_water_6', tex:{all:'water'}, transparent:true, solid:false, liquid:true, liquidFamily:'water', flowLevel:6, hardness:0, unbreakable:true },
+  46: { name:'flowing_water_5', tex:{all:'water'}, transparent:true, solid:false, liquid:true, liquidFamily:'water', flowLevel:5, hardness:0, unbreakable:true },
+  47: { name:'flowing_water_4', tex:{all:'water'}, transparent:true, solid:false, liquid:true, liquidFamily:'water', flowLevel:4, hardness:0, unbreakable:true },
+  48: { name:'flowing_water_3', tex:{all:'water'}, transparent:true, solid:false, liquid:true, liquidFamily:'water', flowLevel:3, hardness:0, unbreakable:true },
+  49: { name:'flowing_water_2', tex:{all:'water'}, transparent:true, solid:false, liquid:true, liquidFamily:'water', flowLevel:2, hardness:0, unbreakable:true },
+  50: { name:'flowing_water_1', tex:{all:'water'}, transparent:true, solid:false, liquid:true, liquidFamily:'water', flowLevel:1, hardness:0, unbreakable:true },
+  51: { name:'flowing_water_0', tex:{all:'water'}, transparent:true, solid:false, liquid:true, liquidFamily:'water', flowLevel:0, hardness:0, unbreakable:true },
+  // Lava: mirrors the water liquid-family setup (source + 7 decaying flow
+  // levels), but its own family — lava and water never interact via the
+  // liquid-family same-block seam-culling rule, so a lava/water border still
+  // draws a proper face between them. light:8 makes lava a (dim, orange) glow
+  // source, matching torches' `light` field.
+  52: { name:'lava',           tex:{all:'lava'}, transparent:false, solid:false, liquid:true, liquidFamily:'lava', flowLevel:7, isSource:true, hardness:0, unbreakable:true, light:8 },
+  53: { name:'flowing_lava_6',  tex:{all:'lava'}, transparent:false, solid:false, liquid:true, liquidFamily:'lava', flowLevel:6, hardness:0, unbreakable:true, light:8 },
+  54: { name:'flowing_lava_5',  tex:{all:'lava'}, transparent:false, solid:false, liquid:true, liquidFamily:'lava', flowLevel:5, hardness:0, unbreakable:true, light:8 },
+  55: { name:'flowing_lava_4',  tex:{all:'lava'}, transparent:false, solid:false, liquid:true, liquidFamily:'lava', flowLevel:4, hardness:0, unbreakable:true, light:8 },
+  56: { name:'flowing_lava_3',  tex:{all:'lava'}, transparent:false, solid:false, liquid:true, liquidFamily:'lava', flowLevel:3, hardness:0, unbreakable:true, light:8 },
+  57: { name:'flowing_lava_2',  tex:{all:'lava'}, transparent:false, solid:false, liquid:true, liquidFamily:'lava', flowLevel:2, hardness:0, unbreakable:true, light:8 },
+  58: { name:'flowing_lava_1',  tex:{all:'lava'}, transparent:false, solid:false, liquid:true, liquidFamily:'lava', flowLevel:1, hardness:0, unbreakable:true, light:8 },
+  // Volcanic biome terrain blocks.
+  59: { name:'basalt',        tex:{all:'basalt'}, hardness:2.0, tool:'pickaxe' },
+  60: { name:'volcanic_ash',  tex:{all:'volcanic_ash'}, hardness:0.4, tool:'shovel' },
+  61: { name:'volcanic_rock', tex:{all:'volcanic_rock'}, hardness:2.25, tool:'pickaxe' },
+  // Test_Block: a wholly invisible, non-solid, creative-only marker block.
+  // Its only job is to force every custom-texture image URL in the game to
+  // start loading (see warmAllBlockTextures()) so the very first time a
+  // player places/sees a given block in the real world, the browser already
+  // has that image decoded and cached instead of stalling on a fresh
+  // network fetch. It never gets meshed (renderInvisible/solid:false), so
+  // it draws nothing and can't be walked into.
+  62: { name:'test_block',    tex:{all:'barrier'}, hardness:0, solid:false, transparent:true, renderInvisible:true, unbreakable:true, creativeOnly:true },
 };
 // Non-block hand items (tools, sticks) — id space 100+ so they never collide
 // with placeable block ids. These live in the same inventory/hotbar system
@@ -1113,7 +1214,7 @@ const ITEMS = {
 // resolved with one table where convenient (definitions, not the placeable list).
 const ALL_DEFS = Object.assign({}, BLOCKS, ITEMS);
 for(const id in ITEMS){ ITEMS[id].id = +id; }
-const BLOCK_IDS_SOLID_HOTBAR = [1,2,3,4,5,6,7,8,9,11,12,18,19,20,21,22,23,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41]; // placeable in default hotbar/inventory
+const BLOCK_IDS_SOLID_HOTBAR = [1,2,3,4,5,6,7,8,9,11,12,18,19,21,22,23,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,59,60,61,20,62]; // placeable in default hotbar/inventory (barrier + test_block kept last: creative-only marker blocks, not normal building blocks)
 
 // Some blocks drop a different item than the block itself when mined
 // (e.g. coal ore drops loose coal, not a placeable coal-ore block).
@@ -1174,10 +1275,36 @@ const BLOCK_SIDE_TEXTURES = {}; // "blockId_face" -> url
 //   3: { all: 'https://example.com/my-stone.png' }
 // Example: to reskin grass (id 1, distinct top/bottom/side):
 //   1: { top: 'https://example.com/grass-top.png', side: 'https://example.com/grass-side.png' }
-const HARDCODED_BLOCK_TEXTURES = {1: { top: 'https://iili.io/CcRMmTN.png', side: 'https://iili.io/CcRMpjI.png', bottom: 'https://iili.io/CcRMyQt.png' },
+const HARDCODED_BLOCK_TEXTURES = {
+1: { top: 'https://iili.io/CcRMmTN.png', side: 'https://iili.io/CcRMpjI.png', bottom: 'https://iili.io/CcRMyQt.png' },
 2: {all: 'https://iili.io/CcRMyQt.png'},
 3: {all: 'https://iili.io/CcRSPOF.png'},
+4: {all: 'https://iili.io/Cc6PUru.png'},
+5: {all: 'https://iili.io/Cc6pKCv.png'},
 6: {top: 'https://iili.io/CcRLexS.png', side: 'https://iili.io/CcRLkW7.png', bottom: 'https://iili.io/CcRLexS.png'},
+7: {all: 'https://iili.io/CcPdQZF.png'},
+8: {all: 'https://iili.io/CcPnjvs.png'},
+9: {all: 'https://iili.io/CcPIsUP.png'},
+// NOTE: id 10 (water) intentionally has NO hardcoded entry here anymore.
+// The image previously hardcoded at this slot (iili.io/CcPV6uf.png) is
+// hosted without CORS headers, so the browser's TextureLoader (crossOrigin
+// = 'anonymous', required for WebGL to be allowed to read the pixels at
+// all) gets refused by the host and the load silently fails every time —
+// see loadCustomTexture's error branch. Water now always uses its built-in
+// procedural painter (TexturePainters.water, defined above) unless you set
+// your own image for it via the in-game Custom Textures panel — any URL
+// you add there needs to come from a host that actually sends
+// Access-Control-Allow-Origin, or it will fail the same way.
+11: {all: 'https://iili.io/CcPO9AF.png'},
+12: {all: 'https://iili.io/CcPSBTP.png'},
+13: {all: 'https://iili.io/CcsE041.png'},
+14: {all: 'https://iili.io/CcsEE3F.png'},
+15: {all: 'https://iili.io/CcsElEP.png'},
+16: {all: 'https://iili.io/CcsEcCB.png'},
+17: {all: 'https://iili.io/Ccip7FR.png'},
+18: {top: 'https://iili.io/CciLV29.png', side: 'https://iili.io/CciLW7e.png', bottom: 'https://iili.io/CcPnjvs.png'},
+19: {front: 'https://iili.io/Cci1qG9.png', top: 'https://iili.io/Cci1FQS.png', side: 'https://iili.io/Cci1fC7.png', bottom: 'https://iili.io/Cci1FQS.png'},
+20: {all: 'https://iili.io/CciJ13v.png'},
 };
 function applyHardcodedBlockTextures(){
   for(const blockIdStr in HARDCODED_BLOCK_TEXTURES){
@@ -1185,15 +1312,71 @@ function applyHardcodedBlockTextures(){
     for(const face in faces){
       const key = faceSlotKey(+blockIdStr, face);
       BLOCK_SIDE_TEXTURES[key] = faces[face];
+      // Actually load & apply the texture to the material, not just record
+      // the URL — otherwise any material already built/cached for this slot
+      // (e.g. via an icon/hotbar pre-warm) keeps its procedural texture and
+      // the hardcoded skin never visibly appears.
+      loadCustomTexture(+blockIdStr, face, faces[face], false).catch(()=>{});
     }
   }
 }
 
+// Pre-warm every block-face material key up front, at load time, instead of
+// letting each one get built lazily the first time a chunk mesh happens to
+// need it. Building a THREE.Material means: fetch the image (if custom),
+// decode it into a texture, and (the expensive part) hand it to the GPU the
+// first time it's actually drawn — that GPU upload + shader compile is what
+// causes the little hitch the first time you place a block type you haven't
+// seen yet this session. Running every known slot through
+// getFaceMaterialByKey() here means all of that happens during the loading
+// screen instead of mid-gameplay.
+function warmAllBlockTextures(){
+  const keys = new Set();
+  for(const id in BLOCKS){
+    const b = BLOCKS[id];
+    if(!b.tex || b.name==='air') continue;
+    if(b.tex.all){ keys.add(faceMaterialKey(+id,'all')); continue; }
+    for(const face of ['top','bottom','side','front']){
+      if(b.tex[face]) keys.add(faceMaterialKey(+id, face));
+    }
+  }
+  keys.forEach(k=>{ try{ getFaceMaterialByKey(k); }catch(e){} });
+}
+
 const textureLoader = new THREE.TextureLoader();
 textureLoader.crossOrigin = 'anonymous';
+// Every in-flight/completed custom image load, so callers (see
+// waitForAllTexturesToLoad below) can await actual decode completion instead
+// of just the load being kicked off — this is what closes the remaining gap
+// where a block's real image finishes downloading right as you place/mine
+// it for the first time.
+const PENDING_TEXTURE_LOADS = [];
 const materialByKeyCache = {}; // "blockId_face" -> THREE.Material
 
-function faceSlotKey(blockId, face){ return blockId+'_'+face; }
+// Called after a WebGL context restore: every THREE.Material/Texture we'd
+// cached pointed at GPU resources that belonged to the now-destroyed
+// context. THREE.js normally handles re-uploading a material's own texture
+// automatically on restore, but our cache also short-circuits
+// getFaceMaterialByKey() by key, and forcing a clean rebuild here is the
+// simplest way to guarantee nothing keeps referencing stale GL objects.
+function materialByKeyCacheClearAll(){
+  for(const k in materialByKeyCache){
+    const mat = materialByKeyCache[k];
+    if(mat.map) mat.map.dispose();
+    mat.dispose();
+    delete materialByKeyCache[k];
+  }
+}
+
+// The one place that decides which BLOCK_SIDE_TEXTURES/material key a given
+// (blockId, face) maps to. Liquids collapse onto a shared "paint_<name>" key
+// (see faceMaterialKey) so setting a custom water/lava image applies to
+// every flow-level variant, not just the still/source block id.
+function faceSlotKey(blockId, face){
+  const b = BLOCKS[blockId];
+  if(b && b.liquid && b.tex && b.tex.all) return 'paint_'+b.tex.all;
+  return blockId+'_'+face;
+}
 
 // Resolve per-face painter name for a block id + face direction
 function faceTexName(blockId, face){ // face: 'top'|'bottom'|'side'
@@ -1205,9 +1388,11 @@ function faceTexName(blockId, face){ // face: 'top'|'bottom'|'side'
 
 // The material "key" used by the mesher/buffers for a given block+face —
 // unique per (block,face) so a custom image on one block never leaks onto
-// another block that happens to share a procedural painter. Blocks whose
-// definition uses a single "all" texture collapse every mesh face onto one
-// shared key/slot, matching the single row shown in the Block Faces table.
+// another block that happens to share a procedural painter, EXCEPT for
+// liquids (handled by faceSlotKey's redirect), which share one key across
+// all flow levels of the same liquid family. Other single-"all"-texture
+// blocks still get their own per-block slot, matching the single row shown
+// in the Block Faces table.
 function faceMaterialKey(blockId, face){
   const b = BLOCKS[blockId];
   if(b.tex && b.tex.all) return faceSlotKey(blockId, 'all');
@@ -1219,9 +1404,15 @@ function faceMaterialKey(blockId, face){
 // otherwise falling back to the shared procedural painter texture.
 function getFaceMaterialByKey(key){
   if(materialByKeyCache[key]) return materialByKeyCache[key];
-  const [blockIdStr, face] = key.split('_');
-  const blockId = +blockIdStr;
-  const paintName = faceTexName(blockId, face);
+  let paintName, blockId=null, face=null;
+  if(key.startsWith('paint_')){
+    paintName = key.slice('paint_'.length); // shared liquid-family key, e.g. "water"/"lava" — not tied to one block id
+  } else {
+    const parts = key.split('_');
+    face = parts.pop();
+    blockId = +parts.join('_');
+    paintName = faceTexName(blockId, face);
+  }
   const customUrl = BLOCK_SIDE_TEXTURES[key];
   const transparent = (paintName === 'glass' || paintName === 'leaves' || paintName === 'water');
   const mat = new THREE.MeshLambertMaterial({
@@ -1233,40 +1424,59 @@ function getFaceMaterialByKey(key){
   });
   materialByKeyCache[key] = mat;
   if(customUrl){
-    textureLoader.load(customUrl, (tex)=>{
-      tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.NearestFilter;
-      tex.wrapS = THREE.RepeatWrapping; tex.wrapT = THREE.RepeatWrapping;
-      tex.needsUpdate = true;
-      if(mat.map) mat.map.dispose();
-      mat.map = tex; mat.needsUpdate = true;
-    }, undefined, ()=>{ /* keep procedural fallback on load error */ });
+    const p = new Promise((resolve)=>{
+      textureLoader.load(customUrl, (tex)=>{
+        tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.NearestMipmapLinearFilter; tex.generateMipmaps = true;
+        tex.wrapS = THREE.RepeatWrapping; tex.wrapT = THREE.RepeatWrapping;
+        tex.needsUpdate = true;
+        if(mat.map) mat.map.dispose();
+        mat.map = tex; mat.needsUpdate = true;
+        resolve();
+      }, undefined, ()=>{ resolve(); /* keep procedural fallback on load error */ });
+    });
+    PENDING_TEXTURE_LOADS.push(p);
   }
   return mat;
 }
 
 // Load (or clear) a custom image URL for one block+face slot. Rebuilds the
 // material in place and invalidates any cached hotbar/inventory icon.
-function loadCustomTexture(blockId, face, url){
+// persist=false is used for baked-in hardcoded defaults, which shouldn't be
+// written into the user's own Custom Textures localStorage save.
+function loadCustomTexture(blockId, face, url, persist=true){
   const key = faceSlotKey(blockId, face);
-  return new Promise((resolve,reject)=>{
+  const p = new Promise((resolve,reject)=>{
     textureLoader.load(
       url,
       (tex)=>{
-        tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.NearestFilter;
+        tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.NearestMipmapLinearFilter; tex.generateMipmaps = true;
         tex.wrapS = THREE.RepeatWrapping; tex.wrapT = THREE.RepeatWrapping;
         tex.needsUpdate = true;
         const mat = getFaceMaterialByKey(key);
         if(mat.map) mat.map.dispose();
         mat.map = tex; mat.needsUpdate = true;
         BLOCK_SIDE_TEXTURES[key] = url;
-        localStorage.setItem('vf_blocksidetex', JSON.stringify(BLOCK_SIDE_TEXTURES));
+        if(persist) localStorage.setItem('vf_blocksidetex', JSON.stringify(BLOCK_SIDE_TEXTURES));
         delete iconCache[blockId];
+        // Re-decode the icon immediately instead of leaving it to be rebuilt
+        // lazily (as a raw, undecoded remote URL) the next time some hotbar/
+        // inventory/crafting <img> asks for it — see warmAllIcons() above.
+        prefetchIconUrlToDataUrl(blockId, url);
         resolve(tex);
       },
       undefined,
       (err)=>{ reject(err); }
     );
   });
+  PENDING_TEXTURE_LOADS.push(p.catch(()=>{}));
+  return p;
+}
+
+// Await every custom-image load kicked off so far (hardcoded defaults +
+// warmAllBlockTextures), so callers can be sure images are fully downloaded
+// and decoded — not just requested — before proceeding.
+function waitForAllTexturesToLoad(){
+  return Promise.all(PENDING_TEXTURE_LOADS);
 }
 
 function resetCustomTexture(blockId, face){
@@ -1301,10 +1511,21 @@ function swatchDataUrl(blockId, face){
 function loadSavedCustomTextures(){
   try{
     const saved = JSON.parse(localStorage.getItem('vf_blocksidetex')||'{}');
+    let mutated = false;
     for(const key in saved){
+      // Guard against a stale/bad custom image getting stuck on the
+      // liquid paint keys (e.g. from an old broken image-host link) —
+      // liquids should always use the built-in procedural texture unless
+      // the user explicitly re-applies one *this* session.
+      if(key === 'paint_water' || key === 'paint_lava'){
+        delete saved[key];
+        mutated = true;
+        continue;
+      }
       const [blockIdStr, face] = key.split('_');
       loadCustomTexture(+blockIdStr, face, saved[key]).catch(()=>{});
     }
+    if(mutated) localStorage.setItem('vf_blocksidetex', JSON.stringify(saved));
   }catch(e){}
 }
 
@@ -1315,6 +1536,11 @@ function buildTextureSlots(){
   for(const idStr in BLOCKS){
     const b = BLOCKS[idStr];
     if(b.name==='air') continue;
+    // flowing water/lava levels share the source block's texture slot (see
+    // faceSlotKey's liquid redirect) — only list the source block itself so
+    // the panel doesn't show 7 duplicate "water" rows that all edit the
+    // same underlying slot.
+    if(b.liquid && !b.isSource) continue;
     const faces = (b.tex && b.tex.all) ? ['all'] : ['top','side','bottom'];
     faces.forEach(face=>{
       slots.push({ blockId:b.id, face, label:b.name, sideLabel:face });
@@ -1371,7 +1597,6 @@ const WORLD_HEIGHT = 128;    // vertical chunks stacked: WORLD_HEIGHT/CHUNK_SIZE
 const CHUNKS_Y = WORLD_HEIGHT / CHUNK_SIZE; // 4
 const SEA_LEVEL = 30;
 let RENDER_DISTANCE = 4; // in chunks (radius) — mutable, adjustable in Settings
-const VOID_TELEPORT_Y = -8; // falling below this y pulls the player into the Void Arena
 
 let WORLD_SEED = 1337;
 
@@ -1384,17 +1609,19 @@ let WORLD_SEED = 1337;
 const FARLANDS_DISTANCE = 5000000;
 
 // ---------------------------------------------------------------------
-// VOID ARENA — a small hand-built pocket structure, isolated from every
-// other part of the world, reached only by falling through the void.
-// Fixed at a constant location far from spawn (well inside normal float
-// precision, unlike the Farlands) so it behaves like completely ordinary
-// terrain to the engine — same chunk system, same face culling, same
-// physics — it's just alone in the dark with nothing else around it.
+// VOID PORTAL ARCHES — two matching stone-brick archways, each sitting in
+// the middle of its own circular clearing, that teleport the player
+// between them (two-way — walking into either sends you to the other).
+//   Arch A: out at the Gray Pillars, on the bedrock floor (y=0), inside a
+//           circular clearing with the pillar field cleared away around it.
+//   Arch B: far out at a second fixed location (x/z = 50,000,000, y=50),
+//           on its own small platform, this time with a ring of Gray-
+//           Pillars-style stone pillars around the clearing's edge.
 // ---------------------------------------------------------------------
-const VOID_ARENA_ORIGIN = { x: 100000, z: 100000 }; // world x,z center of the pocket
-const VOID_ARENA_RADIUS = 24;   // half-width of the flat carved-air footprint (blocks)
-const VOID_ARENA_FLOOR_Y = 4;   // y-level of the arena floor
-const VOID_ARENA_ARCH_Y = VOID_ARENA_FLOOR_Y; // arch sits directly on the floor
+const ARCH_A_ORIGIN = { x: FARLANDS_DISTANCE + 40, z: 0 }; // out among the Gray Pillars, y=0 bedrock level
+const ARCH_B_ORIGIN = { x: 50000000, y: 50, z: 50000000 };
+const ARCH_CLEARING_RADIUS = 12;  // radius of each circular platform
+const ARCH_B_PILLAR_RING = true;  // Arch B's clearing gets a pillar ring; Arch A's does not
 
 // Distortion band leading up to the Farlands: within this many blocks of the
 // hard cutoff, trees start glitching out — taller, leafless trunks that spawn
@@ -1464,6 +1691,22 @@ class World{
     this.seed = seed;
     this.chunks = new Map();
     this.pendingRebuild = new Set(); // chunk keys needing re-mesh
+    this.liquidQueue = new Set();    // "x,y,z" cells that need a liquid-flow check next tick
+  }
+
+  // Queues a world cell to be (re)checked by the liquid simulation on the
+  // next tick — called whenever a block change could start or stop a flow
+  // (placing/breaking near water, or a flowing tile updating itself).
+  queueLiquid(wx,wy,wz){
+    this.liquidQueue.add(wx+','+wy+','+wz);
+  }
+  // Queues the 6 neighbors of a cell too, since removing/placing a block
+  // there can affect whether adjacent water can now spread into it.
+  queueLiquidNeighbors(wx,wy,wz){
+    this.queueLiquid(wx,wy,wz);
+    this.queueLiquid(wx+1,wy,wz); this.queueLiquid(wx-1,wy,wz);
+    this.queueLiquid(wx,wy+1,wz); this.queueLiquid(wx,wy-1,wz);
+    this.queueLiquid(wx,wy,wz+1); this.queueLiquid(wx,wy,wz-1);
   }
 
   getChunk(cx,cy,cz, createIfMissing=false){
@@ -1499,6 +1742,9 @@ class World{
     const c = this.getChunk(cx,cy,cz,true);
     c.set(lx,ly,lz,id);
     if(markDirty){
+      // a real (player-driven) edit — re-check this cell and its neighbors
+      // for liquid flow next tick (e.g. breaking a wall lets water through)
+      this.queueLiquidNeighbors(wx,wy,wz);
       c.dirty = true;
       this.pendingRebuild.add(chunkKey(cx,cy,cz));
       // mark neighbor chunks dirty if the edited block sits on a chunk boundary
@@ -1513,6 +1759,140 @@ class World{
   _dirtyNeighbor(cx,cy,cz){
     const c = this.getChunk(cx,cy,cz);
     if(c){ c.dirty = true; this.pendingRebuild.add(chunkKey(cx,cy,cz)); }
+  }
+
+  /* ---------------- Liquid simulation ----------------
+     Classic falloff-based flow, run in small time-sliced batches (see
+     stepLiquids) rather than a full grid scan every tick:
+       - id 10 is an infinite STILL SOURCE (flowLevel 7, never decays away).
+       - ids 45..51 are FLOWING water at levels 6..0. Each flowing tile's
+         level is one less than the strongest water-family neighbor that
+         still has a valid, connected path back to a source (checked lazily:
+         we don't trace full paths, we just let levels decay outward from
+         known sources each tick and let unsupported flowing tiles evaporate
+         once nothing stronger still feeds them).
+       - Every tick we only process cells present in `liquidQueue`, and each
+         processed cell may enqueue its neighbors for the *next* tick, so a
+         big lake settles over a few dozen frames instead of one big freeze.
+  */
+  // Family -> [sourceId, flowingIdByLevel6..1] (level0/air handled inline)
+  static LIQUID_FAMILIES = {
+    water: { source:10, flow:[45,46,47,48,49,50] }, // 45=lvl6 .. 50=lvl1
+    lava:  { source:52, flow:[53,54,55,56,57,58] },
+  };
+  waterIdForLevel(level, family='water'){
+    const fam = World.LIQUID_FAMILIES[family];
+    if(level>=7) return fam.source;
+    if(level<=0) return 0;  // too weak to keep flowing — becomes air
+    return fam.flow[6-level];
+  }
+  levelOf(id){
+    const def = BLOCKS[id];
+    return (def && def.liquid) ? def.flowLevel : -1;
+  }
+  // Runs up to `budget` queued cell-checks. Returns true if any block
+  // actually changed (so the caller knows whether meshes need rebuilding —
+  // though setBlock already handles that dirtying itself).
+  stepLiquids(budget=400){
+    if(this.liquidQueue.size===0) return;
+    const cells = Array.from(this.liquidQueue);
+    this.liquidQueue.clear();
+    const n = Math.min(budget, cells.length);
+    // if there's more queued than our budget allows, keep the overflow for
+    // next tick instead of dropping it
+    for(let i=n;i<cells.length;i++) this.liquidQueue.add(cells[i]);
+    for(let i=0;i<n;i++){
+      const [x,y,z] = cells[i].split(',').map(Number);
+      this._checkLiquidCell(x,y,z);
+    }
+  }
+  _checkLiquidCell(x,y,z){
+    const id = this.getBlock(x,y,z);
+    const def = BLOCKS[id];
+    if(!def || !def.liquid) return;
+    const family = def.liquidFamily || 'water';
+    // Lava flows/settles more sluggishly than water — only actually act on
+    // roughly 1 in 4 checks (still gets re-queued every tick, so it just
+    // takes longer per step rather than skipping ticks system-wide).
+    if(family==='lava' && Math.random() < 0.75){
+      this.queueLiquid(x,y,z);
+      return;
+    }
+    // --- Lava meeting water (either direction, any neighbor) turns to
+    // obsidian/basalt instead of continuing to flow, like classic voxel lava. ---
+    if(family==='lava' || family==='water'){
+      const neighborsXYZ = [[x+1,y,z],[x-1,y,z],[x,y+1,z],[x,y-1,z],[x,y,z+1],[x,y,z-1]];
+      for(const [nx,ny,nz] of neighborsXYZ){
+        const nb = this.getBlock(nx,ny,nz);
+        const nbDef = BLOCKS[nb];
+        if(nbDef && nbDef.liquid && (nbDef.liquidFamily||'water') !== family){
+          // lava cell touching water (or vice versa) -> both solidify
+          this.setBlock(x,y,z, family==='lava' ? 59 : 0); // lava->basalt, water just gets consumed by the steam/solidify event
+          return;
+        }
+      }
+    }
+    // --- Cell currently holds flowing liquid: does it still have support? ---
+    if(!def.isSource){
+      // Flowing liquid with air/weaker-liquid below always wants to be a
+      // "waterfall" (falls straight down at full strength), independent of
+      // its horizontal level — handled in the spread pass below. Here we
+      // just verify it still has a strong-enough horizontal or vertical
+      // neighbor to justify its own current level; if not, it evaporates.
+      let bestNeighborLevel = -1;
+      const above = this.getBlock(x,y+1,z);
+      const aboveDef = BLOCKS[above];
+      if(aboveDef && aboveDef.liquid && (aboveDef.liquidFamily||'water')===family) bestNeighborLevel = 7; // fed from above -> always full
+      if(bestNeighborLevel<7){
+        const sides = [[x+1,y,z],[x-1,y,z],[x,y,z+1],[x,y,z-1]];
+        for(const [nx,ny,nz] of sides){
+          const nb = this.getBlock(nx,ny,nz);
+          const nbDef = BLOCKS[nb];
+          if(nbDef && nbDef.liquid && (nbDef.liquidFamily||'water')===family) bestNeighborLevel = Math.max(bestNeighborLevel, nbDef.flowLevel);
+        }
+      }
+      const supportedLevel = bestNeighborLevel - 1;
+      if(supportedLevel < 0 || supportedLevel < def.flowLevel){
+        if(supportedLevel<0){
+          // nothing feeds this tile anymore — dry up
+          this.setBlock(x,y,z,0);
+          return;
+        } else if(supportedLevel !== def.flowLevel){
+          // settle to the level its strongest neighbor actually supports
+          this.setBlock(x,y,z,this.waterIdForLevel(supportedLevel, family));
+        }
+      }
+    }
+    // --- Any liquid cell (source or flowing): try to spread out ---
+    {
+      const myLevel = def.flowLevel;
+      // spread straight down first — a waterfall always falls at full
+      // strength regardless of the source tile's own level
+      const belowId = this.getBlock(x,y-1,z);
+      if(belowId===0 && y-1>=0){
+        this.setBlock(x,y-1,z, this.waterIdForLevel(7, family));
+        this.queueLiquid(x,y-1,z);
+      } else if(myLevel>1){
+        // spread horizontally only if this tile has enough level left
+        const sides = [[x+1,y,z],[x-1,y,z],[x,y,z+1],[x,y,z-1]];
+        for(const [nx,ny,nz] of sides){
+          const nb = this.getBlock(nx,ny,nz);
+          if(nb===0){
+            const newLevel = myLevel-1;
+            this.setBlock(nx,ny,nz, this.waterIdForLevel(newLevel, family));
+            this.queueLiquid(nx,ny,nz);
+          } else {
+            const nbDef = BLOCKS[nb];
+            if(nbDef && nbDef.liquid && (nbDef.liquidFamily||'water')===family && nbDef.flowLevel < myLevel-1){
+              // a weaker flowing tile sits next to us — top it up and let
+              // it re-check/re-spread itself next tick
+              this.setBlock(nx,ny,nz, this.waterIdForLevel(myLevel-1, family));
+              this.queueLiquid(nx,ny,nz);
+            }
+          }
+        }
+      }
+    }
   }
 
   // height map function (world x,z) -> surface Y
@@ -1551,33 +1931,76 @@ class World{
     }
     return Math.max(3, Math.min(WORLD_HEIGHT-8, h));
   }
+  // Used only to decide whether a column whose ground pokes slightly (<=3
+  // blocks) above SEA_LEVEL should still be flooded, so a winding river/lake
+  // bed doesn't get chopped into disconnected pools by tiny ridges. Checks a
+  // small ring of neighbors a few blocks out for a column that's a "real"
+  // low/ocean spot (well below sea level) — if one exists nearby, this
+  // column is almost certainly sitting inside the same channel and should
+  // flood too, rather than standing as a dry step between two ponds.
+  _nearOceanOrLowChannel(wx,wz){
+    const R = 4;
+    for(let dx=-R; dx<=R; dx+=2){
+      for(let dz=-R; dz<=R; dz+=2){
+        if(dx===0 && dz===0) continue;
+        if(this.heightAt(wx+dx,wz+dz) <= SEA_LEVEL-1) return true;
+      }
+    }
+    return false;
+  }
   moistureAt(wx,wz){
+    // Low frequency (0.008) + only 3 octaves already gives fairly coherent
+    // regions, but combined with the old desert rule's tight thresholds this
+    // was producing lots of small, disconnected desert speckles rather than
+    // a few big deserts. Dropping the frequency further (below) and widening
+    // the thresholds fixes that without touching this helper's own shape.
     return fbm2(wx*0.008+500, wz*0.008+500, this.seed+42, 3, 2, 0.5);
   }
   temperatureAt(wx,wz){
     return fbm2(wx*0.006-500, wz*0.006-500, this.seed+777777, 3, 2, 0.5);
   }
+  // Very-low-frequency field driving where the volcanic biome clusters — a
+  // handful of large, coherent hotspots rather than scattered patches (the
+  // same coherence problem the desert biome used to have). Independent seed
+  // offset so it doesn't correlate with temperature/moisture/continent.
+  volcanicAt(wx,wz){
+    return fbm2(wx*0.0035+9000, wz*0.0035+9000, this.seed+31415, 4, 2, 0.5);
+  }
   // Classifies a world column into one biome, used to pick surface blocks,
   // tree/cactus placement, and (via heightAt's continent mask) terrain shape.
-  // Returns one of: 'ocean','beach','desert','mountains','snowy_peak','forest','plains'.
+  // Returns one of: 'ocean','beach','desert','volcanic','mountains','snowy_peak','forest','plains'.
   biomeAt(wx,wz){
     const surfaceY = this.heightAt(wx,wz);
     if(surfaceY <= SEA_LEVEL) return 'ocean';
     if(surfaceY <= SEA_LEVEL+1) return 'beach';
+    // Volcanic hotspots are checked before mountain/snow bands so a hotspot
+    // sitting under what would otherwise be a mountain range becomes a
+    // volcanic peak instead — mirrors how classic voxel biome layering lets
+    // a "special" region override the generic elevation bands.
+    const volcanic = this.volcanicAt(wx,wz);
+    if(volcanic > 0.36 && surfaceY > SEA_LEVEL+4) return 'volcanic';
     if(surfaceY > SEA_LEVEL+34) return 'snowy_peak';
     if(surfaceY > SEA_LEVEL+22) return 'mountains';
     const temp = this.temperatureAt(wx,wz);
     const moisture = this.moistureAt(wx,wz);
-    // temp/moisture both center around ~0.25-0.28 per the fbm2 note above;
-    // thresholds are set relative to that empirical range, not a full 0..1.
-    if(temp > 0.30 && moisture < 0.24) return 'desert';
+    // temp/moisture both center around ~0.25-0.28 per the fbm2 note above,
+    // with an empirical spread of roughly 0.05-0.45. The old thresholds
+    // (temp>0.30 && moisture<0.24) sat just barely off-center in both axes,
+    // which two independent low-octave noise fields cross constantly at
+    // small, scattered locations — that's what produced tiny disconnected
+    // "desert patches" instead of real deserts. Pushing the thresholds out
+    // toward the tails of the empirical range means only the genuinely
+    // hot-and-dry pockets qualify, and because both fields vary smoothly
+    // over large distances, those pockets are now big and contiguous
+    // instead of speckled.
+    if(temp > 0.34 && moisture < 0.20) return 'desert';
     if(moisture > 0.27) return 'forest';
     return 'plains';
   }
 
   // Would the surface block at this column generate as grass? Mirrors the
   // exact rule used in generateChunk (id 1 = grass): plains or forest biome
-  // only — not ocean/beach/desert/mountains/snowy peak.
+  // only — not ocean/beach/desert/volcanic/mountains/snowy peak.
   isGrassSurface(wx,wz){
     const biome = this.biomeAt(wx,wz);
     return biome==='plains' || biome==='forest';
@@ -1643,66 +2066,82 @@ class World{
     return 3; // stone — the common case
   }
 
-  // Is this column inside the fixed footprint of the Void Arena pocket
-  // (see VOID_ARENA_ORIGIN below)? Checked before Farlands/normal terrain so
-  // the arena always wins regardless of how far out it happens to sit.
-  isVoidArena(wx,wz){
-    const ox = VOID_ARENA_ORIGIN.x, oz = VOID_ARENA_ORIGIN.z, r = VOID_ARENA_RADIUS;
-    return Math.abs(wx-ox) <= r && Math.abs(wz-oz) <= r;
+  // Is this column inside either arch's circular clearing footprint?
+  // Checked before Farlands/normal terrain so the clearing always wins —
+  // this is what actually clears the Gray Pillars away around Arch A.
+  isArchClearing(wx,wz){
+    return this._archClearingAt(wx,wz) !== null;
+  }
+  // Returns {origin,floorY,withRing} for whichever clearing (if any) this
+  // column falls inside, else null. Arch A sits on the bedrock floor (y=0)
+  // out among the Gray Pillars; Arch B sits on its own small platform at
+  // y=50 out at the far destination coordinates.
+  _archClearingAt(wx,wz){
+    const dxA = wx-ARCH_A_ORIGIN.x, dzA = wz-ARCH_A_ORIGIN.z;
+    if(dxA*dxA + dzA*dzA <= ARCH_CLEARING_RADIUS*ARCH_CLEARING_RADIUS){
+      return { origin:ARCH_A_ORIGIN, floorY:1, withRing:false };
+    }
+    const dxB = wx-ARCH_B_ORIGIN.x, dzB = wz-ARCH_B_ORIGIN.z;
+    if(dxB*dxB + dzB*dzB <= ARCH_CLEARING_RADIUS*ARCH_CLEARING_RADIUS){
+      return { origin:ARCH_B_ORIGIN, floorY:ARCH_B_ORIGIN.y, withRing:ARCH_B_PILLAR_RING };
+    }
+    return null;
   }
 
-  // Pure function of (wx,wy,wz) -> block id for everything inside the arena
-  // footprint. Written as a stateless lookup (like _pillarMaterial above) so
-  // it gives the same answer no matter which chunk generates it first, or in
-  // what order — no shared "have I built this yet" flag required.
-  //   Layout (top-down, ox/oz = VOID_ARENA_ORIGIN):
-  //     - a flat obsidian-and-stone-brick floor, radius VOID_ARENA_RADIUS
-  //     - a thin ring of gray stone pillars along the floor's edge, echoing
-  //       the Gray Pillars the player just fell out of
-  //     - a stone-brick arch straddling the +x edge of the floor — walking
-  //       through it (either direction) is the two-way portal back out
-  _voidArenaBlockAt(wx,wy,wz){
-    const ox = VOID_ARENA_ORIGIN.x, oz = VOID_ARENA_ORIGIN.z, r = VOID_ARENA_RADIUS;
-    const lx = wx-ox, lz = wz-oz; // local coords, arena-centered
-    const floorY = VOID_ARENA_FLOOR_Y;
+  // Pure function of (wx,wy,wz) -> block id for a circular arch clearing.
+  // Written as a stateless lookup (like _pillarMaterial above) so it gives
+  // the same answer no matter which chunk generates it first, or in what
+  // order — no shared "have I built this yet" flag required.
+  //   Layout (top-down, centered on `origin`):
+  //     - a flat stone-brick/mossy-stone-brick checkered floor, radius
+  //       ARCH_CLEARING_RADIUS, obsidian rim at the very edge
+  //     - if withRing: a thin ring of Gray-Pillars-style stone pillars just
+  //       inside that rim (Arch B only — Arch A's clearing stays empty,
+  //       since it's carved OUT of the pillar field, not surrounded by it)
+  //     - a stone-brick arch standing in the exact center, facing +x —
+  //       walking through it (either direction) triggers the teleport
+  _archClearingBlockAt(wx,wy,wz, clearing){
+    const { origin, floorY, withRing } = clearing;
+    const ox = origin.x, oz = origin.z;
+    const lx = wx-ox, lz = wz-oz; // local coords, clearing-centered
+    const r = ARCH_CLEARING_RADIUS;
+    const distSq = lx*lx + lz*lz;
 
-    if(wy === 0) return 17; // bedrock floor far below, matches the rest of the world
-
-    // --- solid floor slab (2 blocks thick) ---
-    if(wy === floorY || wy === floorY-1){
-      const edge = Math.max(Math.abs(lx), Math.abs(lz));
-      if(edge >= r-1) return 25;      // obsidian rim
-      // subtle checkerboard of stone brick / mossy stone brick, echoing the
-      // Gray Pillars' checkerboard without being a literal copy
-      return ((((lx%2)+2)%2) === (((lz%2)+2)%2)) ? 42 : 44;
+    // --- solid floor slab ---
+    // Arch A's clearing sits directly on the world's existing bedrock (y=0,
+    // same as the Gray Pillars around it) with a single decorative layer on
+    // top at floorY(=1); Arch B's platform is a free-floating slab in the
+    // void with true bedrock far below as the world floor beneath it.
+    if(wy === 0) return 17; // bedrock — unchanged at Arch A, and the world floor far under Arch B
+    if(wy === floorY){
+      const edge = Math.sqrt(distSq);
+      if(edge >= r-1) return 25; // obsidian rim
+      return ((((lx%2)+2)%2) === (((lz%2)+2)%2)) ? 42 : 44; // stone brick / mossy stone brick checker
     }
 
-    // --- perimeter pillars: one every 4 blocks around the floor's edge,
-    //     running up a modest height rather than to the build limit (this
-    //     is a small arena, not a Farlands field) ---
-    const edge = Math.max(Math.abs(lx), Math.abs(lz));
-    const onRing = edge === r-2;
-    if(onRing && wy > floorY-1 && wy <= floorY+6){
-      const alongRing = (Math.abs(lx)===r-2) ? lz : lx;
-      if((((alongRing%4)+4)%4) === 0) return 3; // plain gray stone, matches Gray Pillars material
-    }
-
-    // --- the arch: straddles the +x edge, centered on lz=0, three blocks
-    //     wide (lz -1..1), doorway 3 blocks tall, legs + lintel out of
-    //     stone brick so it reads distinctly from the pillars ---
-    const archX = ox + r - 2; // world x of the arch's column line
-    if(wx === archX && lz >= -1 && lz <= 1){
-      if(lz === -1 || lz === 1){
-        // legs: solid from the floor up to the lintel
-        if(wy > floorY-1 && wy <= floorY+4) return 42;
-      } else {
-        // lz===0: the doorway itself — lintel block on top, open below
-        if(wy === floorY+4) return 42; // lintel
-        // wy floorY+1..floorY+3 stays air (the passage through)
+    // --- perimeter pillar ring (Arch B only) ---
+    if(withRing){
+      const edge = Math.sqrt(distSq);
+      const onRing = edge >= r-3 && edge < r-1;
+      if(onRing && wy > floorY && wy <= floorY+7){
+        // deterministic per-column placement so the ring reads as evenly
+        // spaced without needing trig-perfect spacing
+        const roll = hash2(wx,wz, WORLD_SEED+909090);
+        if(roll > 0.42) return 3; // plain gray stone, matches Gray Pillars material
       }
     }
 
-    return 0; // air everywhere else inside the footprint
+    // --- the arch: centered exactly on the clearing, facing +x, three
+    //     blocks wide (lz -1..1), doorway 3 blocks tall ---
+    if(lx === 0 && lz >= -1 && lz <= 1){
+      if(lz === -1 || lz === 1){
+        if(wy > floorY && wy <= floorY+5) return 42; // legs
+      } else {
+        if(wy === floorY+5) return 42; // lintel; floorY+1..+4 stays open as the doorway
+      }
+    }
+
+    return 0; // air everywhere else inside the clearing
   }
 
   generateChunk(chunk){
@@ -1712,14 +2151,15 @@ class World{
       for(let lz=0; lz<CHUNK_SIZE; lz++){
         const wx = cx*CHUNK_SIZE+lx, wz = cz*CHUNK_SIZE+lz;
 
-        // Void Arena pocket — a small hand-built structure floating alone in
-        // blackness, reachable only by falling out of the normal world.
-        // Bypasses all normal terrain exactly like Gray Pillars below, and is
-        // checked first so its fixed coordinates always win.
-        if(this.isVoidArena(wx,wz)){
+        // Arch clearings — checked first so they always win: Arch A's
+        // clearing carves a circular gap out of the Gray Pillars field, and
+        // Arch B's clearing (far away at ARCH_B_ORIGIN) bypasses normal
+        // terrain the same way Gray Pillars does.
+        const clearing = this._archClearingAt(wx,wz);
+        if(clearing){
           for(let ly=0; ly<CHUNK_SIZE; ly++){
             const wy = cy*CHUNK_SIZE+ly;
-            chunk.set(lx,ly,lz, this._voidArenaBlockAt(wx,wy,wz));
+            chunk.set(lx,ly,lz, this._archClearingBlockAt(wx,wy,wz,clearing));
           }
           continue;
         }
@@ -1779,15 +2219,36 @@ class World{
               else if(oreRoll > coalT) id = 13; // coal
             }
           } else if(wy < surfaceY-1){
-            id = (biome==='desert' || biome==='beach') ? 5 : 2; // sand or dirt beneath the surface layer
+            id = (biome==='desert' || biome==='beach') ? 5
+               : (biome==='volcanic') ? 61 // volcanic_rock beneath the ash/basalt surface
+               : 2; // sand or dirt beneath the surface layer
           } else if(wy < surfaceY){
             if(biome==='ocean' || biome==='beach') id = 5;       // sand — ocean floor / beach
             else if(biome==='desert') id = 5;                    // sand — desert surface
             else if(biome==='snowy_peak') id = 12;                // snow cap
             else if(biome==='mountains') id = 3;                  // bare stone slopes
+            else if(biome==='volcanic'){
+              // Mottled basalt/ash surface rather than a flat single block,
+              // so volcanic ground reads visually distinct from mountains.
+              id = (hash2(wx,wz,this.seed+6060) > 0.25) ? 59 : 60; // basalt or volcanic_ash
+            }
             else id = 1;                                          // grass — plains/forest
+          } else if(biome==='volcanic' && wy >= surfaceY && wy <= surfaceY+2 && surfaceY > SEA_LEVEL+30){
+            // Small crater lava pool right at the summit of tall volcanic
+            // peaks — deterministic per-column so it's stable across reloads,
+            // shallow (2 blocks) so it doesn't turn into a giant lava ocean.
+            const craterRoll = hash2(wx,wz,this.seed+7171);
+            id = (craterRoll > 0.30) ? 52 : 0; // lava source, or open crater air
           } else if(wy <= SEA_LEVEL && wy>=surfaceY){
             id = 10; // water fill
+          } else if(wy <= SEA_LEVEL && biome!=='ocean' && biome!=='beach' && wy >= surfaceY-3 && this._nearOceanOrLowChannel(wx,wz)){
+            // Bridges narrow ridges that poke a block or two above sea level
+            // between two lower "channel" columns (e.g. a winding river/lake
+            // bed whose bottom occasionally rises slightly above SEA_LEVEL).
+            // Without this, those ridge columns generated as solid ground
+            // instead of water, splitting one connected body of water into
+            // several disconnected pools separated by dry steps.
+            id = 10; // water fill — connects the channel across the ridge
           } else {
             id = 0;
           }
@@ -1805,7 +2266,7 @@ class World{
       for(let lz=2; lz<CHUNK_SIZE-2; lz++){
         const wx = cx*CHUNK_SIZE+lx, wz = cz*CHUNK_SIZE+lz;
         if(this.isFarlands(wx,wz)) continue; // no trees/cacti out among the pillars
-        if(this.isVoidArena(wx,wz)) continue; // no trees/cacti in the void arena either
+        if(this.isArchClearing(wx,wz)) continue; // no trees/cacti inside either arch's clearing
         const surfaceY = this.heightAt(wx,wz);
         const groundChunkY = Math.floor(surfaceY/CHUNK_SIZE);
         if(groundChunkY !== cy) continue; // only place from the chunk containing ground level
@@ -1859,11 +2320,11 @@ class World{
     const isDistorted = distortion > 0 && hash2(wx,wz,this.seed+777) < distortion;
     if(isDistorted){
       const trunkH = 6 + Math.floor(hash2(wx,wz,this.seed+13)*6); // 6-11 tall, no leaves
-      for(let i=0;i<trunkH;i++) this.setBlock(wx, groundY+i, wz, 6, false);
+      for(let i=0;i<trunkH;i++) this.setBlock(wx, groundY+i, wz, 6, true);
       return;
     }
     const trunkH = 4 + Math.floor(hash2(wx,wz,this.seed+13)*2);
-    for(let i=0;i<trunkH;i++) this.setBlock(wx, groundY+i, wz, 6, false);
+    for(let i=0;i<trunkH;i++) this.setBlock(wx, groundY+i, wz, 6, true);
     // leaves canopy (blocky sphere-ish)
     const topY = groundY+trunkH;
     for(let dx=-2; dx<=2; dx++){
@@ -1875,7 +2336,7 @@ class World{
           const wy = topY+dy;
           if(dx===0&&dz===0&&dy<0) continue; // keep trunk visible
           const existing = this.getBlock(wx+dx, wy, wz+dz);
-          if(existing===0) this.setBlock(wx+dx, wy, wz+dz, 7, false);
+          if(existing===0) this.setBlock(wx+dx, wy, wz+dz, 7, true);
         }
       }
     }
@@ -1883,7 +2344,7 @@ class World{
 
   _placeCactus(wx, groundY, wz){
     const h = 2 + Math.floor(hash2(wx,wz,this.seed+909)*3); // 2-4 tall
-    for(let i=0;i<h;i++) this.setBlock(wx, groundY+i, wz, 40, false);
+    for(let i=0;i<h;i++) this.setBlock(wx, groundY+i, wz, 40, true);
   }
 }
 
@@ -1908,15 +2369,85 @@ const FACE_DEFS = [
 ];
 const FACE_NEIGHBOR = { px:[1,0,0], nx:[-1,0,0], py:[0,1,0], ny:[0,-1,0], pz:[0,0,1], nz:[0,0,-1] };
 
-function shouldDrawFace(world, blockId, nx, ny, nz){
-  const nb = world.getBlock(nx,ny,nz);
+// Reads a block by LOCAL coordinates that may spill 1 step outside this
+// chunk's 0..CHUNK_SIZE-1 range, using pre-fetched neighbor chunk references
+// instead of going through World.getBlock (worldToChunk's div/mod math +
+// a Map lookup) for every single face check. buildChunkMesh looks up its
+// 6 face-adjacent chunks ONCE before the loop and passes them in here —
+// since almost every face check lands either inside the current chunk or
+// exactly one of those 6 neighbors, this turns "thousands of Map lookups
+// per chunk rebuild" into "6 Map lookups per chunk rebuild", which is the
+// biggest single cost in the mesher and runs on every block edit, not just
+// in dense areas like the Gray Pillars.
+function getLocalNeighborBlock(chunk, neighbors, lx,ly,lz){
+  if(lx>=0 && lx<CHUNK_SIZE && ly>=0 && ly<CHUNK_SIZE && lz>=0 && lz<CHUNK_SIZE){
+    return chunk.get(lx,ly,lz);
+  }
+  // exactly one coordinate is out of range by exactly 1 (face-adjacent only)
+  if(lx<0) return neighbors.nx ? neighbors.nx.get(CHUNK_SIZE-1,ly,lz) : 0;
+  if(lx>=CHUNK_SIZE) return neighbors.px ? neighbors.px.get(0,ly,lz) : 0;
+  if(ly<0) return neighbors.ny ? neighbors.ny.get(lx,CHUNK_SIZE-1,lz) : 0;
+  if(ly>=CHUNK_SIZE) return neighbors.py ? neighbors.py.get(lx,0,lz) : 0;
+  if(lz<0) return neighbors.nz ? neighbors.nz.get(lx,ly,CHUNK_SIZE-1) : 0;
+  if(lz>=CHUNK_SIZE) return neighbors.pz ? neighbors.pz.get(lx,ly,0) : 0;
+  return 0;
+}
+
+function shouldDrawFaceLocal(blockId, nb){
   const selfDef = BLOCKS[blockId];
   const nbDef = BLOCKS[nb];
   if(nb === 0) return true; // neighbor is air (or ungenerated -> treated as air, culled at chunk edge safely)
+  if(nbDef.liquid && selfDef.liquid && (nbDef.liquidFamily||'water')===(selfDef.liquidFamily||'water')) return false; // same liquid family (e.g. water/water, lava/lava) never draws a seam between them
   if(nbDef.transparent && nbDef.id !== blockId) return true; // e.g. solid next to glass/water/leaves
-  if(nbDef.transparent && selfDef.transparent && nbDef.id===blockId) return false; // two of same transparent (e.g. water-water)
+  if(nbDef.transparent && selfDef.transparent && nbDef.id===blockId) return false; // two of same transparent (e.g. glass-glass)
   if(nbDef.transparent) return true;
   return false; // neighbor opaque solid -> hide this face
+}
+
+// Kept for any other callers that need cross-chunk face visibility without
+// a pre-fetched neighbor set (rare — buildChunkMesh no longer uses this).
+function shouldDrawFace(world, blockId, nx, ny, nz){
+  const nb = world.getBlock(nx,ny,nz);
+  return shouldDrawFaceLocal(blockId, nb);
+}
+
+// Cheap pre-pass used by the frame budget below: counts non-air blocks in a
+// chunk without doing any neighbor lookups (unlike the real face-culling
+// pass, which touches up to 6 neighbor chunks per block and is much more
+// expensive). This is a fast enough proxy for "how big is this chunk about
+// to be" that we can afford to run it on every candidate chunk each frame.
+// A normal terrain chunk is mostly air or fully-buried interior stone
+// (occludes itself, few faces); a chunk from the Gray Pillars easter egg
+// is a checkerboard where every solid column is exposed on 4 sides for its
+// whole height, so its solid-block count AND its actual emitted face count
+// are both far higher — this heuristic catches that case even though it
+// can't predict the real post-culling face count exactly.
+function estimateChunkCost(chunk){
+  let solid = 0;
+  const blocks = chunk.blocks;
+  for(let i=0;i<blocks.length;i++){ if(blocks[i]!==0) solid++; }
+  return solid;
+}
+
+// -----------------------------------------------------------------------
+// LIQUID SURFACE HEIGHT
+// A source block (isSource, flowLevel 7) is always a full 1-block-tall
+// cube. Every flow-decay step below that renders visibly shorter, so a
+// stream tapers down to a thin sheet as it gets further from its source —
+// classic voxel-liquid look instead of every liquid cell being a full cube.
+// flowLevel 7 (source) -> height 1.0
+// flowLevel 6..0       -> height ~0.86 down to ~0.22
+// A liquid block that has another liquid block of the SAME family directly
+// above it is always rendered as a full cube (it's "fed" from above and
+// visually continuous with the column above it), matching classic voxel
+// water behavior where you don't see a stair-step under a waterfall.
+function liquidHeight(def, fedFromAbove){
+  if(!def || !def.liquid) return 1;
+  if(fedFromAbove || def.isSource) return 1;
+  const lvl = (def.flowLevel===undefined) ? 7 : def.flowLevel;
+  // 8 discrete steps (0..7) mapped from a thin sheet up to just-under-full
+  const MIN_H = 0.2, MAX_H = 0.875; // leave a hair below 1.0 so non-source top is visibly not flush with a full block
+  return MIN_H + (MAX_H-MIN_H) * (lvl/7);
 }
 
 function buildChunkMesh(world, chunk){
@@ -1941,20 +2472,60 @@ function buildChunkMesh(world, chunk){
   const {cx,cy,cz} = chunk;
   const baseX = cx*CHUNK_SIZE, baseY = cy*CHUNK_SIZE, baseZ = cz*CHUNK_SIZE;
 
+  // Fetch all 6 face-adjacent chunks ONCE per chunk build (6 Map lookups
+  // total) instead of doing a full World.getBlock (div/mod + Map lookup)
+  // for every one of the up to 24,576 face checks below. A neighbor that
+  // isn't generated yet is treated as absent -> its side reads as air,
+  // same as before (matches getBlock's "ungenerated -> air" behavior).
+  const neighbors = {
+    px: world.getChunk(cx+1,cy,cz), nx: world.getChunk(cx-1,cy,cz),
+    py: world.getChunk(cx,cy+1,cz), ny: world.getChunk(cx,cy-1,cz),
+    pz: world.getChunk(cx,cy,cz+1), nz: world.getChunk(cx,cy,cz-1),
+  };
+
   for(let lx=0; lx<CHUNK_SIZE; lx++){
     for(let ly=0; ly<CHUNK_SIZE; ly++){
       for(let lz=0; lz<CHUNK_SIZE; lz++){
         const id = chunk.get(lx,ly,lz);
         if(id===0) continue;
-        const wx=baseX+lx, wy=baseY+ly, wz=baseZ+lz;
+        const def = BLOCKS[id];
+        if(def && def.renderInvisible) continue; // Test_Block etc: occupies a cell but draws nothing
+
+        // Liquids get a variable top height based on flow level so a
+        // stream visibly tapers as it flows away from its source, instead
+        // of every liquid cell rendering as a full unit cube.
+        let h = 1;
+        if(def && def.liquid){
+          const aboveId = getLocalNeighborBlock(chunk, neighbors, lx, ly+1, lz);
+          const aboveDef = BLOCKS[aboveId];
+          const fedFromAbove = !!(aboveDef && aboveDef.liquid && (aboveDef.liquidFamily||'water')===(def.liquidFamily||'water'));
+          h = liquidHeight(def, fedFromAbove);
+        }
+
         for(const fd of FACE_DEFS){
           const [dx,dy,dz] = fd.normal;
-          if(!shouldDrawFace(world, id, wx+dx, wy+dy, wz+dz)) continue;
+          const nb = getLocalNeighborBlock(chunk, neighbors, lx+dx, ly+dy, lz+dz);
+          if(!shouldDrawFaceLocal(id, nb)) continue;
+
+          // Skip the top face entirely when this liquid is fed from a
+          // matching liquid directly above — nothing would ever be visible
+          // there anyway (matches shouldDrawFaceLocal's same-family cull)
+          // but this also avoids emitting a stray flat quad mid-column.
+          if(fd.name==='py' && def && def.liquid){
+            const aboveDef = BLOCKS[nb];
+            if(aboveDef && aboveDef.liquid && (aboveDef.liquidFamily||'water')===(def.liquidFamily||'water')) continue;
+          }
+
           const paintName = faceMaterialKey(id, fd.key);
           const buf = getBuf(paintName);
           const startIndex = buf.vcount;
           for(const corner of fd.corners){
-            buf.pos.push(lx+corner[0], ly+corner[1], lz+corner[2]);
+            // Only pull down corners that sit on the TOP of the block
+            // (corner[1]===1); bottom corners (0) and non-liquid blocks
+            // are untouched, so the liquid sits flush with the ground and
+            // only its visible top/upper-side edge is squashed down.
+            const cy2 = (h<1 && corner[1]===1) ? h : corner[1];
+            buf.pos.push(lx+corner[0], ly+cy2, lz+corner[2]);
             buf.norm.push(dx,dy,dz);
           }
           // uv mapping (simple 0..1 quad, with slight tint for ao-ish shading baked via vertex normal lighting)
@@ -1980,10 +2551,14 @@ function buildChunkMesh(world, chunk){
     group.add(mesh);
   }
 
+  let totalFaces = 0;
+  for(const paintName in buffers){ totalFaces += buffers[paintName].vcount/4; }
+
   group.position.set(baseX, baseY, baseZ);
   chunk.mesh = group;
   chunk.dirty = false;
-  return group;
+  chunk._lastFaceCount = totalFaces;
+  return totalFaces;
 }
 
 /* -------------------------------------------------------------------------
@@ -2133,7 +2708,6 @@ function removeFriend(friendId){
 ------------------------------------------------------------------------- */
 const RECIPES = [
   // planks from a log (shapeless-ish: any single log cell)
-  { pattern:[[20,0,0],[0,0,0],[0,0,0]], out:{id:8,count:4}, shapeless:true, inputs:[20] },
   { pattern:[[6,0,0],[0,0,0],[0,0,0]], out:{id:8,count:4}, shapeless:true, inputs:[6] },
   // sticks from 2 planks stacked
   { pattern:[[8,0,0],[8,0,0],[0,0,0]], out:{id:100,count:4} },
@@ -2200,7 +2774,6 @@ const FUEL_ITEMS = {
   116: 8,   // coal lump
   8:   3,   // planks
   6:   2.5, // wood (log-ish "wood" block id)
-  20:  3.5, // log_oak
   100: 1,   // stick
 };
 
@@ -2209,7 +2782,6 @@ const FUEL_ITEMS = {
 // rules): planks from a log, sticks from planks, and the crafting table
 // itself. Everything else needs the 3x3 table above.
 const RECIPES_2x2 = [
-  { pattern:[[20,0],[0,0]], out:{id:8,count:4}, shapeless:true, inputs:[20] },
   { pattern:[[6,0],[0,0]], out:{id:8,count:4}, shapeless:true, inputs:[6] },
   { pattern:[[8,0],[8,0]], out:{id:100,count:4} },
   { pattern:[[8,8],[8,8]], out:{id:18,count:1} },
@@ -2279,6 +2851,35 @@ function matchShaped(grid, pattern){
   return true;
 }
 
+// Slash commands shown in the chat autocomplete dropdown when the player
+// types "/". Deliberately does NOT include the secret Gray Pillars code
+// (/gR4Y_-P1LlaR5s) — that one stays a hidden easter egg, not a discoverable
+// command.
+const CHAT_COMMANDS = [
+  { name:'/locate', desc:'Find the nearest biome, e.g. /locate jungle' },
+];
+
+// Friendly names/aliases a player might type -> the actual biomeAt() id.
+// This world's biomeAt() only ever returns one of:
+//   'ocean','beach','desert','volcanic','mountains','snowy_peak','forest','plains'
+// so "jungle"/"mesa" etc alias onto the closest real match rather than
+// pretending those biomes exist.
+const LOCATE_BIOME_ALIASES = {
+  ocean:'ocean', sea:'ocean', water:'ocean',
+  beach:'beach', shore:'beach', coast:'beach',
+  desert:'desert', dessert:'desert', sand:'desert', sandy:'desert',
+  mesa:'desert', // no dedicated mesa biome — desert is the closest match
+  volcanic:'volcanic', volcano:'volcanic', lava:'volcanic',
+  mountain:'mountains', mountains:'mountains', hills:'mountains',
+  snowy_peak:'snowy_peak', snow:'snowy_peak', snowypeak:'snowy_peak', 'snowy peak':'snowy_peak', peak:'snowy_peak', ice:'snowy_peak',
+  forest:'forest', jungle:'forest', woods:'forest', // no dedicated jungle biome — forest is the closest match
+  plains:'plains', grassland:'plains', grasslands:'plains', field:'plains', fields:'plains',
+};
+const LOCATE_BIOME_LABELS = {
+  ocean:'ocean', beach:'beach', desert:'desert', volcanic:'volcanic biome',
+  mountains:'mountains', snowy_peak:'snowy peak', forest:'forest', plains:'plains',
+};
+
 class Game{
   constructor(){
     RENDER_DISTANCE = SETTINGS.renderDistance;
@@ -2292,6 +2893,42 @@ class Game{
     this.renderer = new THREE.WebGLRenderer({ canvas:this.canvas, antialias:false });
     this.renderer.setPixelRatio(Math.min(devicePixelRatio,2));
     this.renderer.setSize(innerWidth, innerHeight);
+
+    // WebGL context loss/restore handling. Without this, a GPU-side stall
+    // (e.g. a driver timeout from a single huge synchronous mesh build) that
+    // tips into CONTEXT_LOST_WEBGL leaves the canvas permanently blank/white
+    // — the browser prevents the default context-loss-during-a-frame
+    // behavior only if preventDefault() is called on the event, and even
+    // then nothing re-appears on screen until the render loop is told to
+    // resume drawing once the context actually comes back. We also flag
+    // `this._contextLost` so the main loop (see start()) can skip calling
+    // renderer.render() entirely while the context is down instead of
+    // throwing into every frame's try/catch.
+    this.canvas.addEventListener('webglcontextlost', (e)=>{
+      e.preventDefault();
+      this._contextLost = true;
+      console.warn('WebGL context lost — pausing rendering until it is restored.');
+    }, false);
+    this.canvas.addEventListener('webglcontextrestored', ()=>{
+      this._contextLost = false;
+      console.warn('WebGL context restored — resuming rendering.');
+      // Every chunk's mesh (geometry+material) lived on the now-lost GPU
+      // context and is gone; force everything currently in the scene to
+      // rebuild next tick rather than trying to keep drawing stale/invalid
+      // GPU handles (which is what produced the repeated shader-compile
+      // errors immediately after "Context Restored" in the logs — the old
+      // materials/geometries were never actually recreated).
+      if(this.world){
+        for(const [,chunk] of this.world.chunks){
+          if(chunk.mesh){
+            if(chunk.mesh.parent) chunk.mesh.parent.remove(chunk.mesh);
+            chunk.mesh = null;
+          }
+          chunk.dirty = true;
+        }
+      }
+      materialByKeyCacheClearAll();
+    }, false);
 
     // lighting
     this.sun = new THREE.DirectionalLight(0xffffff, 0.9);
@@ -2324,6 +2961,7 @@ class Game{
     this._footstepDist = 0; // distance accumulated since last step sound
 
     this.selectedBlock = 1;
+    this.selectedSlot = 0; // index into this.hotbar; kept in sync with selectedBlock
     this.hotbar = [1,2,3,4,6,8,7,9,12];
     this.inventoryCounts = {}; // id -> count (unlimited-ish for creative, tracked anyway)
     this.hotbar.forEach(id=> this.inventoryCounts[id] = 99);
@@ -2332,6 +2970,14 @@ class Game{
     this.mineHeld = false; // true from mousedown/touchstart until mouseup/touchend/blur — lets mining retarget on look-away instead of stopping
     this.craftGrid = [0,0,0,0,0,0,0,0,0]; // 3x3 flat, ids (0=empty), consumed from inventory on craft
     this.craftGrid2 = [0,0,0,0]; // 2x2 flat, personal-inventory quick-craft (planks/sticks/table only)
+    // Parallel "how many of craftGrid[i]'s id are sitting in that slot" arrays.
+    // A slot still only ever matches ONE id for recipe-shape purposes (see
+    // matchRecipe/matchRecipe2x2, which only look at grid[i]!==0), but this
+    // lets you stack multiples of that same item into a slot instead of
+    // spilling into a different cell, and lets you click a stacked slot to
+    // peel exactly one back off into your inventory at a time.
+    this.craftGridCounts = [0,0,0,0,0,0,0,0,0];
+    this.craftGrid2Counts = [0,0,0,0];
 
     if(GAME_MODE==='survival'){
       // survival starts completely empty — no starter tools or blocks.
@@ -2377,9 +3023,9 @@ class Game{
     this.respawnPos = new THREE.Vector3(0, 60, 0); // set once real spawn column is found
 
     // ---- void arena portal state ----
-    this._inVoidArena = false;        // true while standing inside the arena pocket
-    this._voidReturnPos = null;       // THREE.Vector3 — where to send the player back through the arch
-    this._voidArchCooldown = 0;       // brief cooldown after any crossing so one walk-through doesn't double-trigger
+    this._archCooldown = 0;            // brief cooldown after any crossing so one walk-through doesn't immediately bounce back
+    this._inArchBClearing = false;     // true while anywhere inside Arch B's clearing (drives atmosphere/drone)
+    this._leftArchBClearing = false;   // one-shot flag: restore normal fog/ambient the frame after leaving
 
     this._setupPointerLock();
     this._setupKeys();
@@ -2461,6 +3107,21 @@ class Game{
       this.pitch -= e.movementY*sens;
       this.pitch = Math.max(-Math.PI/2+0.01, Math.min(Math.PI/2-0.01, this.pitch));
     });
+    // Scroll wheel cycles the active hotbar slot, same as most voxel games —
+    // only while actually playing (pointer locked, no panel/chat open), so
+    // scrolling a menu or the chat box doesn't accidentally change slots.
+    document.addEventListener('wheel', (e)=>{
+      if(!this.locked) return;
+      const otherPanelOpen = ['inventoryPanel','craftingPanel','texturePanel','settingsPanel','furnacePanel','recipeBookPanel']
+        .some(id=>{ const el=document.getElementById(id); return el && el.style.display==='flex'; });
+      if(otherPanelOpen) return;
+      if(document.getElementById('chatInputWrap').style.display==='block') return;
+      const dir = e.deltaY > 0 ? 1 : -1;
+      const len = this.hotbar.length;
+      this.selectedSlot = ((this.selectedSlot + dir) % len + len) % len;
+      this.selectedBlock = this.hotbar[this.selectedSlot];
+      this.updateHotbarUI();
+    }, { passive: true });
   }
 
   _setupKeys(){
@@ -2475,7 +3136,7 @@ class Game{
       if(e.code==='KeyF'){ if(GAME_MODE==='creative'){ this.flying = !this.flying; this.vel.y=0; } }
       if(/^Digit[1-9]$/.test(e.code)){
         const n = parseInt(e.code.slice(5))-1;
-        if(n < this.hotbar.length){ this.selectedBlock = this.hotbar[n]; this.updateHotbarUI(); }
+        if(n < this.hotbar.length){ this.selectedSlot = n; this.selectedBlock = this.hotbar[n]; this.updateHotbarUI(); }
       }
       if(e.code==='Enter'){ this.openChat(); }
       if(e.code==='Escape'){
@@ -2533,17 +3194,47 @@ class Game{
   openChat(){
     const wrap = document.getElementById('chatInputWrap');
     const input = document.getElementById('chatInput');
+    const suggestBox = document.getElementById('chatCmdSuggest');
     wrap.style.display = 'block';
     input.value=''; input.focus();
+    suggestBox.style.display = 'none';
+    suggestBox.innerHTML = '';
+
+    const renderSuggestions = ()=>{
+      const v = input.value;
+      suggestBox.innerHTML = '';
+      if(!v.startsWith('/')){ suggestBox.style.display='none'; return; }
+      const typed = v.toLowerCase();
+      const matches = CHAT_COMMANDS.filter(c=> c.name.startsWith(typed) || typed==='/');
+      if(matches.length===0){ suggestBox.style.display='none'; return; }
+      matches.forEach(c=>{
+        const row = document.createElement('div');
+        row.className = 'cmdRow';
+        row.innerHTML = `<span class="cmdName">${c.name}</span><span class="cmdDesc">${c.desc}</span>`;
+        row.onclick = ()=>{
+          input.value = c.name + ' ';
+          input.focus();
+          renderSuggestions();
+        };
+        suggestBox.appendChild(row);
+      });
+      suggestBox.style.display = 'block';
+    };
+    input.addEventListener('input', renderSuggestions);
+
     const handler = (e)=>{
       if(e.code==='Enter'){
         const msg = input.value.trim();
         if(msg) this.sendChat(msg);
         wrap.style.display='none';
+        suggestBox.style.display='none';
         input.removeEventListener('keydown', handler);
+        input.removeEventListener('input', renderSuggestions);
       } else if(e.code==='Escape'){
         wrap.style.display='none';
+        suggestBox.style.display='none';
         input.removeEventListener('keydown', handler);
+        input.removeEventListener('input', renderSuggestions);
       }
       e.stopPropagation();
     };
@@ -2564,7 +3255,9 @@ class Game{
   // lands you ~4.999M blocks out — just under the 5,000,000 threshold where
   // the pillar field starts, on whichever axis was chosen.
   tryHandleChatCommand(msg){
-    if(msg.trim() !== '/gR4Y_-P1LlaR5s') return false;
+    const trimmed = msg.trim();
+    if(trimmed.toLowerCase().startsWith('/locate')) return this.handleLocateCommand(trimmed);
+    if(trimmed !== '/gR4Y_-P1LlaR5s') return false;
 
     const axis = Math.random() < 0.5 ? 'x' : 'z';
     const sign = Math.random() < 0.5 ? 1 : -1;
@@ -2587,6 +3280,62 @@ class Game{
     this.vel.set(0,0,0);
 
     this.addChatLine('System', `Teleported near the Gray Pillars (${Math.round(tx)}, ${Math.round(tz)}).`, false);
+    return true;
+  }
+
+  // "/locate <biome>" — spiral-searches outward from the player's current
+  // position (in world-column steps, cheap since biomeAt() is a pure
+  // noise-lookup with no chunk generation needed) until it finds a column
+  // classified as the requested biome, then reports its coordinates. Search
+  // is capped so an obscure/absent biome can't hang the game — if nothing
+  // turns up within the cap it just says so instead of freezing.
+  handleLocateCommand(trimmed){
+    const parts = trimmed.split(/\s+/).slice(1).join(' ').trim().toLowerCase();
+    if(!parts){
+      this.addChatLine('System', 'Usage: /locate <biome> — e.g. /locate jungle, /locate desert, /locate mountains', false);
+      return true;
+    }
+    const target = LOCATE_BIOME_ALIASES[parts];
+    if(!target){
+      const known = Object.keys(LOCATE_BIOME_ALIASES).filter(k=>!k.includes(' ')).join(', ');
+      this.addChatLine('System', `Unknown biome "${parts}". Try: ${known}`, false);
+      return true;
+    }
+
+    const ox = Math.floor(this.pos.x), oz = Math.floor(this.pos.z);
+    const STEP = 4;         // sample every 4 blocks — biomes are large, no need to check every column
+    const MAX_RADIUS = 6000; // generous cap so this always terminates quickly
+    let found = null;
+
+    for(let r=0; r<=MAX_RADIUS; r+=STEP){
+      if(r===0){
+        if(this.world.biomeAt(ox,oz)===target){ found = {x:ox, z:oz}; break; }
+        continue;
+      }
+      // walk the square ring at Chebyshev distance r (cheap perimeter walk
+      // instead of scanning the whole r*r square every step)
+      let hit = null;
+      for(let x=-r; x<=r && !hit; x+=STEP){
+        if(this.world.biomeAt(ox+x, oz-r)===target) hit = {x:ox+x, z:oz-r};
+        else if(this.world.biomeAt(ox+x, oz+r)===target) hit = {x:ox+x, z:oz+r};
+      }
+      if(!hit){
+        for(let z=-r+STEP; z<r && !hit; z+=STEP){
+          if(this.world.biomeAt(ox-r, oz+z)===target) hit = {x:ox-r, z:oz+z};
+          else if(this.world.biomeAt(ox+r, oz+z)===target) hit = {x:ox+r, z:oz+z};
+        }
+      }
+      if(hit){ found = hit; break; }
+    }
+
+    if(found){
+      const label = LOCATE_BIOME_LABELS[target] || target;
+      const dist = Math.round(Math.hypot(found.x-ox, found.z-oz));
+      this.addChatLine('System', `Nearest ${label}: (${found.x}, ${found.z}) — about ${dist} blocks away.`, false);
+    } else {
+      const label = LOCATE_BIOME_LABELS[target] || target;
+      this.addChatLine('System', `Couldn't find a ${label} within ${MAX_RADIUS} blocks. Try exploring further and searching again.`, false);
+    }
     return true;
   }
 
@@ -2692,13 +3441,15 @@ class Game{
     for(let i=0;i<4;i++){
       const id = this.craftGrid2[i];
       if(id){
-        this.inventoryCounts[id] = (this.inventoryCounts[id]||0)+1;
+        const n = this.craftGrid2Counts[i]||1;
+        this.inventoryCounts[id] = (this.inventoryCounts[id]||0)+n;
         if(!this.hotbar.includes(id)){
           const emptyIdx = this.hotbar.indexOf(0);
           if(emptyIdx !== -1) this.hotbar[emptyIdx] = id;
         }
       }
       this.craftGrid2[i] = 0;
+      this.craftGrid2Counts[i] = 0;
     }
     this.updateHotbarUI();
   }
@@ -2714,7 +3465,9 @@ class Game{
       if(id){
         const img = document.createElement('img'); img.src = iconDataUrl(id);
         slot.appendChild(img);
-        if(ALL_DEFS[id]) attachTooltip(slot, ALL_DEFS[id].name);
+        const n = this.craftGrid2Counts[i]||1;
+        if(n>1){ const cnt=document.createElement('div'); cnt.className='cnt'; cnt.textContent=n; slot.appendChild(cnt); }
+        if(ALL_DEFS[id]) attachTooltip(slot, ALL_DEFS[id].name+(n>1?` x${n}`:''));
         slot.draggable = true;
         slot.addEventListener('dragstart', (e)=>{
           slot.classList.add('dragging');
@@ -2730,16 +3483,30 @@ class Game{
         slot.classList.remove('dragOver');
         const fromIdx = +e.dataTransfer.getData('text/plain');
         if(isNaN(fromIdx) || fromIdx===i) return;
-        const tmp = this.craftGrid2[i];
-        this.craftGrid2[i] = this.craftGrid2[fromIdx];
-        this.craftGrid2[fromIdx] = tmp;
+        // dragging one stack onto an empty slot, or onto a slot holding the
+        // same id, merges the stacks instead of swapping
+        if(this.craftGrid2[i]===0 || this.craftGrid2[i]===this.craftGrid2[fromIdx]){
+          this.craftGrid2[i] = this.craftGrid2[fromIdx];
+          this.craftGrid2Counts[i] = (this.craftGrid2Counts[i]||0) + (this.craftGrid2Counts[fromIdx]||1);
+          this.craftGrid2[fromIdx] = 0;
+          this.craftGrid2Counts[fromIdx] = 0;
+        } else {
+          const tmpId = this.craftGrid2[i], tmpN = this.craftGrid2Counts[i];
+          this.craftGrid2[i] = this.craftGrid2[fromIdx];
+          this.craftGrid2Counts[i] = this.craftGrid2Counts[fromIdx];
+          this.craftGrid2[fromIdx] = tmpId;
+          this.craftGrid2Counts[fromIdx] = tmpN;
+        }
         this.renderCraftGrid2();
       });
       slot.onclick = ()=>{
-        // clicking a filled grid slot returns one item to inventory
+        // clicking a filled grid slot peels ONE off the stack back to
+        // inventory — click repeatedly (or several times) to fully unstack.
         if(this.craftGrid2[i]){
-          this.inventoryCounts[this.craftGrid2[i]] = (this.inventoryCounts[this.craftGrid2[i]]||0)+1;
-          this.craftGrid2[i] = 0;
+          const id = this.craftGrid2[i];
+          this.inventoryCounts[id] = (this.inventoryCounts[id]||0)+1;
+          this.craftGrid2Counts[i] = (this.craftGrid2Counts[i]||1)-1;
+          if(this.craftGrid2Counts[i]<=0){ this.craftGrid2[i]=0; this.craftGrid2Counts[i]=0; }
           this.renderCraftGrid2();
           this.renderInventory();
         }
@@ -2759,7 +3526,11 @@ class Game{
         outSlot.appendChild(cnt);
       }
       outSlot.onclick = ()=>{
-        for(let i=0;i<4;i++){ if(this.craftGrid2[i]) this.craftGrid2[i]=0; }
+        for(let i=0;i<4;i++){
+          if(!this.craftGrid2[i]) continue;
+          this.craftGrid2Counts[i] = (this.craftGrid2Counts[i]||1)-1;
+          if(this.craftGrid2Counts[i]<=0){ this.craftGrid2[i]=0; this.craftGrid2Counts[i]=0; }
+        }
         this.inventoryCounts[recipe.out.id] = (this.inventoryCounts[recipe.out.id]||0)+recipe.out.count;
         this.addToHotbar(recipe.out.id);
         this.renderCraftGrid2();
@@ -2789,13 +3560,15 @@ class Game{
     for(let i=0;i<9;i++){
       const id = this.craftGrid[i];
       if(id){
-        this.inventoryCounts[id] = (this.inventoryCounts[id]||0)+1;
+        const n = this.craftGridCounts[i]||1;
+        this.inventoryCounts[id] = (this.inventoryCounts[id]||0)+n;
         if(!this.hotbar.includes(id)){
           const emptyIdx = this.hotbar.indexOf(0);
           if(emptyIdx !== -1) this.hotbar[emptyIdx] = id;
         }
       }
       this.craftGrid[i] = 0;
+      this.craftGridCounts[i] = 0;
     }
     this.updateHotbarUI();
   }
@@ -2810,7 +3583,9 @@ class Game{
       if(id){
         const img = document.createElement('img'); img.src = iconDataUrl(id);
         slot.appendChild(img);
-        if(ALL_DEFS[id]) attachTooltip(slot, ALL_DEFS[id].name);
+        const n = this.craftGridCounts[i]||1;
+        if(n>1){ const cnt=document.createElement('div'); cnt.className='cnt'; cnt.textContent=n; slot.appendChild(cnt); }
+        if(ALL_DEFS[id]) attachTooltip(slot, ALL_DEFS[id].name+(n>1?` x${n}`:''));
         slot.draggable = true;
         slot.addEventListener('dragstart', (e)=>{
           slot.classList.add('dragging');
@@ -2826,16 +3601,30 @@ class Game{
         slot.classList.remove('dragOver');
         const fromIdx = +e.dataTransfer.getData('text/plain');
         if(isNaN(fromIdx) || fromIdx===i) return;
-        const tmp = this.craftGrid[i];
-        this.craftGrid[i] = this.craftGrid[fromIdx];
-        this.craftGrid[fromIdx] = tmp;
+        // dropping onto an empty slot, or onto a slot holding the same id,
+        // merges the stacks instead of swapping the two slots
+        if(this.craftGrid[i]===0 || this.craftGrid[i]===this.craftGrid[fromIdx]){
+          this.craftGrid[i] = this.craftGrid[fromIdx];
+          this.craftGridCounts[i] = (this.craftGridCounts[i]||0) + (this.craftGridCounts[fromIdx]||1);
+          this.craftGrid[fromIdx] = 0;
+          this.craftGridCounts[fromIdx] = 0;
+        } else {
+          const tmpId = this.craftGrid[i], tmpN = this.craftGridCounts[i];
+          this.craftGrid[i] = this.craftGrid[fromIdx];
+          this.craftGridCounts[i] = this.craftGridCounts[fromIdx];
+          this.craftGrid[fromIdx] = tmpId;
+          this.craftGridCounts[fromIdx] = tmpN;
+        }
         this.renderCraftingPanel();
       });
       slot.onclick = ()=>{
-        // clicking a filled grid slot returns one item to inventory
+        // clicking a filled grid slot peels ONE off the stack back to
+        // inventory — keep clicking to fully unstack a slot.
         if(this.craftGrid[i]){
-          this.inventoryCounts[this.craftGrid[i]] = (this.inventoryCounts[this.craftGrid[i]]||0)+1;
-          this.craftGrid[i] = 0;
+          const id = this.craftGrid[i];
+          this.inventoryCounts[id] = (this.inventoryCounts[id]||0)+1;
+          this.craftGridCounts[i] = (this.craftGridCounts[i]||1)-1;
+          if(this.craftGridCounts[i]<=0){ this.craftGrid[i]=0; this.craftGridCounts[i]=0; }
           this.renderCraftingPanel();
         }
       };
@@ -2854,8 +3643,13 @@ class Game{
         outSlot.appendChild(cnt);
       }
       outSlot.onclick = ()=>{
-        // consume one of each grid item (shapeless recipes just need the single input consumed)
-        for(let i=0;i<9;i++){ if(this.craftGrid[i]) this.craftGrid[i]=0; }
+        // consume one of each grid item (shapeless recipes just need the single input consumed);
+        // leftover stack (beyond the 1 the recipe needs) stays put for repeat crafting
+        for(let i=0;i<9;i++){
+          if(!this.craftGrid[i]) continue;
+          this.craftGridCounts[i] = (this.craftGridCounts[i]||1)-1;
+          if(this.craftGridCounts[i]<=0){ this.craftGrid[i]=0; this.craftGridCounts[i]=0; }
+        }
         this.inventoryCounts[recipe.out.id] = (this.inventoryCounts[recipe.out.id]||0)+recipe.out.count;
         this.addToHotbar(recipe.out.id);
         this.renderCraftingPanel();
@@ -2880,15 +3674,21 @@ class Game{
       slot.appendChild(cnt);
       if(ALL_DEFS[id]) attachTooltip(slot, ALL_DEFS[id].name);
       slot.onclick = ()=>{
-        const empty = this.craftGrid.indexOf(0);
-        if(empty===-1 || this.inventoryCounts[id]<=0) return;
-        this.craftGrid[empty] = id;
+        if(this.inventoryCounts[id]<=0) return;
+        // prefer stacking onto an existing slot with the same id before
+        // spilling into a new empty slot
+        let target = this.craftGrid.indexOf(id);
+        if(target===-1) target = this.craftGrid.indexOf(0);
+        if(target===-1) return;
+        this.craftGrid[target] = id;
+        this.craftGridCounts[target] = (this.craftGridCounts[target]||0)+1;
         this.inventoryCounts[id]--;
         this.renderCraftingPanel();
       };
       invEl.appendChild(slot);
     });
   }
+
 
   /* ---------------- Furnace / smelting ----------------
      Each placed furnace block gets its own persistent state (keyed by world
@@ -3213,16 +4013,19 @@ class Game{
         // Quick-craft ingredients (logs/planks) get a small "+" button that
         // sends one unit straight into the 2x2 grid below, so the player
         // doesn't have to hunt for a crafting table just to get sticks.
-        if([20,6,8].includes(id)){
+        if([6,8].includes(id)){
           const addBtn = document.createElement('div');
           addBtn.textContent = '+';
           addBtn.style.cssText = 'position:absolute; top:-2px; left:-2px; width:16px; height:16px; background:var(--vf-orange); color:#000; font-size:12px; font-weight:900; line-height:16px; text-align:center; border-radius:3px; cursor:pointer; z-index:2;';
           addBtn.title = 'Add one to quick-craft grid';
           addBtn.onclick = (e)=>{
             e.stopPropagation();
-            const empty = this.craftGrid2.indexOf(0);
-            if(empty===-1 || (this.inventoryCounts[id]||0)<=0) return;
-            this.craftGrid2[empty] = id;
+            if((this.inventoryCounts[id]||0)<=0) return;
+            let target = this.craftGrid2.indexOf(id);
+            if(target===-1) target = this.craftGrid2.indexOf(0);
+            if(target===-1) return;
+            this.craftGrid2[target] = id;
+            this.craftGrid2Counts[target] = (this.craftGrid2Counts[target]||0)+1;
             this.inventoryCounts[id]--;
             this.renderCraftGrid2();
             this.renderInventory();
@@ -3240,10 +4043,11 @@ class Game{
       const b = BLOCKS[id];
       const slot = document.createElement('div');
       slot.className='invSlot';
+      if(b.creativeOnly) slot.style.cssText = 'border:2px dashed #e0219c;';
       const img = document.createElement('img');
       img.src = iconDataUrl(id);
       slot.appendChild(img);
-      attachTooltip(slot, b.name);
+      attachTooltip(slot, b.creativeOnly ? b.name+' (creative only)' : b.name);
       slot.onclick = ()=>{
         this.selectedBlock = id;
         if(!this.hotbar.includes(id)){ this.hotbar[this.hotbar.length%9]=id; }
@@ -3257,11 +4061,11 @@ class Game{
   updateHotbarUI(){
     const bar = document.getElementById('hotbar');
     bar.innerHTML='';
-    this.hotbar.forEach(id=>{
+    this.hotbar.forEach((id,idx)=>{
       const slot = document.createElement('div');
-      slot.className = 'hotslot' + (id===this.selectedBlock?' active':'');
+      slot.className = 'hotslot' + (idx===this.selectedSlot?' active':'');
       if(id===0){
-        slot.onclick = ()=>{ this.selectedBlock = id; this.updateHotbarUI(); };
+        slot.onclick = ()=>{ this.selectedSlot = idx; this.selectedBlock = id; this.updateHotbarUI(); };
         bar.appendChild(slot);
         return;
       }
@@ -3279,7 +4083,7 @@ class Game{
       slot.appendChild(cnt);
       const def = ALL_DEFS[id];
       if(def) attachTooltip(slot, def.name);
-      slot.onclick = ()=>{ this.selectedBlock = id; this.updateHotbarUI(); };
+      slot.onclick = ()=>{ this.selectedSlot = idx; this.selectedBlock = id; this.updateHotbarUI(); };
       bar.appendChild(slot);
     });
   }
@@ -3470,6 +4274,7 @@ class Game{
     if(px===feet.x && pz===feet.z && (py===feet.y||py===headY)) return;
     const heldId = this.selectedBlock;
     if(!BLOCKS[heldId] || BLOCKS[heldId].name==='air') return; // tools/items can't be placed
+    if(BLOCKS[heldId].creativeOnly && GAME_MODE!=='creative') return; // barrier etc: level-design tool, not a survival block
     if(GAME_MODE!=='creative'){
       if((this.inventoryCounts[heldId]||0)<=0) return;
     }
@@ -3952,7 +4757,7 @@ class Game{
       this.vel.y = vy*speed;
     } else {
       this.vel.y -= 22*delta; // gravity
-      if(KEY['Space'] && this.onGround){ this.vel.y = 8.2; }
+      if(KEY['Space'] && this.onGround){ this.vel.y = 8.0; }
       if(this.vel.y < -40) this.vel.y=-40;
     }
     this.collideAndMove(delta);
@@ -3989,14 +4794,15 @@ class Game{
     // columns first, then mesh all columns.
     const total = columns.length * CHUNKS_Y * 2; // generate + mesh pass, per chunk
     let done = 0;
-    const BATCH = 4; // chunks per frame before yielding, so the bar can repaint
+    const GEN_BATCH = 2;  // chunks per frame during generation (cheap, but frequent yields keep the bar smooth)
+    const MESH_BATCH = 1; // chunks per frame during meshing (most expensive step — yield every chunk)
 
     for(const [cx,cz] of columns){
       for(let cy=0; cy<CHUNKS_Y; cy++){
         const chunk = this.world.getChunk(cx,cy,cz,true);
         if(!chunk.generated) this.world.generateChunk(chunk);
         done++;
-        if(done%BATCH===0){
+        if(done%GEN_BATCH===0){
           if(onProgress) onProgress(done, total, 'Generating terrain…');
           await new Promise(r=>requestAnimationFrame(r));
         }
@@ -4012,7 +4818,7 @@ class Game{
           this.chunkGroup.add(chunk.mesh);
         }
         done++;
-        if(done%BATCH===0){
+        if(done%MESH_BATCH===0){
           if(onProgress) onProgress(done, total, 'Building the world…');
           await new Promise(r=>requestAnimationFrame(r));
         }
@@ -4061,18 +4867,42 @@ class Game{
       }
     }
 
-    // Build/rebuild dirty & needed chunks (throttled per frame to avoid hitches)
-    let budget = 3;
-    for(const key of needed){
-      if(budget<=0) break;
+    // Build/rebuild dirty & needed chunks (throttled per frame to avoid hitches).
+    // Soft cap: how many blocks' worth of work we're willing to spend
+    // building meshes this frame. A chunk's real (post-culling) face count
+    // isn't known until after we've built it, so we use the cheap
+    // estimateChunkCost() pre-check (solid-block count, no neighbor lookups)
+    // to decide whether a candidate chunk fits the REMAINING budget before
+    // committing to building it. If it doesn't fit yet, it's left dirty and
+    // retried on a later frame (once earlier/cheaper chunks have gone
+    // through) instead of forcing an oversized build through in a frame
+    // that already has other work queued — that stacking is what could
+    // stall the main thread long enough for the GPU driver to give up
+    // (WebGL context loss / white screen) when loading or placing blocks
+    // near a very dense area like the Gray Pillars easter egg.
+    let costBudget = 3000;
+    let builtCount = 0;
+    const MIN_BUILT_PER_FRAME = 1; // always let at least one chunk through, even if it's oversized, so nothing gets stuck forever
+    // Mesh nearest-needed chunks first (previously this iterated the `needed`
+    // Set in arbitrary insertion order, so distant chunks could get meshed
+    // before nearby ones, delaying what the player actually sees).
+    const neededSorted = columns.flatMap(([cx,cz])=>{
+      const arr = [];
+      for(let cy=0; cy<CHUNKS_Y; cy++) arr.push(chunkKey(cx,cy,cz));
+      return arr;
+    });
+    for(const key of neededSorted){
       const [cx,cy,cz] = key.split(',').map(Number);
       const chunk = this.world.getChunk(cx,cy,cz);
       if(!chunk || !chunk.generated) continue; // not generated yet — mesh it once it is
       if(chunk.dirty || !chunk.mesh){
+        const cost = estimateChunkCost(chunk);
+        if(cost > costBudget && builtCount >= MIN_BUILT_PER_FRAME) continue; // too expensive for what's left this frame — try again next frame
         // only mesh if it or any neighbor is generated enough to know exposure
         buildChunkMesh(this.world, chunk);
         this.chunkGroup.add(chunk.mesh);
-        budget--;
+        costBudget -= cost;
+        builtCount++;
       } else if(chunk.mesh && !chunk.mesh.parent){
         this.chunkGroup.add(chunk.mesh);
       }
@@ -4159,20 +4989,31 @@ class Game{
     tagSprite.position.set(0,2.15,0);
     built.group.add(tagSprite);
 
+    const x0 = Number.isFinite(data.x) ? data.x : 0;
+    const y0 = Number.isFinite(data.y) ? data.y : 0;
+    const z0 = Number.isFinite(data.z) ? data.z : 0;
     this.otherPlayers.set(uid, {
       group: built.group, parts: built.parts,
-      target: new THREE.Vector3(data.x||0,data.y||0,data.z||0),
-      current: new THREE.Vector3(data.x||0,data.y||0,data.z||0),
-      yaw: data.yaw||0, pitch:data.pitch||0, moving:false, animT:0,
+      target: new THREE.Vector3(x0,y0,z0),
+      current: new THREE.Vector3(x0,y0,z0),
+      yaw: Number.isFinite(data.yaw)?data.yaw:0, pitch: Number.isFinite(data.pitch)?data.pitch:0, moving:false, animT:0,
       name: data.name||'Player', playerId: data.playerId||null,
     });
   }
   _updateOtherPlayer(uid, data){
     const p = this.otherPlayers.get(uid);
     if(!p){ this._addOtherPlayer(uid,data); return; }
-    p.target.set(data.x, data.y, data.z);
-    p.yaw = data.yaw; p.pitch = data.pitch;
-    p.moving = data.moving;
+    // Defend against any missing/NaN fields in the remote payload — a bad
+    // Vector3 here propagates through lerp() into the object's world
+    // matrix and can throw inside renderer.render(), which kills the
+    // entire frame (and every frame after) for BOTH players.
+    const x = Number.isFinite(data.x) ? data.x : p.target.x;
+    const y = Number.isFinite(data.y) ? data.y : p.target.y;
+    const z = Number.isFinite(data.z) ? data.z : p.target.z;
+    p.target.set(x, y, z);
+    p.yaw = Number.isFinite(data.yaw) ? data.yaw : p.yaw;
+    p.pitch = Number.isFinite(data.pitch) ? data.pitch : p.pitch;
+    p.moving = !!data.moving;
     p.name = data.name||p.name; p.playerId = data.playerId||p.playerId;
   }
   _removeOtherPlayer(uid){
@@ -4291,47 +5132,45 @@ class Game{
     }
   }
 
-  /* ---------------- Void Arena portal ---------------- */
-  // Falling out of the world drops the player instantly (no damage) into the
-  // Void Arena pocket — a small isolated structure elsewhere in the same
-  // world, rather than the usual respawn-at-spawn. Their exact fall position
-  // is remembered so the arch can send them right back.
-  teleportToVoidArena(){
-    this._voidReturnPos = this.pos.clone();
-    this._inVoidArena = true;
-    this._voidArchCooldown = 1.0; // don't let the arrival itself count as an arch crossing
+  /* ---------------- Arch portals ---------------- */
+  // Walking into Arch A's doorway (out at the Gray Pillars) sends the player
+  // to Arch B (x/z=50,000,000, y=50); walking into Arch B's doorway sends
+  // them back to Arch A. Both directions land the player a couple of blocks
+  // back from the destination arch's doorway, facing it.
+  teleportToArch(which){
+    const origin = which==='A' ? ARCH_A_ORIGIN : ARCH_B_ORIGIN;
+    const floorY = which==='A' ? 1 : ARCH_B_ORIGIN.y;
+    this._archCooldown = 1.0; // don't let the arrival itself immediately re-trigger a crossing
     this.vel.set(0,0,0);
-    // land just inside the floor, a couple blocks back from the arch doorway
-    this.pos.set(VOID_ARENA_ORIGIN.x, VOID_ARENA_FLOOR_Y+2, VOID_ARENA_ORIGIN.z);
+    // land a couple of blocks back from the doorway (arch faces +x, so back
+    // off along -x), centered on the doorway's z
+    this.pos.set(origin.x - 3, floorY + 1, origin.z);
+    this.yaw = 0; // face +x, toward the arch
     this.showCenterMsg('...', 1600);
   }
 
-  // Sends the player back out through the arch to wherever they originally
-  // fell from — a two-way crossing, since walking through in the other
-  // direction is exactly how they got out of the void in the first place.
-  returnFromVoidArena(){
-    this._inVoidArena = false;
-    this._voidArchCooldown = 1.0;
-    this.vel.set(0,0,0);
-    if(this._voidReturnPos){
-      this.pos.copy(this._voidReturnPos);
-      this.pos.y = Math.max(this.pos.y, 2); // never drop them back below the world
-    } else {
-      this.pos.copy(this.respawnPos); // safety net if we somehow have no return point
-    }
-    this._voidReturnPos = null;
+  // Called every frame. Detects the player walking through either arch's
+  // doorway (local x=0 relative to that arch's origin, within z -1..1) and
+  // triggers the swap to the other arch — a genuine two-way crossing rather
+  // than a fall-based trigger, so it works regardless of current state.
+  checkArchCrossing(delta){
+    if(this._archCooldown>0){ this._archCooldown = Math.max(0, this._archCooldown-delta); return; }
+    const dxA = this.pos.x - ARCH_A_ORIGIN.x, dzA = this.pos.z - ARCH_A_ORIGIN.z;
+    if(Math.abs(dxA) < 0.6 && Math.abs(dzA) < 1){ this.teleportToArch('B'); return; }
+    const dxB = this.pos.x - ARCH_B_ORIGIN.x, dzB = this.pos.z - ARCH_B_ORIGIN.z;
+    if(Math.abs(dxB) < 0.6 && Math.abs(dzB) < 1){ this.teleportToArch('A'); return; }
   }
 
-  // Called every frame while _inVoidArena. The arch's doorway column sits at
-  // a fixed world x (see _voidArenaBlockAt's archX) straddling lz -1..1 —
-  // crossing that x while within the doorway's z-span triggers the return.
-  checkVoidArchCrossing(){
-    if(this._voidArchCooldown>0) return;
-    const archX = VOID_ARENA_ORIGIN.x + VOID_ARENA_RADIUS - 2;
-    const lz = this.pos.z - VOID_ARENA_ORIGIN.z;
-    if(Math.abs(this.pos.x - archX) < 0.6 && Math.abs(lz) < 1){
-      this.returnFromVoidArena();
-    }
+  // Called every frame regardless of state: keeps the eerie atmosphere
+  // (fog/ambient/drone) active for as long as the player is anywhere inside
+  // Arch B's clearing — not just at the instant of teleporting — and turns
+  // it back off if they wander back out on foot without using the arch.
+  updateArchAtmosphere(){
+    const dx = this.pos.x-ARCH_B_ORIGIN.x, dz = this.pos.z-ARCH_B_ORIGIN.z;
+    const inArchBClearing = (dx*dx+dz*dz) <= ARCH_CLEARING_RADIUS*ARCH_CLEARING_RADIUS;
+    if(inArchBClearing && !this._voidDrone) this.startVoidDrone();
+    else if(!inArchBClearing && this._voidDrone) this.stopVoidDrone();
+    this._inArchBClearing = inArchBClearing;
   }
 
   // Renders the heart row in the HUD from this.health / this.maxHealth.
@@ -4366,41 +5205,58 @@ class Game{
     const loop = ()=>{
       if(this._quit) return; // stop the render loop after Save & Quit
       requestAnimationFrame(loop);
-      const delta = Math.min(0.05, this.clock.getDelta());
-      this._fpsTimer += delta; this._frameCount++;
-      if(this._fpsTimer>=1){ this.fps=this._frameCount; this._frameCount=0; this._fpsTimer=0; }
+      // Everything below is wrapped in try/catch: multiplayer data arrives
+      // asynchronously from Firebase, and a single malformed remote update
+      // (bad position, missing field, etc.) throwing here would otherwise
+      // abort this frame's render() call — and since requestAnimationFrame
+      // was already scheduled, the *next* frame hits the same bad state and
+      // throws again, forever. That reads to the user as the screen going
+      // black (last good frame), then blank/white (browser repaint with no
+      // canvas content). Catching keeps the loop alive so a bad update just
+      // gets skipped instead of permanently killing rendering.
+      try{
+        const delta = Math.min(0.05, this.clock.getDelta());
+        this._fpsTimer += delta; this._frameCount++;
+        if(this._fpsTimer>=1){ this.fps=this._frameCount; this._frameCount=0; this._fpsTimer=0; }
 
-      if(this.invulnT>0) this.invulnT = Math.max(0, this.invulnT-delta);
-      if(this._voidArchCooldown>0) this._voidArchCooldown = Math.max(0, this._voidArchCooldown-delta);
+        if(this.invulnT>0) this.invulnT = Math.max(0, this.invulnT-delta);
 
-      if(!this.paused && !this.dead){
-        this.updateMovement(delta);
-        this.updateCamera();
-        this.updateChunkStreaming();
-        this.updateMining(delta);
-        // Falling out of the world (e.g. through an unloaded chunk edge or a
-        // generation gap) no longer just hurts the player — once they've
-        // fallen far enough into the void, they're pulled into the Void
-        // Arena pocket instead. Checked before the survival fall-damage
-        // fallback so it always wins.
-        if(this.pos.y < VOID_TELEPORT_Y && !this._inVoidArena){
-          this.teleportToVoidArena();
-        } else if(GAME_MODE==='survival' && this.pos.y < -8 && !this._inVoidArena){
-          this.damage(1);
+        if(!this.paused && !this.dead){
+          this.updateMovement(delta);
+          this.updateCamera();
+          // Skip while the GL context is down — buildChunkMesh creates
+          // THREE.BufferGeometry/Material objects that need a live context;
+          // everything stays marked dirty and streams back in automatically
+          // once webglcontextrestored fires (see renderer setup above).
+          if(!this._contextLost) this.updateChunkStreaming();
+          this.updateMining(delta);
+          // Falling out of the world hurts as normal — the void portal is only
+          // triggered by walking into one of the two arches, not by falling.
+          if(GAME_MODE==='survival' && this.pos.y < -8){
+            this.damage(1);
+          }
+          this.checkArchCrossing(delta);
+          this.updateArchAtmosphere();
         }
-        // While inside the arena, stepping through the arch (either face)
-        // sends the player back to wherever they fell from.
-        if(this._inVoidArena) this.checkVoidArchCrossing();
+        if(!this.paused){
+          this._liquidTickAccum = (this._liquidTickAccum||0) + delta;
+          if(this._liquidTickAccum >= 0.15){
+            this._liquidTickAccum = 0;
+            this.world.stepLiquids(300);
+          }
+        }
+        this.animateOtherPlayers(delta);
+        if(!this.paused) this.updateDayNight(delta);
+        if(!this.paused && !this.dead) this.updateMobs(delta);
+        if(!this.paused) this.updateFootsteps(delta);
+
+        this.updateDebugPanel();
+        if(this._frameCount%20===0) this.updatePlayerListUI();
+
+        if(!this._contextLost) this.renderer.render(this.scene, this.camera);
+      }catch(err){
+        console.error('Frame error (recovered, rendering continues):', err);
       }
-      this.animateOtherPlayers(delta);
-      if(!this.paused) this.updateDayNight(delta);
-      if(!this.paused && !this.dead) this.updateMobs(delta);
-      if(!this.paused) this.updateFootsteps(delta);
-
-      this.updateDebugPanel();
-      if(this._frameCount%20===0) this.updatePlayerListUI();
-
-      this.renderer.render(this.scene, this.camera);
     };
     loop();
   }
@@ -4421,6 +5277,54 @@ class Game{
       this._footstepDist = 0;
       this.playFootstepSound();
     }
+  }
+
+  // Low, slow-throbbing drone that plays for as long as the player is inside
+  // the Void Arena — two detuned sine oscillators plus a slow LFO on gain so
+  // it breathes rather than droning flat. Uses the same WebAudio context as
+  // footsteps; entirely synthesized, no asset dependency.
+  startVoidDrone(){
+    try{
+      if(!this._actx) this._actx = new (window.AudioContext||window.webkitAudioContext)();
+      const ctx = this._actx;
+      if(ctx.state === 'suspended'){ ctx.resume().catch(()=>{}); }
+      this.stopVoidDrone(); // guard against double-starts
+      const vol = Math.max(0, Math.min(1, (SETTINGS.volume ?? 70)/100)) * 0.12;
+
+      const master = ctx.createGain();
+      master.gain.setValueAtTime(0, ctx.currentTime);
+      master.gain.linearRampToValueAtTime(vol, ctx.currentTime+2.5); // slow fade-in, unsettling rather than sudden
+      master.connect(ctx.destination);
+
+      const osc1 = ctx.createOscillator();
+      osc1.type = 'sine'; osc1.frequency.setValueAtTime(48, ctx.currentTime);
+      const osc2 = ctx.createOscillator();
+      osc2.type = 'sine'; osc2.frequency.setValueAtTime(51, ctx.currentTime); // slightly detuned -> slow beating throb
+
+      const lfo = ctx.createOscillator();
+      lfo.type = 'sine'; lfo.frequency.setValueAtTime(0.12, ctx.currentTime); // ~8s breathing cycle
+      const lfoGain = ctx.createGain();
+      lfoGain.gain.setValueAtTime(vol*0.4, ctx.currentTime);
+      lfo.connect(lfoGain); lfoGain.connect(master.gain);
+
+      osc1.connect(master); osc2.connect(master);
+      osc1.start(); osc2.start(); lfo.start();
+
+      this._voidDrone = { osc1, osc2, lfo, master };
+    }catch(e){ /* audio not critical, fail silently */ }
+  }
+
+  stopVoidDrone(){
+    if(!this._voidDrone) return;
+    try{
+      const { osc1, osc2, lfo, master } = this._voidDrone;
+      const ctx = this._actx;
+      master.gain.cancelScheduledValues(ctx.currentTime);
+      master.gain.setValueAtTime(master.gain.value, ctx.currentTime);
+      master.gain.linearRampToValueAtTime(0, ctx.currentTime+0.8);
+      setTimeout(()=>{ try{ osc1.stop(); osc2.stop(); lfo.stop(); }catch(e){} }, 900);
+    }catch(e){ /* fail silently */ }
+    this._voidDrone = null;
   }
 
   playFootstepSound(){
@@ -4465,6 +5369,34 @@ class Game{
      hostile mob spawns and dims light-level-sensitive spawn checks. */
   updateDayNight(delta){
     this.dayTime = (this.dayTime + delta/this.DAY_LENGTH) % 1;
+
+    // Arch B's clearing: fixed, sunless atmosphere instead of the normal
+    // day/night blend — dim sickly ambient light, tight cold fog so the
+    // pillar ring looms out of the murk instead of being visible from
+    // across the floor, and no sun/moon disc since there's no sky out here.
+    if(this._inArchBClearing){
+      this.sun.intensity = 0;
+      this.moonLight.intensity = 0;
+      this.ambient.intensity = 0.16;
+      this.ambient.color.set(0x5a6b5f); // sickly gray-green fill light
+      const voidColor = new THREE.Color(0x0d100e);
+      this.scene.background = voidColor;
+      this.scene.fog.color = voidColor;
+      this.scene.fog.near = 8;
+      this.scene.fog.far = 34;
+      this.isNight = true; // keeps hostile-mob light-level checks consistent if mobs ever wander in
+      this._leftArchBClearing = true; // arm the one-shot restore for whenever we do leave
+      return;
+    }
+    // Leaving Arch B's clearing restores normal fog distance/ambient tint —
+    // the scene fog object's near/far and the ambient color were overridden
+    // above, so put them back once here rather than every normal frame.
+    if(this._leftArchBClearing){
+      this._leftArchBClearing = false;
+      this.applyGraphicsSettings();
+      this.ambient.color.set(0x9fb8d8); // restore the normal sky-blue ambient tint
+    }
+
     const t = this.dayTime;
     // sun angle: full circle over the day, so it's below the horizon at night
     const angle = t*Math.PI*2 - Math.PI/2; // -PI/2 at t=0 (dawn, rising in the east)
@@ -4517,8 +5449,11 @@ class Game{
       if(dx===0&&dy===0&&dz===0) continue;
       const dist = Math.hypot(dx,dy,dz);
       if(dist>6) continue;
-      if(this.world.getBlock(Math.floor(x)+dx, Math.floor(y)+dy, Math.floor(z)+dz)===41){
+      const b = this.world.getBlock(Math.floor(x)+dx, Math.floor(y)+dy, Math.floor(z)+dz);
+      if(b===41){
         base = Math.max(base, Math.round(14 - dist*1.8));
+      } else if(b>=52 && b<=58){ // lava (source + flowing) glows dimmer than a torch
+        base = Math.max(base, Math.round(9 - dist*1.6));
       }
     }
     return Math.max(0, Math.min(15, base));
@@ -4724,6 +5659,73 @@ function iconDataUrl(blockId){
   return url;
 }
 
+// iconDataUrl()/itemIconDataUrl() short-circuit to a raw remote URL whenever a
+// block/tool has a custom image (see HARDCODED_BLOCK_TEXTURES/TOOL_ICON_URLS),
+// and stash *that string* in iconCache. That's fine for the WebGL side (the
+// TextureLoader pre-warm already downloads+decodes those same URLs for the
+// world materials), but every hotbar/inventory/crafting slot creates a brand
+// new <img> element and points its .src straight at that remote URL — so the
+// browser has to fetch+decode it live for that <img>, independent of the
+// world's own warm-up, which is exactly the pop-in you see when placing/
+// crafting a block for the first time. Fix: pre-fetch every such URL into an
+// Image() up front, draw it to a canvas once decoded, and cache the resulting
+// *data URL* instead of the raw remote one — so by the time any <img> asks
+// for it, iconCache already holds fully-decoded, embedded image data and the
+// <img> paints instantly with zero network round-trip.
+const PENDING_ICON_LOADS = [];
+function prefetchIconUrlToDataUrl(cacheKey, url){
+  const p = new Promise((resolve)=>{
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = ()=>{
+      try{
+        const c = makeCanvas(Math.max(img.naturalWidth||32,1));
+        c.width = img.naturalWidth || 32; c.height = img.naturalHeight || 32;
+        const ctx = c.getContext('2d');
+        ctx.drawImage(img,0,0);
+        iconCache[cacheKey] = c.toDataURL();
+      }catch(e){
+        // canvas got tainted (host without CORS headers) or some other decode
+        // failure — leave iconCache[cacheKey] as the raw URL fallback already
+        // set by iconDataUrl()/itemIconDataUrl() so the icon still shows up,
+        // it just won't have been pre-decoded.
+      }
+      resolve();
+    };
+    img.onerror = ()=>resolve(); // keep whatever fallback iconCache already has
+    img.src = url;
+  });
+  PENDING_ICON_LOADS.push(p);
+  return p;
+}
+// Walk every block/tool that has a custom image and kick off its icon
+// pre-fetch. Safe to call before the menu shows, alongside
+// applyHardcodedBlockTextures()/warmAllBlockTextures() — this is the 2D-icon
+// counterpart to those two, which only warm the 3D block materials.
+function warmAllIcons(){
+  for(const blockIdStr in BLOCKS){
+    const b = BLOCKS[blockIdStr];
+    if(b.name==='air') continue;
+    const blockId = +blockIdStr;
+    const sideFace = (b.tex && b.tex.all) ? 'all' : 'side';
+    const customUrl = BLOCK_SIDE_TEXTURES[faceSlotKey(blockId, sideFace)];
+    if(customUrl) prefetchIconUrlToDataUrl(blockId, customUrl);
+  }
+  for(const name in TOOL_ICON_URLS){
+    const url = TOOL_ICON_URLS[name];
+    if(!url) continue;
+    const item = Object.values(ITEMS).find(it=>it.name===name);
+    if(item) prefetchIconUrlToDataUrl(item.id, url);
+  }
+}
+// Await every icon pre-fetch kicked off so far, mirroring
+// waitForAllTexturesToLoad() for the 3D materials — call this before the
+// loading screen finishes so icons are guaranteed decoded by the time any UI
+// panel can possibly render them.
+function waitForAllIconsToLoad(){
+  return Promise.all(PENDING_ICON_LOADS);
+}
+
 // Small pixel-art heart icon for the HUD health row. state: 'full'|'half'|'empty'.
 const heartIconCache = {};
 function heartIconDataUrl(state){
@@ -4788,6 +5790,50 @@ function setLoad(pct, label){
   if(label) document.getElementById('loadLabel').textContent = label;
 }
 
+const LOADING_TIPS = [
+  'Reduce your render distance to boost FPS!',
+  'Punching trees is faster with your bare hands than you\'d think.',
+  'Torches stop hostile mobs from spawning nearby.',
+  'Sand falls if there\'s nothing underneath it — watch your step!',
+  'You can stack items in your hotbar to save inventory space.',
+  'Lower your chunk view distance in Settings if the game feels laggy.',
+  'Water spreads, so dig carefully near lakes and oceans.',
+  'Building upward is often safer than tunneling straight down.',
+  'Leaves left floating too far from wood may slowly decay.',
+  'Keep a few torches on hand — dark caves hide dangers.',
+  'Craft tools before you run out of durability mid-dig!',
+  'Turning off distant fog rendering can help older devices run smoother.',
+  'Saving your world regularly means you never lose progress.',
+  'Grassy biomes are usually the safest place to spawn.',
+  'Placing torches on cave walls lights up more of the room at once.',
+];
+
+let loadTipTimer = null;
+function startLoadingTips(){
+  const tipEl = document.getElementById('loadTip');
+  const tipTextEl = document.getElementById('loadTipText');
+  if(!tipEl || !tipTextEl) return;
+  const order = LOADING_TIPS.slice().sort(()=>Math.random()-0.5);
+  let i = 0;
+  function showNext(){
+    tipEl.classList.remove('show');
+    setTimeout(()=>{
+      tipTextEl.textContent = order[i % order.length];
+      i++;
+      tipEl.classList.add('show');
+    }, 220);
+  }
+  showNext();
+  clearInterval(loadTipTimer);
+  loadTipTimer = setInterval(showNext, 3200);
+}
+function stopLoadingTips(){
+  clearInterval(loadTipTimer);
+  loadTipTimer = null;
+  const tipEl = document.getElementById('loadTip');
+  if(tipEl) tipEl.classList.remove('show');
+}
+
 function drawMenuBackground(){
   const canvas = document.getElementById('menuBgCanvas');
   const ctx = canvas.getContext('2d');
@@ -4848,9 +5894,46 @@ function buildSkinSelector(){
 let gameInstance = null;
 let PENDING_LOAD = null; // set by loadSavedWorld() before launchGame() runs
 
+// warmAllBlockTextures() (called at page load, before any renderer exists)
+// only builds the JS-side THREE.Material objects and kicks off image
+// downloads — it can't touch the GPU because there's no WebGL context yet.
+// The actual hitch when placing a block "for the first time" is WebGL
+// compiling that material's shader + uploading its texture to the GPU on
+// the first draw call. This forces that GPU-side cost to happen up front:
+// build one throwaway cube per known material, render them once (off in a
+// side scene so nothing is visible), then discard them. Must run AFTER
+// `gameInstance` (and its renderer) exist.
+function warmAllBlockMaterialsOnGPU(game){
+  const warmScene = new THREE.Scene();
+  const geo = new THREE.BoxGeometry(0.01,0.01,0.01); // tiny — cost is per-material/texture, not per-triangle
+  const meshes = [];
+  const seen = new Set();
+  for(const id in BLOCKS){
+    const b = BLOCKS[id];
+    if(!b.tex || b.name==='air' || b.renderInvisible) continue;
+    const faces = b.tex.all ? ['all'] : ['top','bottom','side','front'];
+    faces.forEach(face=>{
+      if(!b.tex.all && !b.tex[face]) return;
+      const key = faceMaterialKey(+id, face);
+      if(seen.has(key)) return;
+      seen.add(key);
+      const mat = getFaceMaterialByKey(key);
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.set(meshes.length*0.02, 5000, 0); // stacked far away, never actually visible on screen
+      warmScene.add(mesh);
+      meshes.push(mesh);
+    });
+  }
+  // one render call compiles + uploads every material used in warmScene
+  game.renderer.render(warmScene, game.camera);
+  meshes.forEach(m=> warmScene.remove(m));
+  geo.dispose();
+}
+
 async function launchGame(){
   document.getElementById('menuScreen').style.display='none';
   document.getElementById('loadingScreen').style.display='flex';
+  startLoadingTips();
 
   gameInstance = new Game();
 
@@ -4862,6 +5945,8 @@ async function launchGame(){
     gameInstance.pitch = PENDING_LOAD.pitch||0;
     gameInstance.hotbar = PENDING_LOAD.hotbar || gameInstance.hotbar;
     gameInstance.selectedBlock = PENDING_LOAD.selectedBlock ?? gameInstance.selectedBlock;
+  { const restoredSlotIdx = gameInstance.hotbar.indexOf(gameInstance.selectedBlock);
+    gameInstance.selectedSlot = restoredSlotIdx !== -1 ? restoredSlotIdx : 0; }
     gameInstance.inventoryCounts = PENDING_LOAD.inventoryCounts || gameInstance.inventoryCounts;
     gameInstance.toolDurability = PENDING_LOAD.toolDurability || gameInstance.toolDurability;
     gameInstance.worldId = PENDING_LOAD.worldId || null;
@@ -4885,12 +5970,34 @@ async function launchGame(){
     });
   }
 
+  // Drop an invisible Test_Block ~10 blocks above the spawn column. It
+  // occupies a cell (so it round-trips through the exact same chunk-mesh
+  // code path every real block does) but renderInvisible+solid:false means
+  // it draws nothing and can't be bumped into — it's purely there so the
+  // very first chunk mesh built this session already touches every block
+  // material at least once, in addition to the explicit warmAllBlockTextures()
+  // pass done at page load. Not written into blockDiffs, so it never gets
+  // saved into the world file.
+  {
+    const tbx = Math.floor(gameInstance.pos.x);
+    const tby = Math.floor(gameInstance.pos.y) + 10;
+    const tbz = Math.floor(gameInstance.pos.z);
+    gameInstance.world.setBlock(tbx, tby, tbz, 62, false);
+  }
+
   await gameInstance.pregenerateChunksAroundSpawn((done, total, label)=>{
     const pct = 40 + Math.round((done/total)*60);
     setLoad(Math.min(100, pct), label);
   });
+  setLoad(96, 'Finishing texture downloads…');
+  await waitForAllTexturesToLoad();
+  await waitForAllIconsToLoad();
+  setLoad(98, 'Warming up block textures…');
+  await new Promise(r=>requestAnimationFrame(r)); // let the label paint before the (synchronous) compile below
+  warmAllBlockMaterialsOnGPU(gameInstance);
   setLoad(100, 'Ready!');
 
+  stopLoadingTips();
   document.getElementById('loadingScreen').style.display='none';
   document.getElementById('hud').style.display='block';
   document.getElementById('mobileControls').style.display='';
@@ -4938,7 +6045,7 @@ async function createRoom(){
       if(!snap.exists()) break;
     }
     WORLD_ID = code;
-    WORLD_SEED = Math.floor(Math.random()*1000000);
+    WORLD_SEED = parseSeedInput() ?? Math.floor(Math.random()*1000000);
     await fbDB.ref(`worlds/${WORLD_ID}/meta`).set({ seed: WORLD_SEED, created: Date.now() });
 
     status.textContent = `Room created: ${WORLD_ID} — share this code with friends!`;
@@ -4998,8 +6105,69 @@ async function joinRoom(rawCode){
 
 function goOffline(){
   ONLINE_MODE = false;
-  WORLD_SEED = Math.floor(Math.random()*1000000);
+  WORLD_SEED = parseSeedInput() ?? Math.floor(Math.random()*1000000);
   launchGame();
+}
+
+/* ---------------- Seed input parsing ----------------
+   Accepts either a plain integer (used as-is) or arbitrary text (hashed
+   down to an integer via hash2), so players can type a memorable word
+   as a seed the same way most voxel games allow. Empty/whitespace input
+   returns null so callers fall back to a random seed. */
+function parseSeedInput(){
+  const raw = (document.getElementById('seedInput')?.value || '').trim();
+  if(!raw) return null;
+  if(/^-?\d+$/.test(raw)) return parseInt(raw, 10);
+  // hash arbitrary text into a stable 32-bit-ish integer seed
+  let h = 0;
+  for(let i=0;i<raw.length;i++){
+    h = Math.floor(hash2(h + raw.charCodeAt(i), i, 777) * 1000000);
+  }
+  return Math.abs(h) || 1;
+}
+
+/* ---------------- World thumbnail preview ----------------
+   Renders a small top-down biome-color map for a given seed by sampling
+   the same pure heightAt()/biomeAt() logic used for real terrain gen —
+   a throwaway World instance is cheap since neither method touches
+   chunks/meshing, just seeded noise math. Used both for a live preview
+   of the seed field on the main menu and for saved-world thumbnails. */
+const BIOME_THUMB_COLORS = {
+  ocean:'#2a5d8f', beach:'#d8c98a', desert:'#dcc879', volcanic:'#5a3a30',
+  mountains:'#8a8f9a', snowy_peak:'#eef2f7', forest:'#356b3a', plains:'#6fa851',
+};
+function renderWorldThumbnail(canvas, seed){
+  if(!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  const img = ctx.createImageData(w, h);
+  const world = new World(seed);
+  // Sample a wide area (each pixel = many world blocks) centered on spawn
+  // so the thumbnail shows the general character of the seed (coastlines,
+  // mountain ranges, deserts) rather than one tiny, unrepresentative patch.
+  const SAMPLE_STEP = 24;
+  for(let py=0; py<h; py++){
+    for(let px=0; px<w; px++){
+      const wx = (px - w/2) * SAMPLE_STEP;
+      const wz = (py - h/2) * SAMPLE_STEP;
+      const biome = world.biomeAt(wx, wz);
+      const hex = BIOME_THUMB_COLORS[biome] || '#444';
+      const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+      const i = (py*w+px)*4;
+      img.data[i]=r; img.data[i+1]=g; img.data[i+2]=b; img.data[i+3]=255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+}
+let _seedThumbDebounce = null;
+function updateSeedThumbPreview(){
+  const canvas = document.getElementById('seedThumbCanvas');
+  if(!canvas) return;
+  clearTimeout(_seedThumbDebounce);
+  _seedThumbDebounce = setTimeout(()=>{
+    const seed = parseSeedInput() ?? Math.floor(hash2(1,2,3)*1000000); // stable placeholder when empty
+    renderWorldThumbnail(canvas, seed);
+  }, 150);
 }
 
 /* ---------------- Multi-world save storage ----------------
@@ -5022,6 +6190,10 @@ function saveWorldSlot(save){
     worldName: save.worldName,
     mode: save.mode,
     savedAt: save.savedAt,
+    seed: save.seed, // kept in the lightweight index too, so the Saved
+                      // Worlds list can render a thumbnail without having
+                      // to parse every save's full (potentially large)
+                      // blockDiffs payload just to find the seed
   });
   setWorldIndex(idx);
 }
@@ -5042,6 +6214,21 @@ function migrateLegacySave(){
   if(!legacy.worldId) legacy.worldId = 'w_legacy_' + (legacy.savedAt || Date.now());
   if(!legacy.worldName) legacy.worldName = (legacy.name || 'Player') + "'s World";
   saveWorldSlot(legacy);
+}
+
+// Backfills `seed` onto any index entries saved before that field was added
+// to the index (older saves still have it in their full record), so
+// thumbnails can render for worlds saved with an earlier version of the game.
+function backfillIndexSeeds(){
+  const idx = getWorldIndex();
+  let changed = false;
+  idx.forEach(w=>{
+    if(w.seed==null){
+      const full = loadWorldSlot(w.worldId);
+      if(full && full.seed!=null){ w.seed = full.seed; changed = true; }
+    }
+  });
+  if(changed) setWorldIndex(idx);
 }
 
 function hasSavedWorld(){
@@ -5099,6 +6286,7 @@ function loadSavedWorld(){
 }
 function renderSavedWorldsList(){
   migrateLegacySave();
+  backfillIndexSeeds();
   const body = document.getElementById('savedWorldsList');
   const idx = getWorldIndex().slice().sort((a,b)=>b.savedAt-a.savedAt);
   if(idx.length===0){
@@ -5109,10 +6297,17 @@ function renderSavedWorldsList(){
   idx.forEach(w=>{
     const row = document.createElement('div');
     row.className = 'friendRow';
-    row.innerHTML = `<span>
+    const thumb = document.createElement('canvas');
+    thumb.className = 'worldThumb'; thumb.width = 32; thumb.height = 32;
+    row.appendChild(thumb);
+    const label = document.createElement('span');
+    label.style.flex = '1';
+    label.innerHTML = `
         <span class="frName">${escapeHtml(w.worldName||'Unnamed World')}</span><br>
         <span class="frId">${(w.mode||'survival').toUpperCase()} · saved ${escapeHtml(formatSavedAt(w.savedAt))}</span>
-      </span>`;
+      `;
+    row.appendChild(label);
+    if(w.seed!=null) renderWorldThumbnail(thumb, w.seed);
     const btnWrap = document.createElement('div');
     btnWrap.style.cssText = 'display:flex; gap:6px; flex:none;';
     const loadBtn = document.createElement('button');
@@ -5141,17 +6336,38 @@ function renderSavedWorldsList(){
 
 window.addEventListener('DOMContentLoaded', ()=>{
   applyHardcodedBlockTextures();
-  loadSavedCustomTextures();
+  // loadSavedCustomTextures() intentionally NOT called: it re-applies
+  // whatever was last saved to the (now-unreachable, T-key-removed)
+  // in-game Custom Textures panel, which silently overwrote any
+  // HARDCODED_BLOCK_TEXTURES slot with old/stale saved data every time a
+  // browser had leftover localStorage from before. HARDCODED_BLOCK_TEXTURES
+  // is now the single source of truth for "normal" block textures, so any
+  // leftover saved override is discarded instead of loaded.
+  localStorage.removeItem('vf_blocksidetex');
   loadSavedBlockSounds();
+  warmAllBlockTextures();
+  // 2D hotbar/inventory/crafting icons are a separate pipeline from the 3D
+  // block materials above (see warmAllIcons() comment) — warm them here too
+  // so icons are already decoded data URLs by the time the menu/any panel
+  // can render them, not just the in-world block faces.
+  warmAllIcons();
 
+  startLoadingTips();
   setLoad(15,'Painting blocks…');
   setTimeout(()=>{
     setLoad(45,'Carving terrain…');
     setTimeout(()=>{
       setLoad(75,'Stitching player skins…');
-      setTimeout(()=>{
+      setTimeout(async ()=>{
+        // Give icon downloads a chance to finish decoding before the menu
+        // appears — same idea as waitForAllTexturesToLoad() in launchGame(),
+        // just for the 2D icon cache instead of the 3D materials. This can't
+        // block forever if a host is slow/unreachable (each promise always
+        // resolves via onerror), so it won't hang the boot sequence.
+        await waitForAllIconsToLoad();
         setLoad(100,'Ready!');
         setTimeout(()=>{
+          stopLoadingTips();
           document.getElementById('loadingScreen').style.display='none';
           document.getElementById('menuScreen').style.display='flex';
           drawMenuBackground();
@@ -5160,10 +6376,21 @@ window.addEventListener('DOMContentLoaded', ()=>{
           if(savedName) document.getElementById('nameInput').value = savedName;
           document.getElementById('uidNote').textContent = `Your friend ID: ${PLAYER_ID} (share this so others can add you)`;
           updateLoadWorldButtonVisibility();
+          updateSeedThumbPreview();
         }, 300);
       }, 350);
     }, 350);
   }, 300);
+
+  document.getElementById('seedInput').addEventListener('input', updateSeedThumbPreview);
+  document.getElementById('seedThumbCanvas').addEventListener('click', ()=>{
+    // no seed typed yet -> clicking the preview rolls a random one and shows it,
+    // so players can "reroll" a seed visually before committing to it
+    if(!document.getElementById('seedInput').value.trim()){
+      document.getElementById('seedInput').value = String(Math.floor(Math.random()*1000000));
+    }
+    updateSeedThumbPreview();
+  });
 
   document.querySelectorAll('#modeRow .modeBtn').forEach(btn=>{
     btn.addEventListener('click', ()=>{
@@ -5174,18 +6401,10 @@ window.addEventListener('DOMContentLoaded', ()=>{
   });
 
   document.getElementById('createRoomBtn').addEventListener('click', ()=>{
-    const name = document.getElementById('nameInput').value.trim();
-    PLAYER_NAME = name || ('Player'+Math.floor(Math.random()*1000));
-    localStorage.setItem('vf_name', PLAYER_NAME);
-    document.getElementById('menuStatus').style.color = '#9aa4c0';
-    createRoom();
+    alert('Multiplayer is unavailable for now');
   });
   document.getElementById('joinRoomBtn').addEventListener('click', ()=>{
-    const name = document.getElementById('nameInput').value.trim();
-    PLAYER_NAME = name || ('Player'+Math.floor(Math.random()*1000));
-    localStorage.setItem('vf_name', PLAYER_NAME);
-    document.getElementById('menuStatus').style.color = '#9aa4c0';
-    joinRoom(document.getElementById('roomCodeInput').value);
+    alert('Multiplayer is unavailable for now');
   });
   document.getElementById('roomCodeInput').addEventListener('keydown', (e)=>{
     if(e.key==='Enter') document.getElementById('joinRoomBtn').click();
