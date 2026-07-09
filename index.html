@@ -775,9 +775,39 @@ const DEFAULT_SETTINGS = {
   volume: 70,
   mouseSens: 10, // 1-20, mapped to an actual sensitivity multiplier
 };
+
+// Cheap, synchronous hardware guess used ONLY to pick friendlier first-run
+// defaults for weak machines (old school lab desktops with shared/integrated
+// GPUs, low core counts, low RAM) — this never overrides a value the player
+// has already saved, it only changes what a brand-new save starts at, so
+// first load doesn't try to generate/mesh a huge render-distance world (the
+// thing that can pin the CPU/GPU hard enough to make a low-end box feel like
+// it's about to die) before the player has had any chance to turn it down.
+function guessLowEndDevice(){
+  try{
+    const cores = navigator.hardwareConcurrency || 4;
+    const mem = navigator.deviceMemory || 4; // Chrome-only; other browsers default to 4 (i.e. "unknown, assume mid-range")
+    return cores <= 4 || mem <= 4;
+  }catch(e){ return false; }
+}
+function defaultSettingsForDevice(){
+  const base = Object.assign({}, DEFAULT_SETTINGS);
+  if(guessLowEndDevice()){
+    base.renderDistance = 2; // much cheaper first world-gen pass
+    base.graphics = 'low';
+  }
+  return base;
+}
 function loadSettings(){
   try{
-    const saved = JSON.parse(localStorage.getItem('vf_settings')||'{}');
+    const raw = localStorage.getItem('vf_settings');
+    if(raw===null){
+      // No saved settings yet — this is a first run on this browser, so
+      // it's safe to pick a hardware-aware default instead of always
+      // assuming a mid/high-end machine.
+      return defaultSettingsForDevice();
+    }
+    const saved = JSON.parse(raw);
     return Object.assign({}, DEFAULT_SETTINGS, saved);
   }catch(e){ return Object.assign({}, DEFAULT_SETTINGS); }
 }
@@ -1306,18 +1336,36 @@ const HARDCODED_BLOCK_TEXTURES = {
 19: {front: 'https://iili.io/Cci1qG9.png', top: 'https://iili.io/Cci1FQS.png', side: 'https://iili.io/Cci1fC7.png', bottom: 'https://iili.io/Cci1FQS.png'},
 20: {all: 'https://iili.io/CciJ13v.png'},
 };
-function applyHardcodedBlockTextures(){
+// Loads every hardcoded block texture ONE AT A TIME instead of firing off
+// ~30 simultaneous image requests + material rebuilds in a single
+// synchronous loop. Firing them all at once was what made the page feel
+// like it "paused" right at load — the browser was busy kicking off a huge
+// burst of network+decode work with nothing yielding back to the render
+// loop in between. Awaiting each load before starting the next (with a
+// frame yield after each one) keeps the tab responsive and lets a caller
+// report real per-texture progress instead of a black box.
+async function applyHardcodedBlockTextures(onProgress=null){
+  const jobs = [];
   for(const blockIdStr in HARDCODED_BLOCK_TEXTURES){
     const faces = HARDCODED_BLOCK_TEXTURES[blockIdStr];
     for(const face in faces){
-      const key = faceSlotKey(+blockIdStr, face);
-      BLOCK_SIDE_TEXTURES[key] = faces[face];
-      // Actually load & apply the texture to the material, not just record
-      // the URL — otherwise any material already built/cached for this slot
-      // (e.g. via an icon/hotbar pre-warm) keeps its procedural texture and
-      // the hardcoded skin never visibly appears.
-      loadCustomTexture(+blockIdStr, face, faces[face], false).catch(()=>{});
+      jobs.push([+blockIdStr, face, faces[face]]);
     }
+  }
+  for(let i=0;i<jobs.length;i++){
+    const [blockId, face, url] = jobs[i];
+    const key = faceSlotKey(blockId, face);
+    BLOCK_SIDE_TEXTURES[key] = url;
+    // Actually load & apply the texture to the material, not just record
+    // the URL — otherwise any material already built/cached for this slot
+    // (e.g. via an icon/hotbar pre-warm) keeps its procedural texture and
+    // the hardcoded skin never visibly appears.
+    await loadCustomTexture(blockId, face, url, false).catch(()=>{});
+    if(onProgress) onProgress(i+1, jobs.length);
+    // Yield to the browser between each texture so the UI thread never gets
+    // hogged for the whole batch — this is the actual fix for the
+    // "whole page pauses while textures load" feeling.
+    await new Promise(r=>requestAnimationFrame(r));
   }
 }
 
@@ -1596,7 +1644,7 @@ const CHUNK_SIZE = 16;
 const WORLD_HEIGHT = 128;    // vertical chunks stacked: WORLD_HEIGHT/CHUNK_SIZE
 const CHUNKS_Y = WORLD_HEIGHT / CHUNK_SIZE; // 4
 const SEA_LEVEL = 30;
-let RENDER_DISTANCE = 4; // in chunks (radius) — mutable, adjustable in Settings
+let RENDER_DISTANCE = SETTINGS.renderDistance; // in chunks (radius) — mutable, adjustable in Settings; starts from the (possibly hardware-aware) saved/default settings instead of always 4
 
 let WORLD_SEED = 1337;
 
@@ -6334,8 +6382,7 @@ function renderSavedWorldsList(){
   });
 }
 
-window.addEventListener('DOMContentLoaded', ()=>{
-  applyHardcodedBlockTextures();
+window.addEventListener('DOMContentLoaded', async ()=>{
   // loadSavedCustomTextures() intentionally NOT called: it re-applies
   // whatever was last saved to the (now-unreachable, T-key-removed)
   // in-game Custom Textures panel, which silently overwrote any
@@ -6345,42 +6392,59 @@ window.addEventListener('DOMContentLoaded', ()=>{
   // leftover saved override is discarded instead of loaded.
   localStorage.removeItem('vf_blocksidetex');
   loadSavedBlockSounds();
+
+  startLoadingTips();
+  setLoad(2,'Painting blocks…');
+  // Let the loading screen actually paint before the texture work below
+  // starts, so the bar shows up instead of the page looking frozen.
+  await new Promise(r=>requestAnimationFrame(r));
+
+  // Load hardcoded block textures ONE AT A TIME (see applyHardcodedBlockTextures)
+  // and report real per-image progress instead of jumping the bar on a
+  // fake timer. This is the actual fix for the site "pausing" while
+  // textures load — the browser now yields a frame between every single
+  // image instead of kicking off ~30 downloads + material builds back to
+  // back in one synchronous loop.
+  await applyHardcodedBlockTextures((done,total)=>{
+    const pct = 5 + Math.round((done/total)*40); // 5%..45%
+    setLoad(pct, `Loading textures… (${done}/${total})`);
+  });
+
+  setLoad(48,'Carving terrain…');
+  await new Promise(r=>requestAnimationFrame(r));
+  // warmAllBlockTextures() only builds the procedural-fallback materials
+  // (cheap, synchronous, no network) — safe to run in one pass.
   warmAllBlockTextures();
+
+  setLoad(60,'Stitching player skins…');
+  await new Promise(r=>requestAnimationFrame(r));
   // 2D hotbar/inventory/crafting icons are a separate pipeline from the 3D
   // block materials above (see warmAllIcons() comment) — warm them here too
   // so icons are already decoded data URLs by the time the menu/any panel
-  // can render them, not just the in-world block faces.
+  // can render them, not just the in-world block faces. Icon downloads run
+  // in parallel (they're small/independent), but we still yield and show
+  // progress while we wait for them.
   warmAllIcons();
+  setLoad(80,'Finishing up icons…');
+  // Give icon downloads a chance to finish decoding before the menu
+  // appears — same idea as waitForAllTexturesToLoad() in launchGame(),
+  // just for the 2D icon cache instead of the 3D materials. This can't
+  // block forever if a host is slow/unreachable (each promise always
+  // resolves via onerror), so it won't hang the boot sequence.
+  await waitForAllIconsToLoad();
 
-  startLoadingTips();
-  setLoad(15,'Painting blocks…');
-  setTimeout(()=>{
-    setLoad(45,'Carving terrain…');
-    setTimeout(()=>{
-      setLoad(75,'Stitching player skins…');
-      setTimeout(async ()=>{
-        // Give icon downloads a chance to finish decoding before the menu
-        // appears — same idea as waitForAllTexturesToLoad() in launchGame(),
-        // just for the 2D icon cache instead of the 3D materials. This can't
-        // block forever if a host is slow/unreachable (each promise always
-        // resolves via onerror), so it won't hang the boot sequence.
-        await waitForAllIconsToLoad();
-        setLoad(100,'Ready!');
-        setTimeout(()=>{
-          stopLoadingTips();
-          document.getElementById('loadingScreen').style.display='none';
-          document.getElementById('menuScreen').style.display='flex';
-          drawMenuBackground();
-          buildSkinSelector();
-          const savedName = localStorage.getItem('vf_name');
-          if(savedName) document.getElementById('nameInput').value = savedName;
-          document.getElementById('uidNote').textContent = `Your friend ID: ${PLAYER_ID} (share this so others can add you)`;
-          updateLoadWorldButtonVisibility();
-          updateSeedThumbPreview();
-        }, 300);
-      }, 350);
-    }, 350);
-  }, 300);
+  setLoad(100,'Ready!');
+  await new Promise(r=>setTimeout(r,300));
+  stopLoadingTips();
+  document.getElementById('loadingScreen').style.display='none';
+  document.getElementById('menuScreen').style.display='flex';
+  drawMenuBackground();
+  buildSkinSelector();
+  const savedName = localStorage.getItem('vf_name');
+  if(savedName) document.getElementById('nameInput').value = savedName;
+  document.getElementById('uidNote').textContent = `Your friend ID: ${PLAYER_ID} (share this so others can add you)`;
+  updateLoadWorldButtonVisibility();
+  updateSeedThumbPreview();
 
   document.getElementById('seedInput').addEventListener('input', updateSeedThumbPreview);
   document.getElementById('seedThumbCanvas').addEventListener('click', ()=>{
