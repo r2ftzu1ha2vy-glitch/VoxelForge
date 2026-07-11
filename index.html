@@ -1372,27 +1372,19 @@ const BLOCK_SIDE_TEXTURES = {}; // "blockId_face" -> url
 //   3: { all: 'https://example.com/my-stone.png' }
 // Example: to reskin grass (id 1, distinct top/bottom/side):
 //   1: { top: 'https://example.com/grass-top.png', side: 'https://example.com/grass-side.png' }
+// NOTE: this table used to point at local files under assets/blocks/ that
+// were never actually shipped with the page. Every one of those requests
+// 404'd, then retried after 600ms, then finally gave up after an 8s
+// timeout per slot -- that's what caused the long freeze/lag on load, and
+// because the failed load also disposed the procedural fallback texture
+// before finding out the load failed, blocks rendered as blank white/black
+// with no texture at all. Leaving this table empty means every block just
+// uses its built-in procedural TexturePainters texture (which always
+// works, no network request needed) until you add real, hosted image URLs
+// here yourself. To use a real texture, add an entry pointing at a URL
+// that actually exists, e.g.:
+//   3: { all: 'https://your-cdn.example.com/stone.png' }
 const HARDCODED_BLOCK_TEXTURES = {
-1: { top: 'assets/blocks/1_top.png', side: 'assets/blocks/1_side.png', bottom: 'assets/blocks/1_bottom.png' },
-2: {all: 'assets/blocks/2_all.png'},
-3: {all: 'assets/blocks/3_all.png'},
-4: {all: 'assets/blocks/4_all.png'},
-5: {all: 'assets/blocks/5_all.png'},
-6: {top: 'assets/blocks/6_top.png', side: 'assets/blocks/6_side.png', bottom: 'assets/blocks/6_top.png'},
-7: {all: 'assets/blocks/7_all.png'},
-8: {all: 'assets/blocks/8_all.png'},
-9: {all: 'assets/blocks/9_all.png'},
-10: {all: 'assets/blocks/10_all.png'},
-11: {all: 'assets/blocks/11_all.png'},
-12: {all: 'assets/blocks/12_all.png'},
-13: {all: 'assets/blocks/13_all.png'},
-14: {all: 'assets/blocks/14_all.png'},
-15: {all: 'assets/blocks/15_all.png'},
-16: {all: 'assets/blocks/16_all.png'},
-17: {all: 'assets/blocks/17_all.png'},
-18: {top: 'assets/blocks/18_top.png', side: 'assets/blocks/18_side.png', bottom: 'assets/blocks/8_all.png'},
-19: {front: 'assets/blocks/19_front.png', top: 'assets/blocks/19_top.png', side: 'assets/blocks/19_side.png', bottom: 'assets/blocks/19_top.png'},
-20: {all: 'assets/blocks/20_all.png'},
 };
 // Loads every hardcoded block texture ONE AT A TIME instead of firing off
 // ~30 simultaneous image requests + material rebuilds in a single
