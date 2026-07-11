@@ -1410,20 +1410,26 @@ async function applyHardcodedBlockTextures(onProgress=null){
       jobs.push([+blockIdStr, face, faces[face]]);
     }
   }
-  for(let i=0;i<jobs.length;i++){
-    const [blockId, face, url] = jobs[i];
-    const key = faceSlotKey(blockId, face);
-    BLOCK_SIDE_TEXTURES[key] = url;
-    // Actually load & apply the texture to the material, not just record
-    // the URL — otherwise any material already built/cached for this slot
-    // (e.g. via an icon/hotbar pre-warm) keeps its procedural texture and
-    // the hardcoded skin never visibly appears.
-    await loadCustomTexture(blockId, face, url, false).catch(()=>{});
-    if(onProgress) onProgress(i+1, jobs.length);
-    // Yield to the browser between each texture so the UI thread never gets
-    // hogged for the whole batch — this is the actual fix for the
-    // "whole page pauses while textures load" feeling.
-    await new Promise(r=>requestAnimationFrame(r));
+  // Loading these one-at-a-time (await each, then wait a full frame) meant
+  // ~30 sequential round trips before the loading screen could finish —
+  // slow and choppy, especially on weaker devices/school wifi. Local
+  // same-origin images (assets/blocks/...) don't need to be rate-limited
+  // like the old hotlinked host did, so load them in small parallel
+  // batches instead: much faster overall while still yielding a frame
+  // between batches so the tab doesn't lock up.
+  const BATCH_SIZE = 6;
+  let done = 0;
+  for(let i=0;i<jobs.length;i+=BATCH_SIZE){
+    const batch = jobs.slice(i, i+BATCH_SIZE);
+    await Promise.all(batch.map(([blockId, face, url])=>{
+      const key = faceSlotKey(blockId, face);
+      BLOCK_SIDE_TEXTURES[key] = url;
+      return loadCustomTexture(blockId, face, url, false).catch(()=>{}).then(()=>{
+        done++;
+        if(onProgress) onProgress(done, jobs.length);
+      });
+    }));
+    await new Promise(r=>setTimeout(r, 0));
   }
 }
 
