@@ -1584,9 +1584,22 @@ function getFaceMaterialByKey(key){
 function loadCustomTexture(blockId, face, url, persist=true, _isRetry=false){
   const key = faceSlotKey(blockId, face);
   const p = new Promise((resolve,reject)=>{
+    let settled = false;
+    // Safety net: a request that neither loads nor errors (host hangs,
+    // stalls, or never responds) used to block this promise forever,
+    // freezing the whole one-at-a-time boot loop with zero console errors.
+    // Force it to give up after 8s so the loop can always move on.
+    const giveUpTimer = setTimeout(()=>{
+      if(settled) return;
+      settled = true;
+      reject(new Error('texture load timed out: '+url));
+    }, 8000);
     textureLoader.load(
       url,
       (tex)=>{
+        if(settled) return;
+        settled = true;
+        clearTimeout(giveUpTimer);
         tex.updateSamplingMode(BABYLON.Texture.NEAREST_SAMPLINGMODE);
         tex.wrapU = BABYLON.Texture.WRAP_ADDRESSMODE;
         tex.wrapV = BABYLON.Texture.WRAP_ADDRESSMODE;
@@ -1604,6 +1617,7 @@ function loadCustomTexture(blockId, face, url, persist=true, _isRetry=false){
       },
       undefined,
       (err)=>{
+        if(settled) return;
         // A single failed image load (host hiccup, rate limit, a request
         // that raced with a WebGL context loss) used to permanently leave
         // that block on its procedural fallback texture for the whole
@@ -1616,6 +1630,8 @@ function loadCustomTexture(blockId, face, url, persist=true, _isRetry=false){
             loadCustomTexture(blockId, face, url, persist, true).then(resolve).catch(reject);
           }, 600);
         } else {
+          settled = true;
+          clearTimeout(giveUpTimer);
           reject(err);
         }
       }
@@ -7283,7 +7299,11 @@ window.addEventListener('DOMContentLoaded', async ()=>{
   setLoad(2,'Painting blocks…');
   // Let the loading screen actually paint before the texture work below
   // starts, so the bar shows up instead of the page looking frozen.
-  await new Promise(r=>requestAnimationFrame(r));
+  // Uses setTimeout instead of requestAnimationFrame because rAF can be
+  // throttled/paused (backgrounded tab, some mobile browsers, low-power
+  // mode) and never fire, which silently hangs the whole boot sequence
+  // right here with no error and no image requests ever kicked off.
+  await new Promise(r=>setTimeout(r, 0));
 
   // Load hardcoded block textures ONE AT A TIME (see applyHardcodedBlockTextures)
   // and report real per-image progress instead of jumping the bar on a
@@ -7297,13 +7317,13 @@ window.addEventListener('DOMContentLoaded', async ()=>{
   });
 
   setLoad(48,'Carving terrain…');
-  await new Promise(r=>requestAnimationFrame(r));
+  await new Promise(r=>setTimeout(r, 0));
   // warmAllBlockTextures() only builds the procedural-fallback materials
   // (cheap, synchronous, no network) — safe to run in one pass.
   warmAllBlockTextures();
 
   setLoad(60,'Stitching player skins…');
-  await new Promise(r=>requestAnimationFrame(r));
+  await new Promise(r=>setTimeout(r, 0));
   // 2D hotbar/inventory/crafting icons are a separate pipeline from the 3D
   // block materials above (see warmAllIcons() comment) — warm them here too
   // so icons are already decoded data URLs by the time the menu/any panel
