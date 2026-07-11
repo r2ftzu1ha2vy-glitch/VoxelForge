@@ -386,36 +386,80 @@
   #mobileControls{display:none;}
   @media (pointer:coarse){
     #mobileControls{display:block; position:fixed; inset:0; z-index:15; pointer-events:none;}
+
+    /* Movement joystick — bottom-left, unchanged position, slightly smaller
+       so it can't reach into the hotbar/action-button area on narrow phones. */
     .joystick{
-      position:absolute; bottom:30px; left:30px; width:110px; height:110px;
+      position:fixed; bottom:calc(18px + env(safe-area-inset-bottom,0px)); left:16px;
+      width:92px; height:92px;
       border-radius:50%; background:#ffffff22; border:2px solid #ffffff55; pointer-events:auto;
     }
     .joystick .stick{
-      position:absolute; width:50px; height:50px; border-radius:50%; background:#ffffff55;
-      top:30px; left:30px;
+      position:absolute; width:42px; height:42px; border-radius:50%; background:#ffffff55;
+      top:25px; left:25px;
     }
+
+    /* Hotbar + Jump button are grouped as one bottom-center cluster so Jump
+       always sits directly to the right of the hotbar, regardless of screen
+       width, instead of floating in a spot the hotbar can grow into. */
+    body.mobile-ui #hotbar{
+      position:fixed; bottom:calc(8px + env(safe-area-inset-bottom,0px));
+      left:calc(50% - 174px); transform:none;
+      gap:2px; padding:3px; z-index:16;
+    }
+    body.mobile-ui .hotslot{width:30px; height:30px; border-width:1px;}
+    body.mobile-ui .hotslot img{width:22px; height:22px;}
+    body.mobile-ui .hotslot .cnt{font-size:8px; bottom:0; right:1px;}
+
     .mbtn{
-      position:absolute; width:64px; height:64px; border-radius:50%;
+      position:fixed; border-radius:50%;
       background:#ffffff2a; border:2px solid #ffffff55; pointer-events:auto;
-      display:flex; align-items:center; justify-content:center; font-size:11px; color:#fff;
+      display:flex; align-items:center; justify-content:center; font-size:10px; color:#fff;
+      -webkit-tap-highlight-color:transparent; user-select:none; z-index:16;
     }
-    #jumpBtn{bottom:110px; right:30px;}
-    #breakBtn{bottom:36px; right:120px;}
-    #placeBtn{bottom:36px; right:40px;}
+    /* Jump sits immediately to the right of the (fixed-width) hotbar group. */
+    #jumpBtn{
+      bottom:calc(6px + env(safe-area-inset-bottom,0px)); left:calc(50% + 128px);
+      width:44px; height:44px; font-size:9px;
+    }
+    /* Break/Place merged into one action button: tap = place, hold >1s = break.
+       Placed above-right so it never overlaps the hotbar row. */
+    #actionBtn{
+      bottom:calc(70px + env(safe-area-inset-bottom,0px)); right:14px;
+      width:58px; height:58px; font-size:8px; text-align:center; line-height:1.25; padding:2px;
+    }
+    #actionBtn.mining{background:#e0742a55; border-color:#e0742a;}
+
     .mbtnSmall{
-      position:absolute; width:46px; height:46px; border-radius:8px;
+      position:fixed; width:36px; height:36px; border-radius:8px;
       background:#ffffff2a; border:2px solid #ffffff55; pointer-events:auto;
-      display:flex; align-items:center; justify-content:center; font-size:9px; color:#fff; text-align:center;
+      display:flex; align-items:center; justify-content:center; font-size:8px; color:#fff; text-align:center;
+      -webkit-tap-highlight-color:transparent; z-index:16;
     }
-    #invBtnMobile{top:10px; right:10px;}
-    #craftBtnMobile{top:64px; right:10px;}
-    #chatBtnMobile{top:118px; right:10px;}
-    body.mobile-ui .panel-box{width:94vw; padding:14px;}
+    #invBtnMobile{top:calc(6px + env(safe-area-inset-top,0px)); right:6px;}
+    #craftBtnMobile{top:calc(48px + env(safe-area-inset-top,0px)); right:6px;}
+    #chatBtnMobile{top:calc(90px + env(safe-area-inset-top,0px)); right:6px;}
+    #pauseBtnMobile{top:calc(132px + env(safe-area-inset-top,0px)); right:6px;}
+    #settingsBtnMobile{top:calc(174px + env(safe-area-inset-top,0px)); right:6px;}
+
+    /* Stats (health/hunger) moved to top-left, small but legible, and out
+       of the joystick's way so movement no longer feels obstructed. */
+    body.mobile-ui #statBars{
+      position:fixed; top:calc(6px + env(safe-area-inset-top,0px)); left:6px;
+      bottom:auto; transform:none; align-items:flex-start;
+      background:#00000055; padding:3px 5px; border-radius:5px; gap:2px;
+    }
+    body.mobile-ui .heart, body.mobile-ui .hunger{width:11px; height:11px;}
+    body.mobile-ui .barRow{gap:1px;}
+
+    body.mobile-ui .panel-box{width:94vw; padding:14px; max-height:88vh; overflow-y:auto;}
     body.mobile-ui .craftGrid3{grid-template-columns:repeat(3,44px); grid-template-rows:repeat(3,44px);}
     body.mobile-ui .invGrid{grid-template-columns:repeat(5,1fr);}
     body.mobile-ui .playerInvGrid{grid-template-columns:repeat(7,1fr);}
     body.mobile-ui .craftGrid2{grid-template-columns:repeat(2,38px); grid-template-rows:repeat(2,38px);}
     body.mobile-ui #chatInputWrap, body.mobile-ui #chatBox{left:8px; width:min(70vw,300px);}
+    body.mobile-ui #chatInputWrap{bottom:calc(46px + env(safe-area-inset-bottom,0px));}
+    body.mobile-ui #chatBox{bottom:calc(86px + env(safe-area-inset-bottom,0px));}
   }
 
   #loadingScreen{
@@ -492,7 +536,7 @@
 <div id="loadingScreen">
   <div class="vf-title">VOXEL FORGE</div>
   <div class="loadBarOuter"><div class="loadBarInner" id="loadBarInner"></div></div>
-  <div class="loadLabel" id="loadLabel">Booting engine…</div>
+  <div class="loadLabel" id="loadLabel">Booting engine… <span id="loadPct">0%</span></div>
   <div class="loadTip" id="loadTip"><span class="tipPrefix">Tip:</span> <span id="loadTipText"></span></div>
 </div>
 
@@ -698,6 +742,7 @@
     <div class="settingRow">
       <label for="graphicsSelect">Graphics quality</label>
       <select id="graphicsSelect">
+        <option value="potato">Potato (weakest hardware)</option>
         <option value="low">Low</option>
         <option value="medium" selected>Medium</option>
         <option value="high">High</option>
@@ -725,8 +770,7 @@
 <div id="mobileControls">
   <div class="joystick" id="moveJoystick"><div class="stick" id="moveStick"></div></div>
   <div class="mbtn" id="jumpBtn">JUMP</div>
-  <div class="mbtn" id="breakBtn">BREAK</div>
-  <div class="mbtn" id="placeBtn">PLACE</div>
+  <div class="mbtn" id="actionBtn">TAP:PLACE<br>HOLD:BREAK</div>
   <div class="mbtnSmall" id="invBtnMobile">INV</div>
   <div class="mbtnSmall" id="craftBtnMobile">CRAFT</div>
   <div class="mbtnSmall" id="chatBtnMobile">CHAT</div>
@@ -734,7 +778,7 @@
   <div class="mbtnSmall" id="settingsBtnMobile">⚙</div>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.babylonjs.com/babylon.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
@@ -787,7 +831,12 @@ function guessLowEndDevice(){
   try{
     const cores = navigator.hardwareConcurrency || 4;
     const mem = navigator.deviceMemory || 4; // Chrome-only; other browsers default to 4 (i.e. "unknown, assume mid-range")
-    return cores <= 4 || mem <= 4;
+    // School/lab machines (e.g. Acer Windows 11 desktops with Intel UHD
+    // integrated graphics) commonly report 4-8 cores and 8GB RAM — plenty
+    // of CPU, but the GPU is the bottleneck. Widen the thresholds so these
+    // still get the cheap first-run defaults instead of being treated as
+    // mid/high-end just because core count looks fine.
+    return cores <= 8 || mem <= 8;
   }catch(e){ return false; }
 }
 function defaultSettingsForDevice(){
@@ -884,13 +933,19 @@ function makeCanvas(size=TEX_SIZE){
 }
 
 function canvasToTexture(canvas){
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.magFilter = THREE.NearestFilter;
-  tex.minFilter = THREE.NearestMipmapLinearFilter;
-  tex.generateMipmaps = true;
-  tex.wrapS = THREE.RepeatWrapping;
-  tex.wrapT = THREE.RepeatWrapping;
-  tex.needsUpdate = true;
+  // Babylon.DynamicTexture wraps a canvas the same way THREE.CanvasTexture did.
+  // scene comes from the active Game instance's this.scene (set globally by
+  // Game.init before any texture is built, same lifetime THREE relied on).
+  const tex = new BABYLON.DynamicTexture('canvasTex', canvas, BABYLON_ACTIVE_SCENE, true);
+  tex._srcCanvas = canvas;
+  const dtCtx = tex.getContext();
+  dtCtx.drawImage(canvas, 0, 0);
+  tex.update(false);
+  tex.wrapU = BABYLON.Texture.WRAP_ADDRESSMODE;
+  tex.wrapV = BABYLON.Texture.WRAP_ADDRESSMODE;
+  tex.updateSamplingMode(BABYLON.Texture.NEAREST_SAMPLINGMODE);
+  tex.anisotropicFilteringLevel = 1;
+  tex.hasAlpha = true;
   return tex;
 }
 
@@ -1271,13 +1326,25 @@ function getFaceMaterial(paintName){
   const seed = hashStr(paintName);
   const tex = buildBlockTexture(paintName, seed);
   const transparent = (paintName === 'glass' || paintName === 'leaves' || paintName === 'water');
-  const mat = new THREE.MeshLambertMaterial({
-    map: tex,
-    transparent: transparent,
-    opacity: paintName === 'water' ? 0.75 : (paintName==='glass'?0.55:1),
-    alphaTest: (paintName==='leaves') ? 0.1 : 0,
-    side: transparent ? THREE.DoubleSide : THREE.FrontSide,
-  });
+  // THREE.MeshLambertMaterial -> Babylon's StandardMaterial with specular
+  // zeroed out gives the same flat, non-shiny diffuse-only look Lambert had.
+  const mat = new BABYLON.StandardMaterial('mat_'+paintName, BABYLON_ACTIVE_SCENE);
+  mat.diffuseTexture = tex;
+  mat.specularColor = new BABYLON.Color3(0,0,0);
+  if(transparent){
+    mat.diffuseTexture.hasAlpha = true;
+    mat.useAlphaFromDiffuseTexture = true;
+    mat.alpha = paintName === 'water' ? 0.75 : (paintName==='glass'?0.55:1);
+    // THREE side:DoubleSide -> Babylon backFaceCulling = false
+    mat.backFaceCulling = false;
+  } else {
+    mat.backFaceCulling = true; // THREE.FrontSide equivalent
+  }
+  if(paintName==='leaves'){
+    // alphaTest cutoff -> Babylon's alphaCutOff on the material
+    mat.alphaCutOff = 0.1;
+    mat.transparencyMode = BABYLON.Material.MATERIAL_ALPHATEST;
+  }
   materialCache[paintName] = mat;
   return mat;
 }
@@ -1306,35 +1373,26 @@ const BLOCK_SIDE_TEXTURES = {}; // "blockId_face" -> url
 // Example: to reskin grass (id 1, distinct top/bottom/side):
 //   1: { top: 'https://example.com/grass-top.png', side: 'https://example.com/grass-side.png' }
 const HARDCODED_BLOCK_TEXTURES = {
-1: { top: 'https://iili.io/CcRMmTN.png', side: 'https://iili.io/CcRMpjI.png', bottom: 'https://iili.io/CcRMyQt.png' },
-2: {all: 'https://iili.io/CcRMyQt.png'},
-3: {all: 'https://iili.io/CcRSPOF.png'},
-4: {all: 'https://iili.io/Cc6PUru.png'},
-5: {all: 'https://iili.io/Cc6pKCv.png'},
-6: {top: 'https://iili.io/CcRLexS.png', side: 'https://iili.io/CcRLkW7.png', bottom: 'https://iili.io/CcRLexS.png'},
-7: {all: 'https://iili.io/CcPdQZF.png'},
-8: {all: 'https://iili.io/CcPnjvs.png'},
-9: {all: 'https://iili.io/CcPIsUP.png'},
-// NOTE: id 10 (water) intentionally has NO hardcoded entry here anymore.
-// The image previously hardcoded at this slot (iili.io/CcPV6uf.png) is
-// hosted without CORS headers, so the browser's TextureLoader (crossOrigin
-// = 'anonymous', required for WebGL to be allowed to read the pixels at
-// all) gets refused by the host and the load silently fails every time —
-// see loadCustomTexture's error branch. Water now always uses its built-in
-// procedural painter (TexturePainters.water, defined above) unless you set
-// your own image for it via the in-game Custom Textures panel — any URL
-// you add there needs to come from a host that actually sends
-// Access-Control-Allow-Origin, or it will fail the same way.
-11: {all: 'https://iili.io/CcPO9AF.png'},
-12: {all: 'https://iili.io/CcPSBTP.png'},
-13: {all: 'https://iili.io/CcsE041.png'},
-14: {all: 'https://iili.io/CcsEE3F.png'},
-15: {all: 'https://iili.io/CcsElEP.png'},
-16: {all: 'https://iili.io/CcsEcCB.png'},
-17: {all: 'https://iili.io/Ccip7FR.png'},
-18: {top: 'https://iili.io/CciLV29.png', side: 'https://iili.io/CciLW7e.png', bottom: 'https://iili.io/CcPnjvs.png'},
-19: {front: 'https://iili.io/Cci1qG9.png', top: 'https://iili.io/Cci1FQS.png', side: 'https://iili.io/Cci1fC7.png', bottom: 'https://iili.io/Cci1FQS.png'},
-20: {all: 'https://iili.io/CciJ13v.png'},
+1: { top: 'assets/blocks/1_top.png', side: 'assets/blocks/1_side.png', bottom: 'assets/blocks/1_bottom.png' },
+2: {all: 'assets/blocks/2_all.png'},
+3: {all: 'assets/blocks/3_all.png'},
+4: {all: 'assets/blocks/4_all.png'},
+5: {all: 'assets/blocks/5_all.png'},
+6: {top: 'assets/blocks/6_top.png', side: 'assets/blocks/6_side.png', bottom: 'assets/blocks/6_top.png'},
+7: {all: 'assets/blocks/7_all.png'},
+8: {all: 'assets/blocks/8_all.png'},
+9: {all: 'assets/blocks/9_all.png'},
+10: {all: 'assets/blocks/10_all.png'},
+11: {all: 'assets/blocks/11_all.png'},
+12: {all: 'assets/blocks/12_all.png'},
+13: {all: 'assets/blocks/13_all.png'},
+14: {all: 'assets/blocks/14_all.png'},
+15: {all: 'assets/blocks/15_all.png'},
+16: {all: 'assets/blocks/16_all.png'},
+17: {all: 'assets/blocks/17_all.png'},
+18: {top: 'assets/blocks/18_top.png', side: 'assets/blocks/18_side.png', bottom: 'assets/blocks/8_all.png'},
+19: {front: 'assets/blocks/19_front.png', top: 'assets/blocks/19_top.png', side: 'assets/blocks/19_side.png', bottom: 'assets/blocks/19_top.png'},
+20: {all: 'assets/blocks/20_all.png'},
 };
 // Loads every hardcoded block texture ONE AT A TIME instead of firing off
 // ~30 simultaneous image requests + material rebuilds in a single
@@ -1391,26 +1449,36 @@ function warmAllBlockTextures(){
   keys.forEach(k=>{ try{ getFaceMaterialByKey(k); }catch(e){} });
 }
 
-const textureLoader = new THREE.TextureLoader();
-textureLoader.crossOrigin = 'anonymous';
+// Babylon doesn't need a separate loader object the way THREE.TextureLoader
+// did — BABYLON.Texture(url, scene, ...) loads directly — so this is now just
+// a thin helper kept around so call sites below don't all change shape.
+const textureLoader = {
+  load(url, onLoad, onProgress, onError){
+    const tex = new BABYLON.Texture(url, BABYLON_ACTIVE_SCENE, false, true, BABYLON.Texture.NEAREST_SAMPLINGMODE,
+      ()=>{ if(onLoad) onLoad(tex); },
+      ()=>{ if(onError) onError(); }
+    );
+    return tex;
+  }
+};
 // Every in-flight/completed custom image load, so callers (see
 // waitForAllTexturesToLoad below) can await actual decode completion instead
 // of just the load being kicked off — this is what closes the remaining gap
 // where a block's real image finishes downloading right as you place/mine
 // it for the first time.
 const PENDING_TEXTURE_LOADS = [];
-const materialByKeyCache = {}; // "blockId_face" -> THREE.Material
+const materialByKeyCache = {}; // "blockId_face" -> BABYLON.Material
 
-// Called after a WebGL context restore: every THREE.Material/Texture we'd
-// cached pointed at GPU resources that belonged to the now-destroyed
-// context. THREE.js normally handles re-uploading a material's own texture
-// automatically on restore, but our cache also short-circuits
-// getFaceMaterialByKey() by key, and forcing a clean rebuild here is the
-// simplest way to guarantee nothing keeps referencing stale GL objects.
+// Called after a WebGL context restore: every cached Material/Texture we'd
+// built pointed at GPU resources that belonged to the now-destroyed context.
+// Babylon normally re-uploads a material's own texture automatically on
+// restore, but our cache also short-circuits getFaceMaterialByKey() by key,
+// and forcing a clean rebuild here is the simplest way to guarantee nothing
+// keeps referencing stale GL objects.
 function materialByKeyCacheClearAll(){
   for(const k in materialByKeyCache){
     const mat = materialByKeyCache[k];
-    if(mat.map) mat.map.dispose();
+    if(mat.diffuseTexture) mat.diffuseTexture.dispose();
     mat.dispose();
     delete materialByKeyCache[k];
   }
@@ -1462,23 +1530,45 @@ function getFaceMaterialByKey(key){
     paintName = faceTexName(blockId, face);
   }
   const customUrl = BLOCK_SIDE_TEXTURES[key];
-  const transparent = (paintName === 'glass' || paintName === 'leaves' || paintName === 'water');
-  const mat = new THREE.MeshLambertMaterial({
-    map: buildBlockTexture(paintName, hashStr(paintName)),
-    transparent: transparent,
-    opacity: paintName === 'water' ? 0.75 : (paintName==='glass'?0.55:1),
-    alphaTest: (paintName==='leaves') ? 0.1 : 0,
-    side: transparent ? THREE.DoubleSide : THREE.FrontSide,
-  });
+  // Leaves use alpha TESTING, not alpha blending: alphaTest discards fully
+  // transparent texels but still writes depth and sorts like a normal
+  // opaque surface, so it doesn't need `transparent:true` or DoubleSide.
+  // True alpha-BLENDED transparency (water/glass) genuinely needs both
+  // (you can see through them at partial opacity, and see the back face
+  // through the front), but leaves are visually all-or-nothing per texel —
+  // giving them the full blended+double-sided treatment was pure extra
+  // fragment-shader/overdraw cost for zero visual benefit, and leaves are
+  // usually the single largest count of "transparent" surfaces in a
+  // tree-heavy world, so this matters more than it looks like it would.
+  const isLeaves = (paintName === 'leaves');
+  const isBlended = (paintName === 'glass' || paintName === 'water');
+  const mat = new BABYLON.StandardMaterial('matkey_'+key, BABYLON_ACTIVE_SCENE);
+  mat.diffuseTexture = buildBlockTexture(paintName, hashStr(paintName));
+  mat.specularColor = new BABYLON.Color3(0,0,0);
+  if(isBlended){
+    mat.diffuseTexture.hasAlpha = true;
+    mat.useAlphaFromDiffuseTexture = true;
+    mat.alpha = paintName === 'water' ? 0.75 : (paintName==='glass'?0.55:1);
+    mat.backFaceCulling = false; // DoubleSide
+  } else {
+    mat.backFaceCulling = true; // FrontSide
+  }
+  if(isLeaves){
+    mat.diffuseTexture.hasAlpha = true;
+    mat.alphaCutOff = 0.1;
+    mat.transparencyMode = BABYLON.Material.MATERIAL_ALPHATEST;
+  }
   materialByKeyCache[key] = mat;
   if(customUrl){
     const p = new Promise((resolve)=>{
       textureLoader.load(customUrl, (tex)=>{
-        tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.NearestMipmapLinearFilter; tex.generateMipmaps = true;
-        tex.wrapS = THREE.RepeatWrapping; tex.wrapT = THREE.RepeatWrapping;
-        tex.needsUpdate = true;
-        if(mat.map) mat.map.dispose();
-        mat.map = tex; mat.needsUpdate = true;
+        tex.updateSamplingMode(BABYLON.Texture.NEAREST_SAMPLINGMODE);
+        tex.wrapU = BABYLON.Texture.WRAP_ADDRESSMODE;
+        tex.wrapV = BABYLON.Texture.WRAP_ADDRESSMODE;
+        if(mat.diffuseTexture) mat.diffuseTexture.dispose();
+        mat.diffuseTexture = tex;
+        if(isBlended){ tex.hasAlpha = true; mat.useAlphaFromDiffuseTexture = true; }
+        if(isLeaves){ tex.hasAlpha = true; }
         resolve();
       }, undefined, ()=>{ resolve(); /* keep procedural fallback on load error */ });
     });
@@ -1491,18 +1581,18 @@ function getFaceMaterialByKey(key){
 // material in place and invalidates any cached hotbar/inventory icon.
 // persist=false is used for baked-in hardcoded defaults, which shouldn't be
 // written into the user's own Custom Textures localStorage save.
-function loadCustomTexture(blockId, face, url, persist=true){
+function loadCustomTexture(blockId, face, url, persist=true, _isRetry=false){
   const key = faceSlotKey(blockId, face);
   const p = new Promise((resolve,reject)=>{
     textureLoader.load(
       url,
       (tex)=>{
-        tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.NearestMipmapLinearFilter; tex.generateMipmaps = true;
-        tex.wrapS = THREE.RepeatWrapping; tex.wrapT = THREE.RepeatWrapping;
-        tex.needsUpdate = true;
+        tex.updateSamplingMode(BABYLON.Texture.NEAREST_SAMPLINGMODE);
+        tex.wrapU = BABYLON.Texture.WRAP_ADDRESSMODE;
+        tex.wrapV = BABYLON.Texture.WRAP_ADDRESSMODE;
         const mat = getFaceMaterialByKey(key);
-        if(mat.map) mat.map.dispose();
-        mat.map = tex; mat.needsUpdate = true;
+        if(mat.diffuseTexture) mat.diffuseTexture.dispose();
+        mat.diffuseTexture = tex;
         BLOCK_SIDE_TEXTURES[key] = url;
         if(persist) localStorage.setItem('vf_blocksidetex', JSON.stringify(BLOCK_SIDE_TEXTURES));
         delete iconCache[blockId];
@@ -1513,12 +1603,28 @@ function loadCustomTexture(blockId, face, url, persist=true){
         resolve(tex);
       },
       undefined,
-      (err)=>{ reject(err); }
+      (err)=>{
+        // A single failed image load (host hiccup, rate limit, a request
+        // that raced with a WebGL context loss) used to permanently leave
+        // that block on its procedural fallback texture for the whole
+        // session — this was the "some textures aren't loading" symptom.
+        // One short-delayed retry clears up the vast majority of these
+        // without adding a real freeze risk (it's one extra image request,
+        // not a loop).
+        if(!_isRetry){
+          setTimeout(()=>{
+            loadCustomTexture(blockId, face, url, persist, true).then(resolve).catch(reject);
+          }, 600);
+        } else {
+          reject(err);
+        }
+      }
     );
   });
   PENDING_TEXTURE_LOADS.push(p.catch(()=>{}));
   return p;
 }
+
 
 // Await every custom-image load kicked off so far (hardcoded defaults +
 // warmAllBlockTextures), so callers can be sure images are fully downloaded
@@ -1644,6 +1750,13 @@ const CHUNK_SIZE = 16;
 const WORLD_HEIGHT = 128;    // vertical chunks stacked: WORLD_HEIGHT/CHUNK_SIZE
 const CHUNKS_Y = WORLD_HEIGHT / CHUNK_SIZE; // 4
 const SEA_LEVEL = 30;
+// Bridge so free functions (built before any Game/Scene exists) can attach
+// new Babylon resources (textures, etc.) to the currently-active scene
+// without every call site needing to thread a `scene` parameter through —
+// set once by Game's constructor, matches the old THREE behavior where
+// textures/geometries were context-free until actually used by a renderer.
+let BABYLON_ACTIVE_SCENE = null;
+
 let RENDER_DISTANCE = SETTINGS.renderDistance; // in chunks (radius) — mutable, adjustable in Settings; starts from the (possibly hardware-aware) saved/default settings instead of always 4
 
 let WORLD_SEED = 1337;
@@ -1725,13 +1838,33 @@ class Chunk{
     this.mesh = null;         // THREE.Group of face meshes for this chunk
     this.dirty = true;
     this.generated = false;
+    this._fullySolidCache = null; // memoized isFullySolid() result, invalidated by set()
   }
   idx(x,y,z){ return (y*CHUNK_SIZE + z)*CHUNK_SIZE + x; }
   get(x,y,z){
     if(x<0||y<0||z<0||x>=CHUNK_SIZE||y>=CHUNK_SIZE||z>=CHUNK_SIZE) return 0;
     return this.blocks[this.idx(x,y,z)];
   }
-  set(x,y,z,id){ this.blocks[this.idx(x,y,z)] = id; }
+  set(x,y,z,id){ this.blocks[this.idx(x,y,z)] = id; this._fullySolidCache = null; }
+  // True if every block in this chunk is a solid, non-transparent, non-liquid
+  // cube — i.e. light/visibility can never pass through it in any direction.
+  // Used by the "buried chunk" skip: a chunk entirely underground with all 6
+  // face-neighbors also fully solid contributes ZERO visible faces (every
+  // face gets culled by shouldDrawFaceLocal against an opaque neighbor), so
+  // there's no point running the full mesher on it every time it's touched.
+  // Memoized because a chunk's own solidity doesn't change unless one of its
+  // own blocks is edited (set() invalidates the cache above).
+  isFullySolid(){
+    if(this._fullySolidCache !== null) return this._fullySolidCache;
+    const blocks = this.blocks;
+    let solid = true;
+    for(let i=0;i<blocks.length;i++){
+      const def = BLOCKS[blocks[i]];
+      if(!def || def.transparent || def.liquid || def.solid===false){ solid=false; break; }
+    }
+    this._fullySolidCache = solid;
+    return solid;
+  }
 }
 
 class World{
@@ -2498,23 +2631,114 @@ function liquidHeight(def, fedFromAbove){
   return MIN_H + (MAX_H-MIN_H) * (lvl/7);
 }
 
+// Blocks eligible for greedy-mesh merging: full unit cubes with no variable
+// geometry. Liquids (variable height via liquidHeight) and anything flagged
+// renderInvisible are excluded and fall through to the slow per-face path
+// below, which still runs but only visits those special-case blocks.
+function isGreedyEligible(def){
+  return !!def && !def.liquid && !def.renderInvisible;
+}
+
+// Appends one merged quad spanning [u0,v0]..[u1,v1] on the face plane
+// perpendicular to `axis`, at fixed coordinate `slice` along that axis,
+// facing `dir` (+1/-1). Tiles the UV across the merged width/height
+// (uLen x vLen in blocks) so repeating textures (RepeatWrapping) look
+// identical to many small quads instead of one stretched texture.
+function emitGreedyQuad(buf, axis, dir, slice, u0, v0, u1, v1){
+  const uLen = u1-u0, vLen = v1-v0;
+  const startIndex = buf.vcount;
+  // Base (u,v) winding order that produces an outward-facing (+axis) normal
+  // is axis-dependent (matches the handedness baked into FACE_DEFS' corner
+  // lists: py winds [u0v0,u0v1,u1v1,u1v0] while px/pz wind
+  // [u0v0,u1v0,u1v1,u0v1]). For the -axis direction the same rectangle's
+  // winding is simply reversed so the normal flips outward correctly.
+  let order;
+  if(axis==='y') order = [[u0,v0],[u0,v1],[u1,v1],[u1,v0]];
+  else order = [[u0,v0],[u1,v0],[u1,v1],[u0,v1]];
+  if(dir<0) order = [order[0],order[3],order[2],order[1]];
+  const uvOrder = order.map(([u,v])=>[u-u0, v-v0]); // 0..uLen / 0..vLen tiling
+  let normal;
+  for(let i=0;i<4;i++){
+    const [u,v] = order[i];
+    let x,y,z;
+    if(axis==='x'){ x=slice; y=u; z=v; normal=[dir,0,0]; }
+    else if(axis==='y'){ x=u; y=slice; z=v; normal=[0,dir,0]; }
+    else { x=u; y=v; z=slice; normal=[0,0,dir]; }
+    buf.pos.push(x,y,z);
+    buf.norm.push(normal[0],normal[1],normal[2]);
+    buf.uv.push(uvOrder[i][0], uvOrder[i][1]);
+  }
+  buf.idx.push(startIndex,startIndex+1,startIndex+2, startIndex,startIndex+2,startIndex+3);
+  buf.vcount += 4;
+}
+
+// Greedy-merges one axis-direction's worth of faces (e.g. +X) across the
+// whole chunk into as few rectangular quads as possible. For each of the
+// CHUNK_SIZE planes along `axis`, builds a CHUNK_SIZE x CHUNK_SIZE mask of
+// "merge key" (paintName, or null if no face here), then sweeps it with the
+// standard 2D greedy-meshing rectangle expansion (same algorithm Minecraft-
+// style voxel engines use): grow a run along v, then try to grow that run's
+// width along u as long as every column still matches, consuming cells as
+// it goes so each cell is claimed by exactly one output quad.
+function greedyMeshAxis(chunk, neighbors, getBuf, axis, dir){
+  const dx = axis==='x'?dir:0, dy = axis==='y'?dir:0, dz = axis==='z'?dir:0;
+  const mask = new Array(CHUNK_SIZE*CHUNK_SIZE); // reused per slice
+  for(let slice=0; slice<CHUNK_SIZE; slice++){
+    mask.fill(null);
+    for(let u=0; u<CHUNK_SIZE; u++){
+      for(let v=0; v<CHUNK_SIZE; v++){
+        let lx,ly,lz;
+        if(axis==='x'){ lx=slice; ly=u; lz=v; }
+        else if(axis==='y'){ lx=u; ly=slice; lz=v; }
+        else { lx=u; ly=v; lz=slice; }
+        const id = chunk.get(lx,ly,lz);
+        if(id===0) continue;
+        const def = BLOCKS[id];
+        if(!isGreedyEligible(def)) continue; // liquids/invisible -> slow path handles these
+        const nb = getLocalNeighborBlock(chunk, neighbors, lx+dx, ly+dy, lz+dz);
+        if(!shouldDrawFaceLocal(id, nb)) continue;
+        const faceKey = axis==='y' ? (dir>0?'top':'bottom') : 'side';
+        mask[u*CHUNK_SIZE+v] = faceMaterialKey(id, faceKey);
+      }
+    }
+    // standard greedy rectangle sweep over the mask
+    for(let u=0; u<CHUNK_SIZE; u++){
+      for(let v=0; v<CHUNK_SIZE; ){
+        const key = mask[u*CHUNK_SIZE+v];
+        if(key===null){ v++; continue; }
+        // extend along v as far as the same key continues
+        let vEnd = v+1;
+        while(vEnd<CHUNK_SIZE && mask[u*CHUNK_SIZE+vEnd]===key) vEnd++;
+        // extend along u as far as every cell in [u+1][v..vEnd) still matches
+        let uEnd = u+1;
+        outer:
+        while(uEnd<CHUNK_SIZE){
+          for(let vv=v; vv<vEnd; vv++){ if(mask[uEnd*CHUNK_SIZE+vv]!==key) break outer; }
+          uEnd++;
+        }
+        // consume the claimed rectangle so it's never emitted again
+        for(let uu=u; uu<uEnd; uu++) for(let vv=v; vv<vEnd; vv++) mask[uu*CHUNK_SIZE+vv]=null;
+        const buf = getBuf(key);
+        // face plane sits on the outward side of the block: slice+1 for +dir, slice for -dir
+        const planeCoord = dir>0 ? slice+1 : slice;
+        emitGreedyQuad(buf, axis, dir, planeCoord, u, v, uEnd, vEnd);
+        v = vEnd;
+      }
+    }
+  }
+}
+
 function buildChunkMesh(world, chunk){
   // dispose old geometry AND remove the stale group from the scene —
   // otherwise the old (now-empty) group stays parented forever and the
   // new group is added alongside it, so broken/placed blocks never
   // visually refresh.
   if(chunk.mesh){
-    chunk.mesh.children.forEach(m=>{ m.geometry.dispose(); });
-    if(chunk.mesh.parent) chunk.mesh.parent.remove(chunk.mesh);
-  }
-  const group = new THREE.Group();
-  group.name = 'chunk_'+chunk.cx+'_'+chunk.cy+'_'+chunk.cz;
-
-  // buffers per texture-paint-name
-  const buffers = {}; // paintName -> {pos:[],norm:[],uv:[],idx:[]}
-  function getBuf(name){
-    if(!buffers[name]) buffers[name] = {pos:[], norm:[], uv:[], idx:[], vcount:0};
-    return buffers[name];
+    // THREE.Group.children -> Babylon.TransformNode.getChildMeshes(); disposing
+    // a BABYLON.Mesh frees its own geometry (vertex/index buffers) as part of
+    // dispose(), unlike THREE where geometry and mesh are disposed separately.
+    if(chunk.mesh.getChildMeshes) chunk.mesh.getChildMeshes().forEach(m=>m.dispose());
+    chunk.mesh.dispose(); // TransformNode itself (parenting is automatic in Babylon, no explicit .remove() needed)
   }
 
   const {cx,cy,cz} = chunk;
@@ -2531,12 +2755,68 @@ function buildChunkMesh(world, chunk){
     pz: world.getChunk(cx,cy,cz+1), nz: world.getChunk(cx,cy,cz-1),
   };
 
+  // --- BURIED-CHUNK SKIP ------------------------------------------------
+  // A chunk that is itself fully solid AND has all 6 face-neighbors also
+  // fully solid (or ungenerated, which we can't yet prove empty, so it does
+  // NOT count as safe to skip) can never show a single face: every one of
+  // its blocks is walled in on every side by more solid blocks, so
+  // shouldDrawFaceLocal would cull every face anyway. Detecting this BEFORE
+  // running the mesher (rather than after, once the mesher already found
+  // zero faces) skips the entire triple-nested loop + neighbor lookups for
+  // deep-underground chunks, which is exactly what Minecraft-style engines
+  // do to avoid meshing chunks nobody will ever see.
+  const allNeighborsSolid = !!(neighbors.px && neighbors.px.isFullySolid() &&
+    neighbors.nx && neighbors.nx.isFullySolid() &&
+    neighbors.py && neighbors.py.isFullySolid() &&
+    neighbors.ny && neighbors.ny.isFullySolid() &&
+    neighbors.pz && neighbors.pz.isFullySolid() &&
+    neighbors.nz && neighbors.nz.isFullySolid());
+  if(allNeighborsSolid && chunk.isFullySolid()){
+    // Babylon.TransformNode is the direct equivalent of an empty THREE.Group
+    // — nothing to add to the scene, but keeps chunk.mesh truthy so
+    // streaming logic doesn't think it needs rebuilding.
+    chunk.mesh = new BABYLON.TransformNode('chunk_'+cx+'_'+cy+'_'+cz+'_buried', BABYLON_ACTIVE_SCENE);
+    chunk.mesh.position.set(baseX, baseY, baseZ);
+    chunk.dirty = false;
+    chunk._lastFaceCount = 0;
+    return 0;
+  }
+
+  const group = new BABYLON.TransformNode('chunk_'+cx+'_'+cy+'_'+cz, BABYLON_ACTIVE_SCENE);
+
+  // buffers per texture-paint-name
+  const buffers = {}; // paintName -> {pos:[],norm:[],uv:[],idx:[]}
+  function getBuf(name){
+    if(!buffers[name]) buffers[name] = {pos:[], norm:[], uv:[], idx:[], vcount:0};
+    return buffers[name];
+  }
+
+  // --- GREEDY MESHING PASS -------------------------------------------
+  // Handles the overwhelming majority of blocks: solid full-cube terrain
+  // with no per-instance variable geometry. Sweeps each of the 6 face
+  // directions across the whole chunk and merges same-texture, same-facing,
+  // coplanar runs of exposed faces into single quads (e.g. a 16x16 flat
+  // grass field's top face collapses from 256 quads to 1). This is the
+  // single biggest GPU-work reduction available: fewer vertices/triangles
+  // per chunk, every visible chunk, every frame.
+  greedyMeshAxis(chunk, neighbors, getBuf, 'x', 1);
+  greedyMeshAxis(chunk, neighbors, getBuf, 'x', -1);
+  greedyMeshAxis(chunk, neighbors, getBuf, 'y', 1);
+  greedyMeshAxis(chunk, neighbors, getBuf, 'y', -1);
+  greedyMeshAxis(chunk, neighbors, getBuf, 'z', 1);
+  greedyMeshAxis(chunk, neighbors, getBuf, 'z', -1);
+
+  // --- SLOW PATH: liquids and any other non-greedy-eligible block -----
+  // Everything greedy-eligible was already fully handled above, so this
+  // loop only does real work on liquid cells (variable top height per flow
+  // level) — on an all-solid-terrain chunk it's a fast no-op scan.
   for(let lx=0; lx<CHUNK_SIZE; lx++){
     for(let ly=0; ly<CHUNK_SIZE; ly++){
       for(let lz=0; lz<CHUNK_SIZE; lz++){
         const id = chunk.get(lx,ly,lz);
         if(id===0) continue;
         const def = BLOCKS[id];
+        if(isGreedyEligible(def)) continue; // already emitted by the greedy pass above
         if(def && def.renderInvisible) continue; // Test_Block etc: occupies a cell but draws nothing
 
         // Liquids get a variable top height based on flow level so a
@@ -2588,15 +2868,25 @@ function buildChunkMesh(world, chunk){
   for(const paintName in buffers){
     const b = buffers[paintName];
     if(b.pos.length===0) continue;
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(b.pos,3));
-    geo.setAttribute('normal', new THREE.Float32BufferAttribute(b.norm,3));
-    geo.setAttribute('uv', new THREE.Float32BufferAttribute(b.uv,2));
-    geo.setIndex(b.idx);
-    const mat = getFaceMaterialByKey(paintName);
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.castShadow = false; mesh.receiveShadow = false;
-    group.add(mesh);
+    // Babylon builds meshes from a VertexData object holding the same flat
+    // typed-array-friendly buffers THREE.BufferGeometry used (positions,
+    // normals, uvs, indices) — same data shape, just assembled and applied
+    // differently. THREE's uv.setAttribute('uv',...) is VertexData.uvs here,
+    // and geo.setIndex(...) is VertexData.indices.
+    const mesh = new BABYLON.Mesh('chunkmesh_'+group.name+'_'+paintName, BABYLON_ACTIVE_SCENE);
+    const vertexData = new BABYLON.VertexData();
+    vertexData.positions = b.pos;
+    vertexData.normals = b.norm;
+    vertexData.uvs = b.uv;
+    vertexData.indices = b.idx;
+    vertexData.applyToMesh(mesh);
+    mesh.material = getFaceMaterialByKey(paintName);
+    mesh.receiveShadows = false;
+    // castShadow=false in THREE has no per-mesh Babylon equivalent to set on
+    // the mesh itself — a mesh only casts a shadow if it's been explicitly
+    // added to a BABYLON.ShadowGenerator's render list elsewhere, which this
+    // codebase never does, so simply not adding it achieves the same result.
+    mesh.parent = group;
   }
 
   let totalFaces = 0;
@@ -2662,54 +2952,72 @@ function buildSkinTexture(palette){
   return canvasToTexture(c);
 }
 
-// Build the blocky player mesh (head, body, 2 arms, 2 legs) as a THREE.Group.
-// Returns {group, parts:{head,body,armL,armR,legL,legR}} for animation.
+// Build the blocky player mesh (head, body, 2 arms, 2 legs) as a Babylon
+// TransformNode group. Returns {group, parts:{head,body,armL,armR,legL,legR}}
+// for animation.
+//
+// THREE's `geometry.translate(0,-y,0)` shifted a box's own local origin down
+// so that rotating the mesh (e.g. arm swing) pivots from the top (shoulder)
+// instead of the box's center. Babylon meshes don't have per-geometry local
+// origin translation in the same way — the standard equivalent is to make
+// the visible box a CHILD mesh offset by that same amount below a parent
+// "pivot" TransformNode, and rotate/position the PARENT instead of the box.
+// The parent is what's returned/stored in `parts` so all existing animation
+// code (which sets parts.armL.rotation.x etc.) keeps working unmodified.
 function buildPlayerModel(palette){
   const skinTex = buildSkinTexture(palette);
-  skinTex.magFilter = THREE.NearestFilter; skinTex.minFilter = THREE.NearestFilter;
-  const mat = new THREE.MeshLambertMaterial({ map: skinTex });
+  skinTex.updateSamplingMode(BABYLON.Texture.NEAREST_SAMPLINGMODE);
+  const mat = new BABYLON.StandardMaterial('playerskin_'+hashStr(palette.skin+palette.shirt), BABYLON_ACTIVE_SCENE);
+  mat.diffuseTexture = skinTex;
+  mat.specularColor = new BABYLON.Color3(0,0,0);
 
-  const group = new THREE.Group();
+  const group = new BABYLON.TransformNode('playerGroup', BABYLON_ACTIVE_SCENE);
 
-  function box(w,h,d, materialArg){
-    const geo = new THREE.BoxGeometry(w,h,d);
-    return new THREE.Mesh(geo, materialArg || mat);
+  // Plain box, pivoting from its own center — used for head/body which don't
+  // need a shifted rotation pivot.
+  function box(w,h,d, name){
+    const m = BABYLON.MeshBuilder.CreateBox(name, {width:w, height:h, depth:d}, BABYLON_ACTIVE_SCENE);
+    m.material = mat;
+    return m;
+  }
+
+  // Limb: a pivot TransformNode at the shoulder/hip point, with the visible
+  // box parented underneath and shifted down by h/2 — so rotating the
+  // returned pivot swings the limb like a real hinge, matching what THREE's
+  // geometry.translate + position trick achieved.
+  function limb(w,h,d, name, pivotPos){
+    const pivot = new BABYLON.TransformNode(name, BABYLON_ACTIVE_SCENE);
+    pivot.position.set(pivotPos[0], pivotPos[1], pivotPos[2]);
+    const visual = box(w,h,d, name+'_box');
+    visual.parent = pivot;
+    visual.position.set(0, -h/2, 0);
+    return pivot;
   }
 
   // Proportions (in blocks): head 0.5, body 0.5w x 0.75h x 0.25d, limbs 0.25 x 0.75
-  const head = box(0.5,0.5,0.5);
+  const head = box(0.5,0.5,0.5, 'head');
   head.position.set(0, 1.55, 0);
-  head.name='head';
+  head.parent = group;
 
-  const body = box(0.5,0.75,0.28);
+  const body = box(0.5,0.75,0.28, 'body');
   body.position.set(0, 1.025, 0);
-  body.name='body';
+  body.parent = group;
 
-  const armL = box(0.22,0.72,0.22);
-  armL.position.set(-0.36, 1.02, 0);
-  armL.geometry.translate(0,-0.36,0);
-  armL.position.y = 1.38;
-  armL.name='armL';
+  const armL = limb(0.22,0.72,0.22, 'armL', [-0.36, 1.38, 0]);
+  armL.parent = group;
 
-  const armR = box(0.22,0.72,0.22);
-  armR.position.set(0.36, 1.02, 0);
-  armR.geometry.translate(0,-0.36,0);
-  armR.position.y = 1.38;
-  armR.name='armR';
+  const armR = limb(0.22,0.72,0.22, 'armR', [0.36, 1.38, 0]);
+  armR.parent = group;
 
-  const legL = box(0.22,0.75,0.22);
-  legL.geometry.translate(0,-0.375,0);
-  legL.position.set(-0.13, 0.65, 0);
-  legL.name='legL';
+  const legL = limb(0.22,0.75,0.22, 'legL', [-0.13, 0.65, 0]);
+  legL.parent = group;
 
-  const legR = box(0.22,0.75,0.22);
-  legR.geometry.translate(0,-0.375,0);
-  legR.position.set(0.13, 0.65, 0);
-  legR.name='legR';
+  const legR = limb(0.22,0.75,0.22, 'legR', [0.13, 0.65, 0]);
+  legR.parent = group;
 
-  group.add(head, body, armL, armR, legL, legR);
   return { group, parts:{head,body,armL,armR,legL,legR} };
 }
+
 
 /* -------------------------------------------------------------------------
    6. GAME ENGINE
@@ -2933,14 +3241,115 @@ class Game{
     RENDER_DISTANCE = SETTINGS.renderDistance;
 
     this.canvas = document.getElementById('gameCanvas');
-    this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x8fc7ef);
-    this.scene.fog = new THREE.Fog(0x8fc7ef, 60, 150);
 
-    this.camera = new THREE.PerspectiveCamera(SETTINGS.fov, innerWidth/innerHeight, 0.05, 400);
-    this.renderer = new THREE.WebGLRenderer({ canvas:this.canvas, antialias:false });
-    this.renderer.setPixelRatio(Math.min(devicePixelRatio,2));
-    this.renderer.setSize(innerWidth, innerHeight);
+    // Babylon.Engine ~= THREE.WebGLRenderer (owns the GL context + frame loop).
+    // Same rationale as before: no alpha/stencil buffers we don't use,
+    // discrete-GPU hint, no depth-buffer tricks we don't need.
+    this.engine = new BABYLON.Engine(this.canvas, false /*antialias off, matches old antialias:false*/, {
+      powerPreference:'high-performance',
+      alpha:false,
+      stencil:false,
+      preserveDrawingBuffer:false,
+    }, true);
+
+    this.scene = new BABYLON.Scene(this.engine);
+    this.scene.clearColor = BABYLON.Color4.FromHexString('#8fc7efff');
+    // Fog: THREE.Fog(color, near=60, far=150) is linear distance fog — Babylon's
+    // closest equivalent is FOGMODE_LINEAR with matching start/end distances.
+    this.scene.fogMode = BABYLON.Scene.FOGMODE_LINEAR;
+    this.scene.fogColor = BABYLON.Color3.FromHexString('#8fc7ef');
+    this.scene.fogStart = 60;
+    this.scene.fogEnd = 150;
+
+    // BABYLON_ACTIVE_SCENE is a small global bridge so free functions like
+    // canvasToTexture() (built before any Game exists, and called from many
+    // places that never held a scene reference under THREE) can attach new
+    // textures to the right scene without threading `scene` through every
+    // call site — mirrors how THREE textures were context-free until used.
+    BABYLON_ACTIVE_SCENE = this.scene;
+
+    // THREE.PerspectiveCamera(fov, aspect, near, far) -> Babylon uses a
+    // UniversalCamera for a free-fly FPS camera; fov is in radians in Babylon.
+    this.camera = new BABYLON.UniversalCamera('playerCam', BABYLON.Vector3.Zero(), this.scene);
+    this.camera.minZ = 0.05;
+    this.camera.maxZ = 400;
+    this.camera.fov = SETTINGS.fov * Math.PI / 180;
+    // This game drives camera position/rotation manually every frame from its
+    // own movement/input code, so detach Babylon's own input controls to
+    // avoid the two fighting.
+    this.camera.inputs.clear();
+    // NOTE: pixelRatio/size are deliberately NOT set yet. On a weak Intel
+    // integrated GPU, immediately allocating a full-resolution framebuffer
+    // at devicePixelRatio up to 2 (that's up to 4x the pixels of ratio 1)
+    // can itself exceed the driver's D3D11 resource budget and crash the
+    // context (GL_CONTEXT_LOST_KHR / "Error allocating ShaderResourceView")
+    // before the hardware-aware settings below ever get a chance to cap it
+    // down. Detect the weak/software GPU FIRST, then size the very first
+    // framebuffer at the already-capped resolution — never allocate an
+    // oversized one and shrink it after the fact.
+
+    // Detect a software-only WebGL context (SwiftShader/llvmpipe/etc). This
+    // happens when the OS/browser has GPU hardware acceleration disabled —
+    // very common on locked-down school/managed Windows machines via group
+    // policy or an outdated/blocklisted driver — and it tanks FPS to
+    // single digits no matter how cheap the scene is, because every pixel
+    // is being rasterized on the CPU instead of the GPU. No amount of
+    // render-distance/fog tuning fixes this; the fix is enabling hardware
+    // acceleration in the browser, but we can at least auto-drop to the
+    // cheapest possible settings and tell the player why it's still slow.
+    this._softwareRenderer = false;
+    this._weakIntegratedGpu = false;
+    try{
+      const gl = this.engine._gl;
+      const dbgInfo = gl.getExtension('WEBGL_debug_renderer_info');
+      if(dbgInfo){
+        const renderer = (gl.getParameter(dbgInfo.UNMASKED_RENDERER_WEBGL) || '').toLowerCase();
+        if(/swiftshader|llvmpipe|software|microsoft basic render/.test(renderer)){
+          this._softwareRenderer = true;
+          this._detectedRendererString = renderer;
+        } else if(/intel.*(uhd|hd graphics|iris(?! xe)|gma)/.test(renderer)){
+          // Common on school-lab desktops/laptops (Acer, Dell, HP) that ship
+          // low-power Intel integrated graphics rather than a discrete GPU.
+          // These can technically run WebGL fine but choke well before
+          // 60fps at default settings, so start them a tier down too.
+          this._weakIntegratedGpu = true;
+          this._detectedRendererString = renderer;
+        }
+      }
+    }catch(e){ /* debug info extension not available — can't detect, not fatal */ }
+    if(this._softwareRenderer){
+      SETTINGS.graphics = 'potato';
+      SETTINGS.renderDistance = Math.min(SETTINGS.renderDistance, 2);
+      saveSettingsToStorage();
+    } else if(this._weakIntegratedGpu){
+      // Cap weak integrated GPUs (school-lab Intel UHD machines, etc.) at
+      // 'low'/renderDistance 2 every load, not just on a brand-new save.
+      // Unlike the "only steer a first-run save" approach, this always
+      // clamps the ceiling — it still lets the player raise it back up
+      // manually afterward — because an old save from before this hardware
+      // check existed would otherwise keep replaying whatever heavier
+      // tier it was on (e.g. 'medium') forever and stay stuck at ~20fps.
+      const tiers = ['potato','low','medium','high'];
+      if(tiers.indexOf(SETTINGS.graphics) > tiers.indexOf('low')){
+        SETTINGS.graphics = 'low';
+      }
+      SETTINGS.renderDistance = Math.min(SETTINGS.renderDistance, 2);
+      saveSettingsToStorage();
+    }
+
+    // Now it's safe to size the framebuffer: cap the very first allocation
+    // to pixelRatio 1 on any detected weak/software GPU (matching the
+    // 'potato'/'low' pixelRatioCap used in applyGraphicsSettings() below)
+    // instead of the up-to-2x default, so we never hand the driver an
+    // oversized resource request it can't satisfy. applyGraphicsSettings()
+    // re-applies the tier-correct cap a moment later for the normal
+    // (non-weak-GPU) case.
+    const initialPixelRatioCap = (this._softwareRenderer || this._weakIntegratedGpu) ? 1 : 2;
+    // Babylon has no separate setPixelRatio — hardwareScalingLevel is the
+    // inverse (1 = full device pixel ratio, 2 = half-res render). Divide
+    // rather than multiply to keep the same "cap the ratio" semantics.
+    this.engine.setHardwareScalingLevel(1 / Math.min(devicePixelRatio, initialPixelRatioCap));
+    this.engine.resize();
 
     // WebGL context loss/restore handling. Without this, a GPU-side stall
     // (e.g. a driver timeout from a single huge synchronous mesh build) that
@@ -2952,40 +3361,35 @@ class Game{
     // `this._contextLost` so the main loop (see start()) can skip calling
     // renderer.render() entirely while the context is down instead of
     // throwing into every frame's try/catch.
-    this.canvas.addEventListener('webglcontextlost', (e)=>{
-      e.preventDefault();
+    // Babylon's Engine already listens for webglcontextlost/restored itself
+    // and re-uploads its own GPU resources (textures, vertex buffers) on
+    // restore — so unlike the old THREE setup we don't need to null out
+    // every chunk mesh and force a full rebuild; Babylon keeps the JS-side
+    // Mesh/Material objects intact and just re-creates their underlying GPU
+    // handles. We still track _contextLost ourselves so the render loop can
+    // skip calling scene.render() while the context is down (same reason as
+    // before: avoid throwing mid-frame), and still clear cached materials in
+    // case any of our own manually-cached GL state went stale.
+    this.engine.onContextLostObservable.add(()=>{
       this._contextLost = true;
       console.warn('WebGL context lost — pausing rendering until it is restored.');
-    }, false);
-    this.canvas.addEventListener('webglcontextrestored', ()=>{
+    });
+    this.engine.onContextRestoredObservable.add(()=>{
       this._contextLost = false;
       console.warn('WebGL context restored — resuming rendering.');
-      // Every chunk's mesh (geometry+material) lived on the now-lost GPU
-      // context and is gone; force everything currently in the scene to
-      // rebuild next tick rather than trying to keep drawing stale/invalid
-      // GPU handles (which is what produced the repeated shader-compile
-      // errors immediately after "Context Restored" in the logs — the old
-      // materials/geometries were never actually recreated).
-      if(this.world){
-        for(const [,chunk] of this.world.chunks){
-          if(chunk.mesh){
-            if(chunk.mesh.parent) chunk.mesh.parent.remove(chunk.mesh);
-            chunk.mesh = null;
-          }
-          chunk.dirty = true;
-        }
-      }
       materialByKeyCacheClearAll();
-    }, false);
+    });
 
     // lighting
-    this.sun = new THREE.DirectionalLight(0xffffff, 0.9);
-    this.sun.position.set(60,100,40);
-    this.scene.add(this.sun);
-    this.ambient = new THREE.AmbientLight(0x9fb8d8, 0.65);
-    this.scene.add(this.ambient);
-    this.moonLight = new THREE.DirectionalLight(0x8fa8ff, 0.0);
-    this.scene.add(this.moonLight);
+    this.sun = new BABYLON.DirectionalLight('sun', new BABYLON.Vector3(-60,-100,-40).normalize(), this.scene);
+    this.sun.intensity = 0.9;
+    this.sun.diffuse = BABYLON.Color3.FromHexString('#ffffff');
+    this.ambient = new BABYLON.HemisphericLight('ambient', new BABYLON.Vector3(0,1,0), this.scene);
+    this.ambient.intensity = 0.65;
+    this.ambient.diffuse = BABYLON.Color3.FromHexString('#9fb8d8');
+    this.moonLight = new BABYLON.DirectionalLight('moon', new BABYLON.Vector3(-0.8,-1,-0.5).normalize(), this.scene);
+    this.moonLight.intensity = 0.0;
+    this.moonLight.diffuse = BABYLON.Color3.FromHexString('#8fa8ff');
 
     // ---- day/night cycle ----
     // dayTime is 0..1 across one full day/night ('DAY_LENGTH' real seconds).
@@ -2995,12 +3399,14 @@ class Game{
     this.isNight = false;
 
     this.world = new World(WORLD_SEED);
-    this.chunkGroup = new THREE.Group();
-    this.scene.add(this.chunkGroup);
+    // Babylon.TransformNode is the direct equivalent of THREE.Group — a
+    // parent-only node with no mesh geometry of its own, purely for grouping
+    // and moving all chunk meshes together.
+    this.chunkGroup = new BABYLON.TransformNode('chunkGroup', this.scene);
 
     // player state
-    this.pos = new THREE.Vector3(0, 60, 0);
-    this.vel = new THREE.Vector3(0,0,0);
+    this.pos = new BABYLON.Vector3(0, 60, 0);
+    this.vel = new BABYLON.Vector3(0,0,0);
     this.yaw = 0; this.pitch = 0;
     this.onGround = false;
     this.flying = false;
@@ -3041,7 +3447,8 @@ class Game{
 
     this.otherPlayers = new Map(); // uid -> {group, parts, targetPos, targetYaw, nameSprite}
     this.chatMessages = [];
-    this.torchLights = new Map(); // "x_y_z" -> THREE.PointLight, for placed torches
+    this.torchLights = new Map(); // "x_y_z" -> {light, x,y,z} for ALL placed torches (data only)
+    this.activeTorchLights = new Map(); // "x_y_z" -> THREE.PointLight actually added to the scene right now (budgeted, see updateActiveTorchLights)
     this.animals = []; // wandering passive mobs
     this.hostiles = []; // night-spawned hostile mobs
     this._nightMobTimer = 0;
@@ -3068,7 +3475,7 @@ class Game{
     this.invulnT = 0;                 // brief invulnerability window after taking damage
     this.dead = false;
     this._prevFallVelY = 0;           // tracks vertical speed just before landing, for fall damage
-    this.respawnPos = new THREE.Vector3(0, 60, 0); // set once real spawn column is found
+    this.respawnPos = new BABYLON.Vector3(0, 60, 0); // set once real spawn column is found
 
     // ---- void arena portal state ----
     this._archCooldown = 0;            // brief cooldown after any crossing so one walk-through doesn't immediately bounce back
@@ -3089,14 +3496,50 @@ class Game{
   applyGraphicsSettings(){
     const q = SETTINGS.graphics;
     let fogNear, fogFar, pixelRatioCap;
-    if(q==='low'){ fogNear=30; fogFar=80; pixelRatioCap=1; }
+    if(q==='potato'){ fogNear=10; fogFar=26; pixelRatioCap=1; } // for SwiftShader/software-rendering or very old integrated GPUs — tiny draw distance, lights mostly off (see updateActiveTorchLights)
+    else if(q==='low'){ fogNear=22; fogFar=60; pixelRatioCap=1; } // tuned for weak integrated GPUs (e.g. school-lab Intel UHD machines) to sustain 60fps
     else if(q==='high'){ fogNear=90; fogFar=220; pixelRatioCap=2; }
-    else { fogNear=60; fogFar=150; pixelRatioCap=1.5; } // medium
-    this.scene.fog.near = fogNear;
-    this.scene.fog.far = fogFar;
-    this.renderer.setPixelRatio(Math.min(devicePixelRatio, pixelRatioCap));
-    this.camera.fov = SETTINGS.fov;
-    this.camera.updateProjectionMatrix();
+    else { fogNear=50; fogFar=120; pixelRatioCap=1; } // medium — capped at 1 instead of 1.5; devicePixelRatio 2+ on a weak integrated GPU multiplies fill-rate cost 4x for very little visible sharpness gain at this resolution
+    this.scene.fogStart = fogNear;
+    this.scene.fogEnd = fogFar;
+    this.engine.setHardwareScalingLevel(1 / Math.min(devicePixelRatio, pixelRatioCap));
+    this.camera.fov = SETTINGS.fov * Math.PI / 180;
+  }
+
+  // Runs once/sec right after this.fps is refreshed. If FPS stays badly low
+  // for several consecutive seconds, automatically step settings down one
+  // notch at a time (render distance first since it's the cheapest/most
+  // reversible lever, then graphics tier) rather than leaving a player who
+  // doesn't know these settings exist stuck at 5fps forever. Each step is
+  // announced via toast and persisted, and we cap total auto-steps per
+  // session so this can't spiral or fight a player who manually raises
+  // settings back up.
+  _checkAdaptivePerformance(){
+    if(this.paused || this.dead || this.fps<=0) return;
+    // Target sustained 60fps (school/lab machines especially): react to
+    // dips under 45 instead of waiting until it's already down at 24, and
+    // react after 3 bad seconds instead of 5 so a weak integrated GPU
+    // settles into a playable tier much faster.
+    this._badFpsStreak = (this.fps < 45) ? (this._badFpsStreak||0)+1 : 0;
+    this._autoDowngradeCount = this._autoDowngradeCount || 0;
+    if(this._badFpsStreak < 3) return; // ~3 consecutive bad seconds, not a one-off stutter
+    if(this._autoDowngradeCount >= 6) return; // don't nag forever
+    this._badFpsStreak = 0;
+    const tiers = ['potato','low','medium','high'];
+    const tierIdx = tiers.indexOf(SETTINGS.graphics);
+    if(SETTINGS.renderDistance > 2){
+      SETTINGS.renderDistance -= 1;
+      RENDER_DISTANCE = SETTINGS.renderDistance;
+      this.showSaveToast('Low FPS detected — reduced render distance to ' + SETTINGS.renderDistance + ' to help performance.', false);
+    } else if(tierIdx > 0){
+      SETTINGS.graphics = tiers[tierIdx-1];
+      this.applyGraphicsSettings();
+      this.showSaveToast('Low FPS detected — lowered graphics quality to ' + SETTINGS.graphics + '.', false);
+    } else {
+      return; // already at the cheapest possible settings, nothing left to lower
+    }
+    this._autoDowngradeCount++;
+    saveSettingsToStorage();
   }
 
   // Try to find a spawn point that lands on grass, up to maxAttempts times.
@@ -3414,9 +3857,11 @@ class Game{
 
   _setupResize(){
     window.addEventListener('resize', ()=>{
-      this.camera.aspect = innerWidth/innerHeight;
-      this.camera.updateProjectionMatrix();
-      this.renderer.setSize(innerWidth, innerHeight);
+      // Babylon's camera.fov is a fixed value, not derived from aspect —
+      // aspect ratio is handled internally by engine.resize() reading the
+      // canvas's new dimensions, so unlike THREE we don't set camera.aspect
+      // or call an updateProjectionMatrix() equivalent by hand.
+      this.engine.resize();
     });
   }
 
@@ -3442,11 +3887,39 @@ class Game{
     }, {passive:false});
     joy.addEventListener('touchend', ()=>{ dragging=false; this.mobileMove.x=0; this.mobileMove.y=0; stick.style.left='30px'; stick.style.top='30px'; });
 
-    document.getElementById('jumpBtn').addEventListener('touchstart', ()=>{ KEY['Space']=true; });
-    document.getElementById('jumpBtn').addEventListener('touchend', ()=>{ KEY['Space']=false; });
-    document.getElementById('breakBtn').addEventListener('touchstart', (e)=>{ e.preventDefault(); this.startMining(); });
-    document.getElementById('breakBtn').addEventListener('touchend', ()=>{ this.stopMining(); });
-    document.getElementById('placeBtn').addEventListener('touchstart', (e)=>{ e.preventDefault(); this.placeBlock(); });
+    document.getElementById('jumpBtn').addEventListener('touchstart', (e)=>{ e.preventDefault(); KEY['Space']=true; });
+    document.getElementById('jumpBtn').addEventListener('touchend', (e)=>{ e.preventDefault(); KEY['Space']=false; });
+    // Single combined action button: a quick tap places a block, holding
+    // for more than 1 second starts mining (breaking) instead. This avoids
+    // needing two separate cramped buttons on small screens.
+    {
+      const actionBtn = document.getElementById('actionBtn');
+      let holdTimer = null, isMining = false;
+      const HOLD_MS = 1000;
+      actionBtn.addEventListener('touchstart', (e)=>{
+        e.preventDefault();
+        isMining = false;
+        clearTimeout(holdTimer);
+        holdTimer = setTimeout(()=>{
+          isMining = true;
+          actionBtn.classList.add('mining');
+          this.startMining();
+        }, HOLD_MS);
+      }, {passive:false});
+      const endHold = (e)=>{
+        if(e) e.preventDefault();
+        clearTimeout(holdTimer);
+        actionBtn.classList.remove('mining');
+        if(isMining){
+          this.stopMining();
+        } else {
+          this.placeBlock();
+        }
+        isMining = false;
+      };
+      actionBtn.addEventListener('touchend', endHold);
+      actionBtn.addEventListener('touchcancel', endHold);
+    }
     document.getElementById('invBtnMobile').addEventListener('touchstart', (e)=>{ e.preventDefault(); this.toggleInventory(); });
     document.getElementById('craftBtnMobile').addEventListener('touchstart', (e)=>{ e.preventDefault(); this.toggleCraftingPanel(); });
     document.getElementById('chatBtnMobile').addEventListener('touchstart', (e)=>{ e.preventDefault(); this.openChat(); });
@@ -4138,7 +4611,7 @@ class Game{
 
   /* ---------------- Raycasting for block break/place ---------------- */
   getLookRay(){
-    const dir = new THREE.Vector3(
+    const dir = new BABYLON.Vector3(
       -Math.sin(this.yaw)*Math.cos(this.pitch),
       Math.sin(this.pitch),
       -Math.cos(this.yaw)*Math.cos(this.pitch)
@@ -4317,7 +4790,10 @@ class Game{
     if(hit.id===19){ this.toggleFurnacePanel(hit.x,hit.y,hit.z); return; } // furnace: interact instead of place
     const px = hit.x+hit.normal[0], py = hit.y+hit.normal[1], pz = hit.z+hit.normal[2];
     // don't place inside player
-    const feet = this.pos.clone().floor();
+    // Babylon.Vector3 has no in-place floor() like THREE's Vector3.floor();
+    // floor each component manually instead.
+    const feet = this.pos.clone();
+    feet.x = Math.floor(feet.x); feet.y = Math.floor(feet.y); feet.z = Math.floor(feet.z);
     const headY = feet.y+1;
     if(px===feet.x && pz===feet.z && (py===feet.y||py===headY)) return;
     const heldId = this.selectedBlock;
@@ -4349,6 +4825,29 @@ class Game{
     // handled already by world.setBlock's dirty marking; kept here for symmetry/hooks
   }
 
+  // Chunks can now be fully unloaded (geometry disposed, chunk data
+  // dropped) when far from the player — see updateChunkStreaming's
+  // "Unload far chunks" section — and later regenerated from scratch if
+  // the player walks back. generateChunk() only knows about procedural
+  // terrain, so any player edits inside that chunk (torches placed, blocks
+  // broken, etc.) need to be re-applied here from this.blockDiffs, or
+  // they'd silently revert to their generated state until the next full
+  // page reload. Cheap: only iterates the diffs that fall within this one
+  // chunk's coordinate range.
+  reapplyDiffsToChunk(chunk){
+    if(!this.blockDiffs) return;
+    const baseX = chunk.cx*CHUNK_SIZE, baseY = chunk.cy*CHUNK_SIZE, baseZ = chunk.cz*CHUNK_SIZE;
+    for(const key in this.blockDiffs){
+      const [x,y,z] = key.split('_').map(Number);
+      if(x<baseX || x>=baseX+CHUNK_SIZE) continue;
+      if(y<baseY || y>=baseY+CHUNK_SIZE) continue;
+      if(z<baseZ || z>=baseZ+CHUNK_SIZE) continue;
+      const id = this.blockDiffs[key]===null ? 0 : this.blockDiffs[key];
+      chunk.set(x-baseX, y-baseY, z-baseZ, id);
+      if(id===41) this.addTorchLight(x,y,z);
+    }
+  }
+
   syncBlockChange(x,y,z,id){
     // record locally for offline world-save, regardless of online/offline mode
     this.blockDiffs[`${x}_${y}_${z}`] = id;
@@ -4368,11 +4867,20 @@ class Game{
      despawn once they drift far outside the loaded render distance so the mob
      list doesn't grow forever as the player explores. */
   buildMobModel(kind){
-    const group = new THREE.Group();
+    const group = new BABYLON.TransformNode('mobGroup', this.scene);
+    // hex (0xRRGGBB) -> BABYLON.Color3, since mob parts are flat colors
+    // rather than textures (unlike the player skin sheet).
+    function hexColor3(hex){
+      return new BABYLON.Color3(((hex>>16)&255)/255, ((hex>>8)&255)/255, (hex&255)/255);
+    }
     function box(w,h,d,color){
-      const geo = new THREE.BoxGeometry(w,h,d);
-      const mat = new THREE.MeshLambertMaterial({ color });
-      return new THREE.Mesh(geo, mat);
+      const m = BABYLON.MeshBuilder.CreateBox('mobpart', {width:w, height:h, depth:d}, this.scene);
+      const mat = new BABYLON.StandardMaterial('mobmat', this.scene);
+      mat.diffuseColor = hexColor3(color);
+      mat.specularColor = new BABYLON.Color3(0,0,0);
+      m.material = mat;
+      m.parent = group;
+      return m;
     }
     const parts = {};
     if(kind==='cow' || kind==='pig'){
@@ -4389,7 +4897,6 @@ class Game{
       const l2=legGeo(); l2.position.set(0.18,0.2,0.3);
       const l3=legGeo(); l3.position.set(-0.18,0.2,-0.3);
       const l4=legGeo(); l4.position.set(0.18,0.2,-0.3);
-      group.add(body,spot,head,l1,l2,l3,l4);
       Object.assign(parts,{body,head,legs:[l1,l2,l3,l4]});
     } else { // hostile (zombie-ish)
       const skin = 0x4a8a4a;
@@ -4406,7 +4913,6 @@ class Game{
       legL.position.set(-0.13,0.35,0);
       const legR = box(0.2,0.7,0.2, 0x2a3a5a);
       legR.position.set(0.13,0.35,0);
-      group.add(head,body,armL,armR,legL,legR);
       Object.assign(parts,{head,body,armL,armR,legL,legR});
     }
     return { group, parts };
@@ -4448,10 +4954,12 @@ class Game{
     const kind = Math.random()<0.5 ? 'cow' : 'pig';
     const { group, parts } = this.buildMobModel(kind);
     group.position.set(x,y,z);
-    this.scene.add(group);
+    // Babylon meshes/TransformNodes are auto-registered with the scene
+    // passed into their constructor — there's no separate scene.add() step
+    // the way THREE required.
     this.animals.push({
       kind, group, parts,
-      pos: new THREE.Vector3(x,y,z),
+      pos: new BABYLON.Vector3(x,y,z),
       yaw: Math.random()*Math.PI*2,
       wanderT: 0, fleeT: 0, health: 6, maxHealth: 6, hitFlashT: 0,
       bobT: Math.random()*10,
@@ -4460,10 +4968,9 @@ class Game{
   spawnHostile(x,y,z){
     const { group, parts } = this.buildMobModel('hostile');
     group.position.set(x,y,z);
-    this.scene.add(group);
     this.hostiles.push({
       kind:'zombie', group, parts,
-      pos: new THREE.Vector3(x,y,z),
+      pos: new BABYLON.Vector3(x,y,z),
       yaw: Math.random()*Math.PI*2,
       wanderT: 0, attackCD: 0, health: 8, maxHealth: 8, hitFlashT: 0,
       bobT: Math.random()*10,
@@ -4493,8 +5000,8 @@ class Game{
     // ---- passive animals: wander, and flee a bit if recently hit ----
     for(let i=this.animals.length-1; i>=0; i--){
       const m = this.animals[i];
-      const distToPlayer = m.pos.distanceTo(this.pos);
-      if(distToPlayer > despawnDist){ this.scene.remove(m.group); this.animals.splice(i,1); continue; }
+      const distToPlayer = BABYLON.Vector3.Distance(m.pos, this.pos); // Babylon has no instance .distanceTo(); use the static Distance helper
+      if(distToPlayer > despawnDist){ m.group.dispose(); this.animals.splice(i,1); continue; }
 
       m.bobT += delta*6;
       if(m.hitFlashT>0){ m.hitFlashT -= delta; this.setMobFlash(m, m.hitFlashT>0); }
@@ -4512,7 +5019,7 @@ class Game{
         }
         if(m.wandering) this.stepMobPos(m, delta, 1.1, m.wanderYaw);
       }
-      m.group.position.copy(m.pos);
+      m.group.position.copyFrom(m.pos); // Babylon: copyFrom(), not THREE's copy()
       m.group.rotation.y = m.yaw;
       const legBob = Math.sin(m.bobT)*0.35;
       if(m.parts.legs) m.parts.legs.forEach((leg,idx)=>{ leg.rotation.x = (idx%2===0?1:-1)*legBob*(m.wandering||m.fleeT>0?1:0.15); });
@@ -4521,10 +5028,10 @@ class Game{
     // ---- hostiles: wander until the player is close/visible-ish, then chase and attack ----
     for(let i=this.hostiles.length-1; i>=0; i--){
       const m = this.hostiles[i];
-      const distToPlayer = m.pos.distanceTo(this.pos);
+      const distToPlayer = BABYLON.Vector3.Distance(m.pos, this.pos); // Babylon has no instance .distanceTo(); use the static Distance helper
       // daylight burns them off (classic rule) as well as simple despawn distance
       if(distToPlayer > despawnDist || (!this.isNight && this.lightLevelAt(Math.floor(m.pos.x),Math.floor(m.pos.y),Math.floor(m.pos.z))>8)){
-        this.scene.remove(m.group); this.hostiles.splice(i,1); continue;
+        m.group.dispose(); this.hostiles.splice(i,1); continue;
       }
       m.bobT += delta*7;
       if(m.hitFlashT>0){ m.hitFlashT -= delta; this.setMobFlash(m, m.hitFlashT>0); }
@@ -4547,7 +5054,7 @@ class Game{
         if(m.wanderT<=0){ m.wanderYaw = Math.random()*Math.PI*2; m.wanderT = 2+Math.random()*3; }
         this.stepMobPos(m, delta, 1.0, m.wanderYaw);
       }
-      m.group.position.copy(m.pos);
+      m.group.position.copyFrom(m.pos); // Babylon: copyFrom(), not THREE's copy()
       m.group.rotation.y = m.yaw;
       const swing = Math.sin(m.bobT)*0.4;
       m.parts.legL.rotation.x = swing; m.parts.legR.rotation.x = -swing;
@@ -4557,13 +5064,18 @@ class Game{
 
   setMobFlash(m, on){
     const parts = m.parts.legs ? [m.parts.body, m.parts.head, ...m.parts.legs] : Object.values(m.parts);
+    // THREE stored per-mesh custom data in mesh.userData; Babylon meshes
+    // instead expose a free-form `metadata` object for the same purpose.
+    // getHex()/setHex() aren't Babylon APIs -- Color3 is just {r,g,b} in
+    // 0..1, so we clone it manually instead.
     parts.forEach(p=>{
       if(!p.material) return;
       if(on){
-        if(p.userData._origColor===undefined) p.userData._origColor = p.material.color.getHex();
-        p.material.color.setHex(0xff5555);
-      } else if(p.userData._origColor!==undefined){
-        p.material.color.setHex(p.userData._origColor);
+        if(!p.metadata) p.metadata = {};
+        if(p.metadata._origColor===undefined) p.metadata._origColor = p.material.diffuseColor.clone();
+        p.material.diffuseColor = new BABYLON.Color3(1, 0x55/255, 0x55/255);
+      } else if(p.metadata && p.metadata._origColor!==undefined){
+        p.material.diffuseColor = p.metadata._origColor;
       }
     });
   }
@@ -4577,11 +5089,16 @@ class Game{
     const testList = (list, kind)=>{
       for(const m of list){
         const center = m.pos.clone(); center.y += (kind==='hostile'?1.0:0.6);
-        const toMob = center.clone().sub(origin);
-        const t = toMob.dot(dir);
+        // THREE's vec.sub(other)/vec.dot(other)/vec.addScaledVector(dir,t)
+        // are instance methods that mutate/read `this`; Babylon's
+        // equivalents are `subtract` (returns new), the static
+        // `BABYLON.Vector3.Dot(a,b)`, and building the scaled offset by
+        // hand (dir.scale(t)) since addScaledVector isn't a Babylon method.
+        const toMob = center.subtract(origin);
+        const t = BABYLON.Vector3.Dot(toMob, dir);
         if(t<0 || t>bestT) continue;
-        const closest = origin.clone().addScaledVector(dir, t);
-        const perpDist = closest.distanceTo(center);
+        const closest = origin.add(dir.scale(t));
+        const perpDist = BABYLON.Vector3.Distance(closest, center);
         if(perpDist < 0.55){ bestT = t; best = { mob:m, kind, list }; }
       }
     };
@@ -4602,7 +5119,7 @@ class Game{
       mob.fleeT = 1.6; // spooked animals run for a bit even if they survive
     }
     if(mob.health<=0){
-      this.scene.remove(mob.group);
+      mob.group.dispose(); // Babylon: dispose() removes AND frees the node, unlike THREE's scene.remove()
       const idx = list.indexOf(mob);
       if(idx!==-1) list.splice(idx,1);
       if(kind==='animal'){
@@ -4692,6 +5209,11 @@ class Game{
       // keep legacy single-slot key up to date too, so older logic that
       // still checks it (e.g. very first migration pass) keeps working
       localStorage.setItem('vf_world_save', JSON.stringify(save));
+      // Remember this as the world to silently jump back into if the tab
+      // gets killed/reloaded (e.g. backgrounded on mobile) instead of
+      // dumping the player back at the main menu — see the resume check
+      // near boot and the visibilitychange/pagehide handlers below.
+      localStorage.setItem('vf_active_session', this.worldId);
       if(showMsg) this.showCenterMsg('World saved ✓', 1500);
       this.showSaveToast(autosave ? 'World autosaved' : 'World saved ✓', false);
       const note = document.getElementById('saveNote');
@@ -4710,12 +5232,17 @@ class Game{
     // tear down and return to the main menu
     if(this._presenceInterval) clearInterval(this._presenceInterval);
     if(this._autosaveInterval) clearInterval(this._autosaveInterval);
+    if(this._visibilityHandler) document.removeEventListener('visibilitychange', this._visibilityHandler);
+    if(this._saveOnHide) window.removeEventListener('pagehide', this._saveOnHide);
     document.exitPointerLock();
     document.getElementById('hud').style.display = 'none';
     document.getElementById('pausePanel').style.display = 'none';
     document.getElementById('mobileControls').style.display = 'none';
     document.getElementById('menuScreen').style.display = 'flex';
     this._quit = true; // main loop checks this and stops rendering next frame
+    // Player chose to leave on purpose — don't auto-resume this world the
+    // next time the page loads (see the 'vf_active_session' check near boot).
+    try{ localStorage.removeItem('vf_active_session'); }catch(e){}
     updateLoadWorldButtonVisibility();
   }
 
@@ -4789,8 +5316,8 @@ class Game{
     }
     const len = Math.hypot(mx,mz);
     if(len>0){ mx/=len; mz/=len; }
-    const forward = new THREE.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
-    const right = new THREE.Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
+    const forward = new BABYLON.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
+    const right = new BABYLON.Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
     const wishX = (forward.x*-mz + right.x*mx);
     const wishZ = (forward.z*-mz + right.z*mx);
 
@@ -4814,7 +5341,10 @@ class Game{
 
   updateCamera(){
     this.camera.position.set(this.pos.x, this.pos.y+this.eyeHeight, this.pos.z);
-    this.camera.rotation.order='YXZ';
+    // THREE required an explicit Euler order ('YXZ') to avoid gimbal-lock
+    // artifacts when combining yaw+pitch; Babylon's rotation.x/y/z on a
+    // camera/mesh already applies in a fixed, FPS-camera-appropriate order,
+    // so there's no equivalent `.rotation.order` property to set here.
     this.camera.rotation.y = this.yaw;
     this.camera.rotation.x = this.pitch;
   }
@@ -4848,7 +5378,7 @@ class Game{
     for(const [cx,cz] of columns){
       for(let cy=0; cy<CHUNKS_Y; cy++){
         const chunk = this.world.getChunk(cx,cy,cz,true);
-        if(!chunk.generated) this.world.generateChunk(chunk);
+        if(!chunk.generated){ this.world.generateChunk(chunk); this.reapplyDiffsToChunk(chunk); }
         done++;
         if(done%GEN_BATCH===0){
           if(onProgress) onProgress(done, total, 'Generating terrain…');
@@ -4861,12 +5391,32 @@ class Game{
         const chunk = this.world.getChunk(cx,cy,cz);
         if(chunk && chunk.generated && (chunk.dirty || !chunk.mesh)){
           buildChunkMesh(this.world, chunk);
-          this.chunkGroup.add(chunk.mesh);
+          chunk.mesh.parent = this.chunkGroup;
         } else if(chunk && chunk.mesh && !chunk.mesh.parent){
-          this.chunkGroup.add(chunk.mesh);
+          chunk.mesh.parent = this.chunkGroup;
         }
         done++;
         if(done%MESH_BATCH===0){
+          // Building a chunk's VertexData here only creates the JS-side
+          // typed arrays — the actual GPU buffer objects for its
+          // vertex/normal/uv/index data aren't created and uploaded to the
+          // driver until the mesh is first drawn inside scene.render().
+          // Every previous version of this loop only ever yielded via
+          // requestAnimationFrame WITHOUT rendering, so all ~100s of
+          // pregenerated chunk meshes sat un-uploaded until the very first
+          // real gameplay frame after loading finished — which then had to
+          // create+upload every single one of those GPU buffers/textures
+          // synchronously in one frame. On a weak Intel integrated GPU that
+          // single-frame burst blew past the OS driver-timeout (TDR)
+          // window and reset the GPU driver entirely (DXGI device-removed
+          // / "Error allocating ShaderResourceView" / CONTEXT_LOST_WEBGL),
+          // which is what left the canvas permanently white afterward.
+          // Calling scene.render() here (behind the loading screen overlay,
+          // so nothing stray is visible) uploads just the chunks meshed so
+          // far, one MESH_BATCH at a time, spreading the exact same total
+          // upload cost across every loading-screen frame instead of
+          // dumping it all into frame one of real gameplay.
+          this.scene.render();
           if(onProgress) onProgress(done, total, 'Building the world…');
           await new Promise(r=>requestAnimationFrame(r));
         }
@@ -4876,6 +5426,51 @@ class Game{
   }
 
   /* ---------------- Chunk streaming: only load/mesh what's near & visible ---------------- */
+  // ---------------------------------------------------------------------
+  // CHUNK-LEVEL FRUSTUM CULLING
+  // Three.js already frustum-culls each individual THREE.Mesh automatically,
+  // but that per-object test still runs (and still walks) every mesh in
+  // every loaded chunk group, every frame — with dozens of loaded chunks
+  // that's hundreds of small objects being matrix-updated and tested even
+  // when whole chunks are entirely behind the player. This does a much
+  // cheaper CHUNK-level test first: one bounding-sphere-vs-frustum check per
+  // chunk (not per mesh-within-chunk), and sets chunk.mesh.visible=false for
+  // anything outside the frustum. A THREE.Group with visible=false skips
+  // its entire subtree during the renderer's traversal, so this turns
+  // "test every face-mesh in every chunk" into "test one sphere per chunk,
+  // skip the whole chunk's meshes at once" — the exact optimization
+  // Minecraft-style engines rely on to keep behind-the-player terrain from
+  // costing anything per frame.
+  updateChunkFrustumCulling(){
+    // Babylon exposes the active camera's frustum planes directly (no manual
+    // projection*view matrix multiply needed the way THREE.Frustum required)
+    // — Scene.frustumPlanes is recomputed each frame internally, so we just
+    // read it back here the same way THREE's setFromProjectionMatrix() did.
+    const frustumPlanes = this.scene.frustumPlanes || BABYLON.Frustum.GetPlanes(this.scene.getTransformMatrix());
+
+    // A chunk is CHUNK_SIZE on a side; its bounding sphere (centered on the
+    // chunk's middle) has radius = half the cube's space-diagonal. Padded
+    // slightly so chunks just at the frustum edge don't pop/flicker.
+    const radius = CHUNK_SIZE * 0.87; // ~ (CHUNK_SIZE * sqrt(3))/2, rounded up a bit for safety
+    if(!this._chunkCullCenter) this._chunkCullCenter = new BABYLON.Vector3();
+    const center = this._chunkCullCenter;
+    for(const chunk of this.world.chunks.values()){
+      if(!chunk.mesh) continue;
+      center.set(
+        chunk.cx*CHUNK_SIZE + CHUNK_SIZE/2,
+        chunk.cy*CHUNK_SIZE + CHUNK_SIZE/2,
+        chunk.cz*CHUNK_SIZE + CHUNK_SIZE/2
+      );
+      // THREE.Frustum.intersectsSphere -> BABYLON.Frustum.IsSphereInFrustum,
+      // same sphere-vs-6-planes test. TransformNode has no built-in
+      // .setEnabled visibility toggle used elsewhere for "hide without
+      // disposing", so we drive setEnabled on the node directly, which
+      // (like THREE's group.visible=false) skips the whole chunk's meshes
+      // in one call instead of testing each face-mesh individually.
+      chunk.mesh.setEnabled(BABYLON.Frustum.IsSphereInFrustum(frustumPlanes, center, radius));
+    }
+  }
+
   updateChunkStreaming(){
     const pcx = Math.floor(this.pos.x/CHUNK_SIZE);
     const pcz = Math.floor(this.pos.z/CHUNK_SIZE);
@@ -4910,6 +5505,7 @@ class Game{
         let chunk = this.world.getChunk(cx,cy,cz,true);
         if(!chunk.generated){
           this.world.generateChunk(chunk);
+          this.reapplyDiffsToChunk(chunk);
           genBudget--;
         }
       }
@@ -4928,7 +5524,7 @@ class Game{
     // stall the main thread long enough for the GPU driver to give up
     // (WebGL context loss / white screen) when loading or placing blocks
     // near a very dense area like the Gray Pillars easter egg.
-    let costBudget = 3000;
+    let costBudget = 1000;
     let builtCount = 0;
     const MIN_BUILT_PER_FRAME = 1; // always let at least one chunk through, even if it's oversized, so nothing gets stuck forever
     // Mesh nearest-needed chunks first (previously this iterated the `needed`
@@ -4948,19 +5544,59 @@ class Game{
         if(cost > costBudget && builtCount >= MIN_BUILT_PER_FRAME) continue; // too expensive for what's left this frame — try again next frame
         // only mesh if it or any neighbor is generated enough to know exposure
         buildChunkMesh(this.world, chunk);
-        this.chunkGroup.add(chunk.mesh);
+        chunk.mesh.parent = this.chunkGroup;
         costBudget -= cost;
         builtCount++;
       } else if(chunk.mesh && !chunk.mesh.parent){
-        this.chunkGroup.add(chunk.mesh);
+        chunk.mesh.parent = this.chunkGroup;
       }
     }
 
-    // Unload far chunks (visibility-based: nothing beyond render distance is shown)
+    // Unload far chunks. Previously this only removed chunk.mesh from the
+    // scene graph — the chunk's BufferGeometry (GPU vertex/index buffers)
+    // and the chunk's block-data object were kept alive forever in
+    // this.world.chunks, for every chunk column ever visited in the whole
+    // session. On a weak/integrated GPU that unbounded VRAM growth is what
+    // eventually crashes the whole GPU driver (DEVICE_REMOVED / WebGL
+    // "context lost"), not just something that shows up as low FPS. Now we
+    // actually dispose the geometry and drop the chunk data once a chunk
+    // has been out of range — regenerating it later (if the player comes
+    // back) is cheap; keeping every visited chunk's mesh resident forever
+    // is not.
+    // Small grace margin (UNLOAD_MARGIN) beyond render distance avoids
+    // thrashing: instantly disposing/regenerating a chunk that's right at
+    // the boundary and flickers in/out of range as the player moves would
+    // be worse than keeping a small buffer of just-out-of-range chunks
+    // briefly alive.
+    const UNLOAD_MARGIN = 1;
+    const unloadDistSq = (RENDER_DISTANCE+UNLOAD_MARGIN)*(RENDER_DISTANCE+UNLOAD_MARGIN);
+    const toUnload = [];
     for(const [key, chunk] of this.world.chunks){
-      if(!needed.has(key) && chunk.mesh && chunk.mesh.parent){
-        this.chunkGroup.remove(chunk.mesh);
+      if(needed.has(key)) continue;
+      const dx = chunk.cx - pcx, dz = chunk.cz - pcz;
+      if(dx*dx+dz*dz <= unloadDistSq) continue; // still within the grace margin, leave it
+      // Unparenting (setting parent=null) detaches it from the scene graph
+      // immediately, same as THREE's group.remove() — the actual GPU buffer
+      // disposal still happens in the budgeted loop below.
+      if(chunk.mesh && chunk.mesh.parent) chunk.mesh.parent = null;
+      toUnload.push(key);
+    }
+    // Budgeted disposal (a handful per frame) so walking near the unload
+    // boundary never triggers a big burst of GPU deallocation calls in a
+    // single frame — same "spread the expensive work across frames"
+    // principle as chunk generation/meshing above.
+    let disposeBudget = 8;
+    for(const key of toUnload){
+      if(disposeBudget<=0) break;
+      const chunk = this.world.chunks.get(key);
+      if(!chunk) continue;
+      if(chunk.mesh){
+        if(chunk.mesh.getChildMeshes) chunk.mesh.getChildMeshes().forEach(m=>m.dispose());
+        chunk.mesh.dispose();
+        chunk.mesh = null;
       }
+      this.world.chunks.delete(key);
+      disposeBudget--;
     }
   }
 
@@ -5021,29 +5657,47 @@ class Game{
     if(this.otherPlayers.has(uid)) return;
     const palette = data.palette || SKIN_PALETTES[0];
     const built = buildPlayerModel(palette);
-    this.scene.add(built.group);
+    // Babylon nodes auto-register with their scene on creation — no
+    // separate scene.add() call needed (unlike THREE.Group).
 
-    // name tag sprite
+    // name tag — THREE.Sprite (a camera-facing billboard quad with a
+    // CanvasTexture) has no single-class Babylon equivalent; the standard
+    // substitute is a small plane mesh with a DynamicTexture material and
+    // billboardMode set to always face the camera, which reproduces the
+    // same "sprite" look.
     const tagCanvas = document.createElement('canvas'); tagCanvas.width=256; tagCanvas.height=64;
-    const tctx = tagCanvas.getContext('2d');
+    const tagDynTex = new BABYLON.DynamicTexture('nametag_'+uid, tagCanvas, this.scene, true);
+    const tctx = tagDynTex.getContext();
+    tctx.clearRect(0,0,256,64);
     tctx.font='bold 32px monospace'; tctx.fillStyle='#fff'; tctx.textAlign='center';
     tctx.strokeStyle='#000'; tctx.lineWidth=4;
     tctx.strokeText(data.name||'Player', 128, 40);
     tctx.fillText(data.name||'Player', 128, 40);
-    const tagTex = new THREE.CanvasTexture(tagCanvas);
-    const tagMat = new THREE.SpriteMaterial({map:tagTex, depthTest:false});
-    const tagSprite = new THREE.Sprite(tagMat);
-    tagSprite.scale.set(1.4,0.35,1);
+    tagDynTex.update();
+    tagDynTex.hasAlpha = true;
+
+    const tagMat = new BABYLON.StandardMaterial('nametagmat_'+uid, this.scene);
+    tagMat.diffuseTexture = tagDynTex;
+    tagMat.emissiveColor = new BABYLON.Color3(1,1,1); // unlit, so day/night doesn't dim the name tag
+    tagMat.specularColor = new BABYLON.Color3(0,0,0);
+    tagMat.backFaceCulling = false;
+    tagMat.diffuseTexture.hasAlpha = true;
+    tagMat.useAlphaFromDiffuseTexture = true;
+    tagMat.disableDepthWrite = true; // matches THREE's depthTest:false on the sprite material
+
+    const tagSprite = BABYLON.MeshBuilder.CreatePlane('nametagplane_'+uid, {width:1.4, height:0.35}, this.scene);
+    tagSprite.material = tagMat;
     tagSprite.position.set(0,2.15,0);
-    built.group.add(tagSprite);
+    tagSprite.billboardMode = BABYLON.Mesh.BILLBOARDMODE_ALL; // always face the camera, like a sprite
+    tagSprite.parent = built.group;
 
     const x0 = Number.isFinite(data.x) ? data.x : 0;
     const y0 = Number.isFinite(data.y) ? data.y : 0;
     const z0 = Number.isFinite(data.z) ? data.z : 0;
     this.otherPlayers.set(uid, {
       group: built.group, parts: built.parts,
-      target: new THREE.Vector3(x0,y0,z0),
-      current: new THREE.Vector3(x0,y0,z0),
+      target: new BABYLON.Vector3(x0,y0,z0),
+      current: new BABYLON.Vector3(x0,y0,z0),
       yaw: Number.isFinite(data.yaw)?data.yaw:0, pitch: Number.isFinite(data.pitch)?data.pitch:0, moving:false, animT:0,
       name: data.name||'Player', playerId: data.playerId||null,
     });
@@ -5067,14 +5721,18 @@ class Game{
   _removeOtherPlayer(uid){
     const p = this.otherPlayers.get(uid);
     if(!p) return;
-    this.scene.remove(p.group);
+    p.group.dispose(); // Babylon: dispose() both removes from the scene and frees resources
     this.otherPlayers.delete(uid);
   }
 
   animateOtherPlayers(delta){
     for(const p of this.otherPlayers.values()){
-      p.current.lerp(p.target, Math.min(1, delta*10));
-      p.group.position.copy(p.current);
+      // THREE's Vector3.lerp(target,t) mutates `this` in place; Babylon's
+      // Vector3 has no matching instance method, so we use the static
+      // Vector3.Lerp(a,b,t) form and copy the result back in.
+      const lerped = BABYLON.Vector3.Lerp(p.current, p.target, Math.min(1, delta*10));
+      p.current.copyFrom(lerped);
+      p.group.position.copyFrom(p.current);
       p.group.rotation.y = p.yaw;
       if(p.moving){
         p.animT += delta*8;
@@ -5115,14 +5773,34 @@ class Game{
 
   /* ---------------- Local self-arm animation (first person bob) ---------------- */
   updateDebugPanel(){
+    // Writing innerHTML every single frame forces a DOM reflow/reparse each
+    // time regardless of whether anything visible changed — on weak
+    // integrated-GPU school-lab hardware that's real, measurable per-frame
+    // cost for a panel that only needs to be human-readable a few times a
+    // second. Throttled to ~4x/sec (still feels "live") instead of 60x/sec.
+    this._debugPanelTimer = (this._debugPanelTimer||0) + 1;
+    if(this._debugPanelTimer < 15) return; // ~15 frames at 60fps ≈ 4x/sec; still throttled if fps is lower
+    this._debugPanelTimer = 0;
+
     const panel = document.getElementById('debugPanel');
-    panel.innerHTML = `
+    // THREE.WebGLRenderer.info.render.{calls,triangles} -> Babylon's Engine
+    // tracks the same per-frame counters via drawCalls/faces perf counters
+    // (enabled by default), read back through the engine instance.
+    const drawCalls = this.engine._drawCalls ? this.engine._drawCalls.current : 0;
+    const tris = this.scene.getActiveMeshes ? this.scene.getTotalVertices()/3|0 : 0;
+    const html = `
       VOXEL FORGE ${ONLINE_MODE?'(Online: '+WORLD_ID+')':'(Offline)'}<br>
       XYZ: ${this.pos.x.toFixed(1)}, ${this.pos.y.toFixed(1)}, ${this.pos.z.toFixed(1)}<br>
       Chunk: ${Math.floor(this.pos.x/CHUNK_SIZE)}, ${Math.floor(this.pos.z/CHUNK_SIZE)}<br>
       Loaded chunks: ${this.world.chunks.size}<br>
+      Draw calls: ${drawCalls} | Tris: ${tris}<br>
       Mode: ${this.flying?'Flying':'Walking'} | FPS: ${this.fps||0}
     `;
+    // Skip the DOM write entirely if nothing actually changed since last
+    // throttled update (e.g. player standing still, same chunk, same fps).
+    if(panel._lastHtml === html) return;
+    panel._lastHtml = html;
+    panel.innerHTML = html;
   }
 
   /* ---------------- Health / damage ---------------- */
@@ -5167,7 +5845,7 @@ class Game{
     this.health = this.maxHealth;
     this.dead = false;
     this.vel.set(0,0,0);
-    this.pos.copy(this.respawnPos);
+    this.pos.copyFrom(this.respawnPos); // Babylon: copyFrom(), not THREE's copy()
     this.pos.y += 3;
     this.updateHealthUI();
     // In survival, dying drops the player back with an empty inventory —
@@ -5239,7 +5917,9 @@ class Game{
 
   /* ---------------- Main loop ---------------- */
   start(){
-    this.clock = new THREE.Clock();
+    // Babylon doesn't have a standalone THREE.Clock class — Engine tracks
+    // its own delta time internally (getDeltaTime(), in milliseconds) once
+    // the render loop is running, which we read each frame below instead.
     this._frameCount=0; this._fpsTimer=0; this.fps=0;
     this.updateHealthUI();
     // Periodic autosave for offline worlds, so progress isn't lost if the
@@ -5248,7 +5928,21 @@ class Game{
     if(!ONLINE_MODE){
       this._autosaveInterval = setInterval(()=>{
         if(!this.paused && !this.dead && !this._quit) this.saveWorld(false, true);
-      }, 120000); // every 2 minutes
+      }, 20000); // every 20s — was 2 min; mobile tabs can be killed with no warning,
+                 // so we can't rely on a long window between saves anymore.
+      // Save immediately so a worldId + first snapshot exist on disk right
+      // away (previously the very first save didn't happen until 2 minutes
+      // in, or "Save & Quit" — either way, too late for a tab killed seconds
+      // after loading on mobile).
+      this.saveWorld(false, true);
+      // Mobile browsers can suspend/discard a backgrounded tab at any
+      // moment — save the instant the tab is hidden, not just on a timer.
+      this._saveOnHide = ()=>{
+        if(!this.paused && !this.dead && !this._quit) this.saveWorld(false, true);
+      };
+      this._visibilityHandler = ()=>{ if(document.hidden) this._saveOnHide(); };
+      document.addEventListener('visibilitychange', this._visibilityHandler);
+      window.addEventListener('pagehide', this._saveOnHide);
     }
     const loop = ()=>{
       if(this._quit) return; // stop the render loop after Save & Quit
@@ -5263,9 +5957,16 @@ class Game{
       // canvas content). Catching keeps the loop alive so a bad update just
       // gets skipped instead of permanently killing rendering.
       try{
-        const delta = Math.min(0.05, this.clock.getDelta());
+        // engine.getDeltaTime() returns milliseconds since the last frame;
+        // THREE.Clock.getDelta() returned seconds, so divide by 1000 to keep
+        // every downstream consumer of `delta` (movement, mining, liquids,
+        // day/night, etc.) working with the same units as before.
+        const delta = Math.min(0.05, this.engine.getDeltaTime()/1000);
         this._fpsTimer += delta; this._frameCount++;
-        if(this._fpsTimer>=1){ this.fps=this._frameCount; this._frameCount=0; this._fpsTimer=0; }
+        if(this._fpsTimer>=1){
+          this.fps=this._frameCount; this._frameCount=0; this._fpsTimer=0;
+          this._checkAdaptivePerformance();
+        }
 
         if(this.invulnT>0) this.invulnT = Math.max(0, this.invulnT-delta);
 
@@ -5273,10 +5974,20 @@ class Game{
           this.updateMovement(delta);
           this.updateCamera();
           // Skip while the GL context is down — buildChunkMesh creates
-          // THREE.BufferGeometry/Material objects that need a live context;
+          // BABYLON.VertexData/Material objects that need a live context;
           // everything stays marked dirty and streams back in automatically
-          // once webglcontextrestored fires (see renderer setup above).
+          // once onContextRestoredObservable fires (see engine setup above).
           if(!this._contextLost) this.updateChunkStreaming();
+          // Re-pick which torches are near enough to deserve a real light,
+          // throttled to a few times/sec (not every frame) since it's just
+          // tracking player movement, not something that needs per-frame
+          // precision — see updateActiveTorchLights() for why this budget
+          // exists at all.
+          this._torchLightTimer = (this._torchLightTimer||0) + delta;
+          if(this._torchLightTimer > 0.25){
+            this._torchLightTimer = 0;
+            if(this.torchLights.size>0) this.updateActiveTorchLights();
+          }
           this.updateMining(delta);
           // Falling out of the world hurts as normal — the void portal is only
           // triggered by walking into one of the two arches, not by falling.
@@ -5301,7 +6012,10 @@ class Game{
         this.updateDebugPanel();
         if(this._frameCount%20===0) this.updatePlayerListUI();
 
-        if(!this._contextLost) this.renderer.render(this.scene, this.camera);
+        if(!this._contextLost){
+          this.updateChunkFrustumCulling();
+          this.scene.render();
+        }
       }catch(err){
         console.error('Frame error (recovered, rendering continues):', err);
       }
@@ -5425,24 +6139,26 @@ class Game{
     if(this._inArchBClearing){
       this.sun.intensity = 0;
       this.moonLight.intensity = 0;
+      this.sun.setEnabled(false);
+      this.moonLight.setEnabled(false);
       this.ambient.intensity = 0.16;
-      this.ambient.color.set(0x5a6b5f); // sickly gray-green fill light
-      const voidColor = new THREE.Color(0x0d100e);
-      this.scene.background = voidColor;
-      this.scene.fog.color = voidColor;
-      this.scene.fog.near = 8;
-      this.scene.fog.far = 34;
+      this.ambient.diffuse = BABYLON.Color3.FromHexString('#5a6b5f'); // sickly gray-green fill light
+      const voidColor = BABYLON.Color4.FromHexString('#0d100eff');
+      this.scene.clearColor = voidColor;
+      this.scene.fogColor = new BABYLON.Color3(voidColor.r, voidColor.g, voidColor.b);
+      this.scene.fogStart = 8;
+      this.scene.fogEnd = 34;
       this.isNight = true; // keeps hostile-mob light-level checks consistent if mobs ever wander in
       this._leftArchBClearing = true; // arm the one-shot restore for whenever we do leave
       return;
     }
     // Leaving Arch B's clearing restores normal fog distance/ambient tint —
-    // the scene fog object's near/far and the ambient color were overridden
-    // above, so put them back once here rather than every normal frame.
+    // the scene fog start/end and the ambient color were overridden above,
+    // so put them back once here rather than every normal frame.
     if(this._leftArchBClearing){
       this._leftArchBClearing = false;
       this.applyGraphicsSettings();
-      this.ambient.color.set(0x9fb8d8); // restore the normal sky-blue ambient tint
+      this.ambient.diffuse = BABYLON.Color3.FromHexString('#9fb8d8'); // restore the normal sky-blue ambient tint
     }
 
     const t = this.dayTime;
@@ -5450,33 +6166,51 @@ class Game{
     const angle = t*Math.PI*2 - Math.PI/2; // -PI/2 at t=0 (dawn, rising in the east)
     const sunHeight = Math.sin(angle); // -1..1, negative = below horizon
     const sunDist = 120;
-    this.sun.position.set(
+    // Babylon's DirectionalLight has no separate "target" object the way
+    // THREE's DirectionalLight did (light.target.position, a real Object3D
+    // that had to be added to the scene graph) — a directional light is
+    // purely a direction vector, so we compute the aim vector from the
+    // light's position to the player directly instead.
+    const sunPos = new BABYLON.Vector3(
       this.pos.x + Math.cos(angle)*sunDist,
       this.pos.y + Math.max(sunHeight,-0.15)*sunDist + 20,
       this.pos.z + 40
     );
-    this.sun.target.position.copy(this.pos);
-    if(!this.sun.target.parent) this.scene.add(this.sun.target);
+    this.sun.position.copyFrom(sunPos);
+    this.sun.direction = this.pos.subtract(sunPos).normalize();
 
     // brightness follows sun height, clamped so there's always a touch of
     // ambient moonlight fill rather than pure black
     const dayFactor = Math.max(0, sunHeight); // 0 at night, 1 at noon
     const twilight = Math.max(0, 1 - Math.abs(sunHeight)*2.2); // brief warm glow at dawn/dusk
     this.sun.intensity = dayFactor*0.9;
-    this.moonLight.position.set(this.pos.x - Math.cos(angle)*sunDist, this.pos.y + Math.max(-sunHeight,-0.15)*sunDist + 20, this.pos.z - 40);
-    this.moonLight.target.position.copy(this.pos);
-    if(!this.moonLight.target.parent) this.scene.add(this.moonLight.target);
+    this.sun.setEnabled(dayFactor > 0.02); // fully below-horizon sun contributes nothing — exclude it from the shader's light loop entirely instead of leaving a live 0-ish-intensity light in the scene
+    const moonPos = new BABYLON.Vector3(this.pos.x - Math.cos(angle)*sunDist, this.pos.y + Math.max(-sunHeight,-0.15)*sunDist + 20, this.pos.z - 40);
+    this.moonLight.position.copyFrom(moonPos);
+    this.moonLight.direction = this.pos.subtract(moonPos).normalize();
     this.moonLight.intensity = (1-dayFactor)*0.22;
+    this.moonLight.setEnabled(dayFactor < 0.98); // symmetric: skip the moon light entirely at full noon brightness
     this.ambient.intensity = 0.18 + dayFactor*0.47;
 
-    // sky/fog color: deep navy at night, warm orange at dawn/dusk, sky blue at noon
-    const nightColor = new THREE.Color(0x0a0e1c);
-    const dawnColor = new THREE.Color(0xf0925a);
-    const dayColor = new THREE.Color(0x8fc7ef);
-    let skyColor = new THREE.Color().copy(nightColor).lerp(dayColor, dayFactor);
-    skyColor.lerp(dawnColor, twilight*0.55);
-    this.scene.background = skyColor;
-    this.scene.fog.color = skyColor;
+    // sky/fog color: deep navy at night, warm orange at dawn/dusk, sky blue at noon.
+    // These three reference colors never change, so they're built once and
+    // reused — allocating 3-4 new Color objects EVERY frame (as this used
+    // to do under THREE) is unnecessary garbage-collector pressure that
+    // adds up at 60fps on weak hardware. this._skyColorScratch is likewise
+    // reused instead of allocating a new Color3 to lerp into every frame.
+    if(!this._nightColor) this._nightColor = BABYLON.Color3.FromHexString('#0a0e1c');
+    if(!this._dawnColor) this._dawnColor = BABYLON.Color3.FromHexString('#f0925a');
+    if(!this._dayColor) this._dayColor = BABYLON.Color3.FromHexString('#8fc7ef');
+    if(!this._skyColorScratch) this._skyColorScratch = new BABYLON.Color3();
+    // BABYLON.Color3 has no in-place lerp-into-self helper like THREE's
+    // Color.lerp() (which mutates `this`), so we use the static
+    // Color3.Lerp(a,b,t) form and write the result into our scratch object
+    // field-by-field to avoid allocating a new Color3 every frame.
+    const lerped1 = BABYLON.Color3.Lerp(this._nightColor, this._dayColor, dayFactor);
+    const skyColor = BABYLON.Color3.Lerp(lerped1, this._dawnColor, twilight*0.55);
+    this._skyColorScratch.copyFrom(skyColor);
+    this.scene.clearColor = new BABYLON.Color4(skyColor.r, skyColor.g, skyColor.b, 1);
+    this.scene.fogColor = skyColor;
 
     const wasNight = this.isNight;
     this.isNight = sunHeight < -0.05;
@@ -5509,20 +6243,124 @@ class Game{
 
   // Real-time point light for a placed torch (id 41), on top of the
   // lightLevelAt() gameplay number above, so torches actually look lit.
+  // IMPORTANT: this does NOT necessarily add a live THREE.PointLight —
+  // every active real-time light forces every lit material in the entire
+  // scene to evaluate that light in its fragment shader, every frame, for
+  // every pixel it covers. Unbounded torches (one real light each, forever)
+  // is what was crushing FPS on integrated/school-lab GPUs once a player
+  // placed more than a handful. Torches are now just tracked as data here;
+  // updateActiveTorchLights() (called once per frame) decides which small
+  // number of nearest-to-player torches actually get a real light.
   addTorchLight(x,y,z){
     const key = `${x}_${y}_${z}`;
     if(this.torchLights.has(key)) return;
-    const light = new THREE.PointLight(0xffaa55, 1.1, 9, 2);
-    light.position.set(x+0.5, y+0.6, z+0.5);
-    this.scene.add(light);
-    this.torchLights.set(key, light);
+    this.torchLights.set(key, {x,y,z});
+    this.updateActiveTorchLights();
   }
   removeTorchLight(x,y,z){
     const key = `${x}_${y}_${z}`;
-    const light = this.torchLights.get(key);
-    if(!light) return;
-    this.scene.remove(light);
+    if(!this.torchLights.has(key)) return;
     this.torchLights.delete(key);
+    const active = this.activeTorchLights.get(key);
+    // Babylon has no scene.remove(light) — a light (like any scene node) is
+    // torn down via dispose(), which both destroys it and detaches it from
+    // the scene in one call.
+    if(active){ active.dispose(); this.activeTorchLights.delete(key); }
+    this.updateActiveTorchLights();
+  }
+  // Keep only the MAX_ACTIVE_TORCH_LIGHTS nearest-to-player torches as real
+  // THREE.PointLights; every other placed torch still lights up the block
+  // grid via lightLevelAt()'s baked-in numeric light level (used for block
+  // tinting), it just doesn't get its own dynamic light. This keeps the
+  // per-frame lighting cost bounded no matter how many torches a player
+  // places over a long session — the single biggest lever for FPS on
+  // integrated/low-end GPUs, since three.js re-evaluates every active
+  // real-time light for every lit fragment in the scene, every frame.
+  updateActiveTorchLights(){
+    if(this.torchLights.size===0){
+      for(const [,light] of this.activeTorchLights){ light.dispose(); }
+      this.activeTorchLights.clear();
+      return;
+    }
+    const MAX_ACTIVE_TORCH_LIGHTS = (SETTINGS.graphics==='potato') ? 0 : (SETTINGS.graphics==='low') ? 2 : (SETTINGS.graphics==='high' ? 12 : 6);
+    const px = this.pos.x, py = this.pos.y, pz = this.pos.z;
+    const entries = [];
+    for(const [key,t] of this.torchLights){
+      const dx=t.x-px, dy=t.y-py, dz=t.z-pz;
+      entries.push([key, t, dx*dx+dy*dy+dz*dz]);
+    }
+    entries.sort((a,b)=>a[2]-b[2]);
+    const keep = new Set(entries.slice(0, MAX_ACTIVE_TORCH_LIGHTS).map(e=>e[0]));
+    // Drop lights that fell out of the nearest set
+    for(const [key,light] of this.activeTorchLights){
+      if(!keep.has(key)){ light.dispose(); this.activeTorchLights.delete(key); }
+    }
+    // Add lights for newly-nearest torches that don't have one yet.
+    // THREE.PointLight(color, intensity, distance, decay) -> Babylon's
+    // PointLight takes a position + scene in its constructor and exposes
+    // range/intensity/diffuse separately; `range` is Babylon's equivalent
+    // of THREE's cutoff `distance` parameter.
+    for(const key of keep){
+      if(this.activeTorchLights.has(key)) continue;
+      const t = this.torchLights.get(key);
+      const light = new BABYLON.PointLight('torch_'+key, new BABYLON.Vector3(t.x+0.5, t.y+0.6, t.z+0.5), this.scene);
+      light.diffuse = BABYLON.Color3.FromHexString('#ffaa55');
+      light.intensity = 1.1;
+      light.range = 9;
+      this.activeTorchLights.set(key, light);
+    }
+  }
+
+  // Fully tears down this Game instance's GPU-side resources. Without this,
+  // every launchGame() call (goOffline(), createRoom(), joinRoom(), retry
+  // paths, etc.) built a brand-new THREE.WebGLRenderer on the same canvas
+  // while the previous renderer/context was simply dropped as a JS
+  // reference — the underlying WebGL context and everything uploaded to
+  // the GPU (chunk mesh geometries/materials, block textures, warmed
+  // materials) stayed alive. Repeated menu -> play -> menu cycles piled up
+  // abandoned contexts until the driver ran out of resources and force-lost
+  // one (the ResourceManager11.cpp / ShaderResourceView allocation failure
+  // seen in the console). Call this before creating the next `new Game()`.
+  dispose(){
+    this._quit = true; // stop the render loop (see start()'s loop(), which checks this._quit)
+    clearInterval(this._autosaveInterval);
+    if(this._visibilityHandler) document.removeEventListener('visibilitychange', this._visibilityHandler);
+    if(this._saveOnHide) window.removeEventListener('pagehide', this._saveOnHide);
+
+    // Dispose every chunk's mesh geometry/material (materials are shared/
+    // cached by key, so just drop maps+materials once via the scene traverse
+    // below rather than per-chunk, to avoid double-disposing the same
+    // material instance).
+    if(this.world){
+      for(const [,chunk] of this.world.chunks){
+        if(chunk.mesh){
+          if(chunk.mesh.getChildMeshes) chunk.mesh.getChildMeshes().forEach(m=>m.dispose());
+          chunk.mesh.dispose();
+          chunk.mesh = null;
+        }
+      }
+    }
+
+    // Dispose any remaining meshes/materials/textures still attached to the
+    // scene graph (players, held-item mesh, particles, etc.). Babylon's
+    // Scene.dispose() below already does a full sweep of every mesh,
+    // material, and texture it owns, so an explicit traverse+dispose loop
+    // (needed under THREE, which has no single "dispose everything" call)
+    // isn't necessary here — kept as a no-op comment for parity with the
+    // original structure of this method.
+
+    // Cached materials are keyed globally and reused across Game instances —
+    // clear the cache so the next Game rebuilds materials against the new
+    // engine/context instead of reusing ones bound to the old (about to be
+    // destroyed) context.
+    if(typeof materialByKeyCacheClearAll === 'function') materialByKeyCacheClearAll();
+
+    // Finally release the scene and engine, freeing the WebGL context
+    // immediately rather than waiting on GC — Babylon's Scene.dispose()
+    // walks and disposes every mesh/material/texture it owns first, then
+    // Engine.dispose() tears down the GL context itself.
+    this.scene.dispose();
+    this.engine.dispose();
   }
 }
 
@@ -5835,7 +6673,8 @@ function heartIconDataUrl(state){
 ------------------------------------------------------------------------- */
 function setLoad(pct, label){
   document.getElementById('loadBarInner').style.width = pct+'%';
-  if(label) document.getElementById('loadLabel').textContent = label;
+  if(label) document.getElementById('loadLabel').firstChild.textContent = label+' ';
+  document.getElementById('loadPct').textContent = Math.round(pct)+'%';
 }
 
 const LOADING_TIPS = [
@@ -5951,10 +6790,12 @@ let PENDING_LOAD = null; // set by loadSavedWorld() before launchGame() runs
 // build one throwaway cube per known material, render them once (off in a
 // side scene so nothing is visible), then discard them. Must run AFTER
 // `gameInstance` (and its renderer) exist.
-function warmAllBlockMaterialsOnGPU(game){
-  const warmScene = new THREE.Scene();
-  const geo = new THREE.BoxGeometry(0.01,0.01,0.01); // tiny — cost is per-material/texture, not per-triangle
-  const meshes = [];
+async function warmAllBlockMaterialsOnGPU(game, onProgress=null){
+  // A separate throwaway BABYLON.Scene, same as the old THREE warm-scene —
+  // rendering it drives Babylon's own shader-compile + texture-upload path
+  // for each material without touching the real game scene.
+  const warmScene = new BABYLON.Scene(game.engine);
+  const keys = [];
   const seen = new Set();
   for(const id in BLOCKS){
     const b = BLOCKS[id];
@@ -5965,23 +6806,55 @@ function warmAllBlockMaterialsOnGPU(game){
       const key = faceMaterialKey(+id, face);
       if(seen.has(key)) return;
       seen.add(key);
-      const mat = getFaceMaterialByKey(key);
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.position.set(meshes.length*0.02, 5000, 0); // stacked far away, never actually visible on screen
-      warmScene.add(mesh);
-      meshes.push(mesh);
+      keys.push(key);
     });
   }
-  // one render call compiles + uploads every material used in warmScene
-  game.renderer.render(warmScene, game.camera);
-  meshes.forEach(m=> warmScene.remove(m));
-  geo.dispose();
+  // Compiling EVERY material's shader + uploading its texture (with mipmap
+  // generation) to the GPU used to happen in one single render() call here
+  // — dozens of shader compiles/texture uploads in one synchronous frame.
+  // That single-frame burst is exactly the kind of GPU work that trips the
+  // Windows driver-timeout (TDR) watchdog on a weak Intel integrated GPU,
+  // resetting the whole D3D11 device (the "Error allocating
+  // ShaderResourceView" / CONTEXT_LOST_WEBGL crash reported in the console
+  // — it only *surfaced* on the next frame's render() call in the main
+  // loop, which made it look like the gameplay loop was the culprit, but
+  // this warm-up burst is what actually broke the context). Spreading it
+  // across a few materials per animation frame keeps every individual
+  // frame's GPU work small enough for even a slow/old driver to keep up.
+  const WARM_BATCH = 3;
+  // A separate BABYLON.UniversalCamera for the warm-scene — Babylon requires
+  // every scene to have an active camera before it can render(), unlike
+  // THREE where render(scene, camera) let one camera drive any scene.
+  const warmCamera = new BABYLON.UniversalCamera('warmCam', new BABYLON.Vector3(0,0,-1), warmScene);
+  warmScene.activeCamera = warmCamera;
+  for(let i=0; i<keys.length; i++){
+    const mat = getFaceMaterialByKey(keys[i]);
+    const mesh = BABYLON.MeshBuilder.CreateBox('warmbox', {size:0.01}, warmScene); // tiny — cost is per-material/texture, not per-triangle
+    mesh.material = mat;
+    mesh.position.set(0, 5000, 0); // far away, never actually visible on screen
+    if((i+1)%WARM_BATCH===0 || i===keys.length-1){
+      warmScene.render();
+      // Babylon has no scene.clear() that only empties meshes while keeping
+      // the scene alive for the next batch — dispose each mesh explicitly
+      // instead (materials are the shared, cached ones and must NOT be
+      // disposed here, only the throwaway warm-up box mesh itself).
+      warmScene.meshes.slice().forEach(m=>m.dispose());
+      if(onProgress) onProgress(i+1, keys.length);
+      await new Promise(r=>requestAnimationFrame(r));
+    }
+  }
+  warmScene.dispose();
 }
 
 async function launchGame(){
   document.getElementById('menuScreen').style.display='none';
   document.getElementById('loadingScreen').style.display='flex';
   startLoadingTips();
+
+  if(gameInstance){
+    gameInstance.dispose();
+    gameInstance = null;
+  }
 
   gameInstance = new Game();
 
@@ -6041,8 +6914,10 @@ async function launchGame(){
   await waitForAllTexturesToLoad();
   await waitForAllIconsToLoad();
   setLoad(98, 'Warming up block textures…');
-  await new Promise(r=>requestAnimationFrame(r)); // let the label paint before the (synchronous) compile below
-  warmAllBlockMaterialsOnGPU(gameInstance);
+  await new Promise(r=>requestAnimationFrame(r)); // let the label paint before the (now-throttled) compile below
+  await warmAllBlockMaterialsOnGPU(gameInstance, (done,total)=>{
+    setLoad(Math.min(99, 98 + Math.round((done/total)*2)), 'Warming up block textures…');
+  });
   setLoad(100, 'Ready!');
 
   stopLoadingTips();
@@ -6058,6 +6933,17 @@ async function launchGame(){
   }
   gameInstance.start();
   gameInstance.canvas.focus();
+  if(gameInstance._softwareRenderer){
+    // Longer-lived than the usual save toast (10s vs its default ~3s) since
+    // this is diagnostic info the player needs time to actually read, not
+    // a quick "saved ✓" blip.
+    gameInstance.showSaveToast('⚠ Hardware-accelerated graphics is OFF (software rendering detected) — this is the #1 cause of low FPS, not this game. Ask IT to enable GPU acceleration, or check chrome://gpu / edge://gpu. Graphics auto-set to Potato.', true);
+    clearTimeout(gameInstance._saveToastTimer);
+    gameInstance._saveToastTimer = setTimeout(()=>{
+      const t = document.getElementById('saveToast');
+      if(t) t.classList.remove('show');
+    }, 10000);
+  }
 }
 
 // Generates a 4-character room code (uppercase letters + digits, no
@@ -6445,6 +7331,24 @@ window.addEventListener('DOMContentLoaded', async ()=>{
   document.getElementById('uidNote').textContent = `Your friend ID: ${PLAYER_ID} (share this so others can add you)`;
   updateLoadWorldButtonVisibility();
   updateSeedThumbPreview();
+
+  // If the page reloaded (or the tab got killed/discarded and reopened —
+  // very common on mobile once a game tab is backgrounded even briefly)
+  // while a world was in progress, jump straight back into it instead of
+  // stopping at the main menu and making the player click through again.
+  // 'vf_active_session' is set on every save while playing offline and
+  // cleared only on a deliberate "Save & Quit".
+  {
+    const resumeWorldId = localStorage.getItem('vf_active_session');
+    if(resumeWorldId){
+      const resumeSave = loadWorldSlot(resumeWorldId);
+      if(resumeSave){
+        startLoadedWorld(resumeSave);
+      } else {
+        localStorage.removeItem('vf_active_session');
+      }
+    }
+  }
 
   document.getElementById('seedInput').addEventListener('input', updateSeedThumbPreview);
   document.getElementById('seedThumbCanvas').addEventListener('click', ()=>{
