@@ -3258,6 +3258,25 @@ class Game{
 
     this.canvas = document.getElementById('gameCanvas');
 
+    // A lightweight boot-time engine/scene is created at page load (see
+    // DOMContentLoaded) purely so BABYLON_ACTIVE_SCENE is non-null while
+    // the loading-screen texture warmup runs before any Game exists. It
+    // must be fully disposed here before creating the real engine below —
+    // two BABYLON.Engine instances bound to the same canvas fight over one
+    // WebGL context and will break rendering (or throw) otherwise.
+    if(BABYLON_ACTIVE_SCENE && BABYLON_ACTIVE_SCENE.getEngine){
+      const bootEngine = BABYLON_ACTIVE_SCENE.getEngine();
+      BABYLON_ACTIVE_SCENE.dispose();
+      bootEngine.dispose();
+      BABYLON_ACTIVE_SCENE = null;
+      // Materials/textures built during the loading screen (warmAllBlockTextures,
+      // applyHardcodedBlockTextures) are attached to that now-disposed boot
+      // scene — clear the cache so every block face gets rebuilt fresh
+      // against the real scene below, instead of chunks silently getting
+      // handed dead GPU objects.
+      materialByKeyCacheClearAll();
+    }
+
     // Babylon.Engine ~= THREE.WebGLRenderer (owns the GL context + frame loop).
     // Same rationale as before: no alpha/stencil buffers we don't use,
     // discrete-GPU hint, no depth-buffer tricks we don't need.
@@ -7294,6 +7313,27 @@ window.addEventListener('DOMContentLoaded', async ()=>{
   // leftover saved override is discarded instead of loaded.
   localStorage.removeItem('vf_blocksidetex');
   loadSavedBlockSounds();
+
+  // BABYLON_ACTIVE_SCENE was previously only ever set inside the Game
+  // class constructor (see ~line 3285), which doesn't run until the player
+  // actually starts a world. But block texture loading below happens right
+  // here on the loading screen, before any Game exists — so every
+  // `new BABYLON.Texture(url, BABYLON_ACTIVE_SCENE, ...)` call was
+  // constructed against a null scene. Babylon doesn't throw for this; it
+  // just creates a dead texture object that never queues a real network
+  // request and never fires either callback, which is what silently froze
+  // the loading bar with zero console errors and zero Network entries.
+  // Creating a real engine+scene up front (and running its render loop)
+  // fixes that. The Game class re-running `BABYLON_ACTIVE_SCENE = this.scene`
+  // later, when a world actually starts, is unaffected by this.
+  if(!BABYLON_ACTIVE_SCENE){
+    const bootCanvas = document.getElementById('gameCanvas');
+    const bootEngine = new BABYLON.Engine(bootCanvas, false);
+    const bootScene = new BABYLON.Scene(bootEngine);
+    BABYLON_ACTIVE_SCENE = bootScene;
+    bootEngine.runRenderLoop(()=>{ bootScene.render(); });
+    window.addEventListener('resize', ()=>bootEngine.resize());
+  }
 
   startLoadingTips();
   setLoad(2,'Painting blocks…');
