@@ -1372,39 +1372,27 @@ const BLOCK_SIDE_TEXTURES = {}; // "blockId_face" -> url
 //   3: { all: 'https://example.com/my-stone.png' }
 // Example: to reskin grass (id 1, distinct top/bottom/side):
 //   1: { top: 'https://example.com/grass-top.png', side: 'https://example.com/grass-side.png' }
-// NOTE: this table used to point at local files under assets/blocks/ that
-// were never actually shipped with the page. Every one of those requests
-// 404'd, then retried after 600ms, then finally gave up after an 8s
-// timeout per slot -- that's what caused the long freeze/lag on load, and
-// because the failed load also disposed the procedural fallback texture
-// before finding out the load failed, blocks rendered as blank white/black
-// with no texture at all. Leaving this table empty means every block just
-// uses its built-in procedural TexturePainters texture (which always
-// works, no network request needed) until you add real, hosted image URLs
-// here yourself. To use a real texture, add an entry pointing at a URL
-// that actually exists, e.g.:
-//   3: { all: 'https://your-cdn.example.com/stone.png' }
 const HARDCODED_BLOCK_TEXTURES = {
-1: { top: 'https://iili.io/C0JizWF.png', side: 'https://iili.io/C0Jiufa.png', bottom: 'https://iili.io/C0JinDP.png' },
-2: {all: 'https://iili.io/C0JinDP.png'},
-3: {all: 'https://iili.io/C0JPyD7.png'},
-4: {all: 'https://iili.io/C0JP4tt.png'},
-5: {all: 'https://iili.io/C0JP8SR.png'},
-6: {top: 'https://iili.io/C0JPPoX.png', side: 'https://iili.io/C0JPiVn.png', bottom: 'https://iili.io/C0JPPoX.png'},
-7: {all: 'https://iili.io/C0J6bZF.png'},
-8: {all: 'https://iili.io/C0J664j.png'},
-9: {all: 'https://iili.io/C0J64Eb.png'},
-10: {all: 'https://iili.io/C0J6rCu.png'},
-11: {all: 'https://iili.io/C0J60kN.png'},
-12: {all: 'https://iili.io/C0J6fqb.png'},
-13: {all: 'https://iili.io/C0JrCCb.png'},
-14: {all: 'https://iili.io/C0Jrz3Q.png'},
-15: {all: 'https://iili.io/C0JrnGj.png'},
-16: {all: 'https://iili.io/C0Jro6x.png'},
-17: {all: 'https://iili.io/C0J47J2.png'},
-18: {top: 'https://iili.io/C0J4cb9.png', side: 'https://iili.io/C0J4aO7.png', bottom: 'https://iili.io/C0J664j.png'},
-19: {front: 'https://iili.io/C0J62I9.png', top: 'https://iili.io/C0J40xe.png', side: 'https://iili.io/C0J6972.png', bottom: 'https://iili.io/C0J40xe.png'},
-20: {all: 'https://iili.io/C0J6FLu.png'},
+1: { top: 'assets/blocks/1_top.png', side: 'assets/blocks/1_side.png', bottom: 'assets/blocks/1_bottom.png' },
+2: {all: 'assets/blocks/2_all.png'},
+3: {all: 'assets/blocks/3_all.png'},
+4: {all: 'assets/blocks/4_all.png'},
+5: {all: 'assets/blocks/5_all.png'},
+6: {top: 'assets/blocks/6_top.png', side: 'assets/blocks/6_side.png', bottom: 'assets/blocks/6_top.png'},
+7: {all: 'assets/blocks/7_all.png'},
+8: {all: 'assets/blocks/8_all.png'},
+9: {all: 'assets/blocks/9_all.png'},
+10: {all: 'assets/blocks/10_all.png'},
+11: {all: 'assets/blocks/11_all.png'},
+12: {all: 'assets/blocks/12_all.png'},
+13: {all: 'assets/blocks/13_all.png'},
+14: {all: 'assets/blocks/14_all.png'},
+15: {all: 'assets/blocks/15_all.png'},
+16: {all: 'assets/blocks/16_all.png'},
+17: {all: 'assets/blocks/17_all.png'},
+18: {top: 'assets/blocks/18_top.png', side: 'assets/blocks/18_side.png', bottom: 'assets/blocks/8_all.png'},
+19: {front: 'assets/blocks/19_front.png', top: 'assets/blocks/19_top.png', side: 'assets/blocks/19_side.png', bottom: 'assets/blocks/19_top.png'},
+20: {all: 'assets/blocks/20_all.png'},
 };
 // Loads every hardcoded block texture ONE AT A TIME instead of firing off
 // ~30 simultaneous image requests + material rebuilds in a single
@@ -1422,26 +1410,20 @@ async function applyHardcodedBlockTextures(onProgress=null){
       jobs.push([+blockIdStr, face, faces[face]]);
     }
   }
-  // Loading these one-at-a-time (await each, then wait a full frame) meant
-  // ~30 sequential round trips before the loading screen could finish —
-  // slow and choppy, especially on weaker devices/school wifi. Local
-  // same-origin images (assets/blocks/...) don't need to be rate-limited
-  // like the old hotlinked host did, so load them in small parallel
-  // batches instead: much faster overall while still yielding a frame
-  // between batches so the tab doesn't lock up.
-  const BATCH_SIZE = 6;
-  let done = 0;
-  for(let i=0;i<jobs.length;i+=BATCH_SIZE){
-    const batch = jobs.slice(i, i+BATCH_SIZE);
-    await Promise.all(batch.map(([blockId, face, url])=>{
-      const key = faceSlotKey(blockId, face);
-      BLOCK_SIDE_TEXTURES[key] = url;
-      return loadCustomTexture(blockId, face, url, false).catch(()=>{}).then(()=>{
-        done++;
-        if(onProgress) onProgress(done, jobs.length);
-      });
-    }));
-    await new Promise(r=>setTimeout(r, 0));
+  for(let i=0;i<jobs.length;i++){
+    const [blockId, face, url] = jobs[i];
+    const key = faceSlotKey(blockId, face);
+    BLOCK_SIDE_TEXTURES[key] = url;
+    // Actually load & apply the texture to the material, not just record
+    // the URL — otherwise any material already built/cached for this slot
+    // (e.g. via an icon/hotbar pre-warm) keeps its procedural texture and
+    // the hardcoded skin never visibly appears.
+    await loadCustomTexture(blockId, face, url, false).catch(()=>{});
+    if(onProgress) onProgress(i+1, jobs.length);
+    // Yield to the browser between each texture so the UI thread never gets
+    // hogged for the whole batch — this is the actual fix for the
+    // "whole page pauses while textures load" feeling.
+    await new Promise(r=>requestAnimationFrame(r));
   }
 }
 
@@ -1602,22 +1584,9 @@ function getFaceMaterialByKey(key){
 function loadCustomTexture(blockId, face, url, persist=true, _isRetry=false){
   const key = faceSlotKey(blockId, face);
   const p = new Promise((resolve,reject)=>{
-    let settled = false;
-    // Safety net: a request that neither loads nor errors (host hangs,
-    // stalls, or never responds) used to block this promise forever,
-    // freezing the whole one-at-a-time boot loop with zero console errors.
-    // Force it to give up after 8s so the loop can always move on.
-    const giveUpTimer = setTimeout(()=>{
-      if(settled) return;
-      settled = true;
-      reject(new Error('texture load timed out: '+url));
-    }, 8000);
     textureLoader.load(
       url,
       (tex)=>{
-        if(settled) return;
-        settled = true;
-        clearTimeout(giveUpTimer);
         tex.updateSamplingMode(BABYLON.Texture.NEAREST_SAMPLINGMODE);
         tex.wrapU = BABYLON.Texture.WRAP_ADDRESSMODE;
         tex.wrapV = BABYLON.Texture.WRAP_ADDRESSMODE;
@@ -1635,7 +1604,6 @@ function loadCustomTexture(blockId, face, url, persist=true, _isRetry=false){
       },
       undefined,
       (err)=>{
-        if(settled) return;
         // A single failed image load (host hiccup, rate limit, a request
         // that raced with a WebGL context loss) used to permanently leave
         // that block on its procedural fallback texture for the whole
@@ -1648,8 +1616,6 @@ function loadCustomTexture(blockId, face, url, persist=true, _isRetry=false){
             loadCustomTexture(blockId, face, url, persist, true).then(resolve).catch(reject);
           }, 600);
         } else {
-          settled = true;
-          clearTimeout(giveUpTimer);
           reject(err);
         }
       }
@@ -3062,8 +3028,20 @@ let PLAYER_PALETTE = SKIN_PALETTES[0];
 // Stable, human-shareable friend ID — separate from the ever-changing
 // Firebase anonymous auth uid and from the freely-editable display name.
 // Persisted locally so it survives reloads (like a Discord tag / Xbox gamertag).
-let PLAYER_ID = localStorage.getItem('vf_playerid') || generatePlayerId();
-localStorage.setItem('vf_playerid', PLAYER_ID);
+// Guarded: localStorage.getItem/setItem can throw (not just return null) in
+// sandboxed iframes, strict privacy-mode browsers, or when a corporate policy
+// blocks storage. Since this runs at top-level script scope, an uncaught
+// throw here would stop the entire script before the game engine, event
+// listeners, or canvas setup ever run — the page would just be blank with
+// nothing in the console but a SecurityError. Falls back to a fresh
+// in-memory-only ID (won't persist across reloads, but the game still loads).
+let PLAYER_ID;
+try{
+  PLAYER_ID = localStorage.getItem('vf_playerid') || generatePlayerId();
+  localStorage.setItem('vf_playerid', PLAYER_ID);
+}catch(e){
+  PLAYER_ID = generatePlayerId();
+}
 function generatePlayerId(){
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let code = '';
@@ -3275,25 +3253,6 @@ class Game{
     RENDER_DISTANCE = SETTINGS.renderDistance;
 
     this.canvas = document.getElementById('gameCanvas');
-
-    // A lightweight boot-time engine/scene is created at page load (see
-    // DOMContentLoaded) purely so BABYLON_ACTIVE_SCENE is non-null while
-    // the loading-screen texture warmup runs before any Game exists. It
-    // must be fully disposed here before creating the real engine below —
-    // two BABYLON.Engine instances bound to the same canvas fight over one
-    // WebGL context and will break rendering (or throw) otherwise.
-    if(BABYLON_ACTIVE_SCENE && BABYLON_ACTIVE_SCENE.getEngine){
-      const bootEngine = BABYLON_ACTIVE_SCENE.getEngine();
-      BABYLON_ACTIVE_SCENE.dispose();
-      bootEngine.dispose();
-      BABYLON_ACTIVE_SCENE = null;
-      // Materials/textures built during the loading screen (warmAllBlockTextures,
-      // applyHardcodedBlockTextures) are attached to that now-disposed boot
-      // scene — clear the cache so every block face gets rebuilt fresh
-      // against the real scene below, instead of chunks silently getting
-      // handed dead GPU objects.
-      materialByKeyCacheClearAll();
-    }
 
     // Babylon.Engine ~= THREE.WebGLRenderer (owns the GL context + frame loop).
     // Same rationale as before: no alpha/stencil buffers we don't use,
@@ -3923,14 +3882,30 @@ class Game{
     const joy = document.getElementById('moveJoystick');
     const stick = document.getElementById('moveStick');
     this.mobileMove = {x:0,y:0};
-    let dragging=false, cx=0, cy=0;
+    // BUG FIX: previously used e.touches[0] for both the joystick and the
+    // camera-look drag on canvas. touches[0] is the *first* touch anywhere
+    // on the whole screen, not necessarily the finger on that control — so
+    // playing normally (left thumb on joystick, right thumb dragging to
+    // look, at the same time) fed the joystick's finger coordinates into
+    // the camera-look math, causing the camera to jitter/drift while
+    // moving. Fixed by tracking each control's own touch `identifier` and
+    // looking it up in touches/changedTouches instead of assuming index 0.
+    let dragging=false, cx=0, cy=0, joyTouchId=null;
+    const findTouch = (touchList, id)=>{
+      for(let i=0;i<touchList.length;i++){ if(touchList[i].identifier===id) return touchList[i]; }
+      return null;
+    };
     joy.addEventListener('touchstart', (e)=>{
-      dragging=true;
+      if(dragging) return; // already tracking a finger on the joystick
+      const t = e.changedTouches[0];
+      dragging=true; joyTouchId = t.identifier;
       const r = joy.getBoundingClientRect(); cx=r.left+r.width/2; cy=r.top+r.height/2;
-    });
+      e.preventDefault();
+    }, {passive:false});
     joy.addEventListener('touchmove', (e)=>{
       if(!dragging) return;
-      const t = e.touches[0];
+      const t = findTouch(e.touches, joyTouchId);
+      if(!t) return;
       let dx=t.clientX-cx, dy=t.clientY-cy;
       const maxD=40; const d=Math.hypot(dx,dy);
       if(d>maxD){ dx=dx/d*maxD; dy=dy/d*maxD; }
@@ -3938,7 +3913,16 @@ class Game{
       this.mobileMove.x = dx/maxD; this.mobileMove.y = dy/maxD;
       e.preventDefault();
     }, {passive:false});
-    joy.addEventListener('touchend', ()=>{ dragging=false; this.mobileMove.x=0; this.mobileMove.y=0; stick.style.left='30px'; stick.style.top='30px'; });
+    const endJoyTouch = (e)=>{
+      if(!dragging) return;
+      // Only release if the finger that lifted is the one driving the stick —
+      // a different finger lifting elsewhere shouldn't cancel movement.
+      if(e && e.changedTouches && !findTouch(e.changedTouches, joyTouchId)) return;
+      dragging=false; joyTouchId=null;
+      this.mobileMove.x=0; this.mobileMove.y=0; stick.style.left='30px'; stick.style.top='30px';
+    };
+    joy.addEventListener('touchend', endJoyTouch);
+    joy.addEventListener('touchcancel', endJoyTouch); // was missing: an interrupted touch (e.g. OS gesture) left dragging stuck true, freezing movement input
 
     document.getElementById('jumpBtn').addEventListener('touchstart', (e)=>{ e.preventDefault(); KEY['Space']=true; });
     document.getElementById('jumpBtn').addEventListener('touchend', (e)=>{ e.preventDefault(); KEY['Space']=false; });
@@ -3981,21 +3965,29 @@ class Game{
     }
 
     // touch-drag look on canvas (single finger, not on joystick/buttons)
-    let lastX=0,lastY=0,looking=false;
+    let lastX=0,lastY=0,looking=false,lookTouchId=null;
     this.canvas.addEventListener('touchstart',(e)=>{
-      if(e.target!==this.canvas) return;
-      looking=true; lastX=e.touches[0].clientX; lastY=e.touches[0].clientY;
+      if(e.target!==this.canvas || looking) return;
+      const t = e.changedTouches[0];
+      looking=true; lookTouchId=t.identifier; lastX=t.clientX; lastY=t.clientY;
     });
     this.canvas.addEventListener('touchmove',(e)=>{
       if(!looking) return;
-      const t=e.touches[0];
+      const t = findTouch(e.touches, lookTouchId);
+      if(!t) return;
       const dx=t.clientX-lastX, dy=t.clientY-lastY;
       lastX=t.clientX; lastY=t.clientY;
       this.yaw -= dx*0.0035; this.pitch -= dy*0.0035;
       this.pitch = Math.max(-Math.PI/2+0.01, Math.min(Math.PI/2-0.01, this.pitch));
       e.preventDefault();
     }, {passive:false});
-    this.canvas.addEventListener('touchend', ()=>{ looking=false; });
+    const endLookTouch = (e)=>{
+      if(!looking) return;
+      if(e && e.changedTouches && !findTouch(e.changedTouches, lookTouchId)) return;
+      looking=false; lookTouchId=null;
+    };
+    this.canvas.addEventListener('touchend', endLookTouch);
+    this.canvas.addEventListener('touchcancel', endLookTouch);
   }
 
   toggleInventory(){
@@ -5410,22 +5402,10 @@ class Game{
   async pregenerateChunksAroundSpawn(onProgress=null){
     const pcx = Math.floor(this.pos.x/CHUNK_SIZE);
     const pcz = Math.floor(this.pos.z/CHUNK_SIZE);
-    // Blocking the loading screen on the FULL render distance meant
-    // generating+meshing ~400 chunks (radius 4) synchronously before the
-    // player could move at all — genuinely heavy CPU/GPU work that made
-    // the whole tab (and sometimes the whole browser) feel frozen for
-    // several seconds, especially on weaker school laptops/Chromebooks.
-    // Only pregenerate a small radius up front (just enough to stand on
-    // and look around immediately); the existing updateChunkStreaming()
-    // system already grows this out to the real RENDER_DISTANCE in the
-    // background, a chunk or two per frame, once gameplay starts — so the
-    // rest of the world still loads in, just spread out instead of
-    // front-loaded into one long freeze.
-    const INITIAL_RADIUS = Math.min(RENDER_DISTANCE, 2);
     const columns = [];
-    for(let dx=-INITIAL_RADIUS; dx<=INITIAL_RADIUS; dx++){
-      for(let dz=-INITIAL_RADIUS; dz<=INITIAL_RADIUS; dz++){
-        if(dx*dx+dz*dz > INITIAL_RADIUS*INITIAL_RADIUS) continue;
+    for(let dx=-RENDER_DISTANCE; dx<=RENDER_DISTANCE; dx++){
+      for(let dz=-RENDER_DISTANCE; dz<=RENDER_DISTANCE; dz++){
+        if(dx*dx+dz*dz > RENDER_DISTANCE*RENDER_DISTANCE) continue;
         columns.push([pcx+dx, pcz+dz, dx*dx+dz*dz]);
       }
     }
@@ -5447,7 +5427,7 @@ class Game{
         done++;
         if(done%GEN_BATCH===0){
           if(onProgress) onProgress(done, total, 'Generating terrain…');
-          await new Promise(r=>setTimeout(r, 0));
+          await new Promise(r=>requestAnimationFrame(r));
         }
       }
     }
@@ -5483,7 +5463,7 @@ class Game{
           // dumping it all into frame one of real gameplay.
           this.scene.render();
           if(onProgress) onProgress(done, total, 'Building the world…');
-          await new Promise(r=>setTimeout(r, 0));
+          await new Promise(r=>requestAnimationFrame(r));
         }
       }
     }
@@ -5526,18 +5506,13 @@ class Game{
         chunk.cy*CHUNK_SIZE + CHUNK_SIZE/2,
         chunk.cz*CHUNK_SIZE + CHUNK_SIZE/2
       );
-      // THREE.Frustum.intersectsSphere -> Babylon has no static
-      // BABYLON.Frustum.IsSphereInFrustum (that call throws every frame,
-      // which is what silently killed rendering — the recovery wrapper
-      // around the render loop caught the exception every single frame
-      // before scene.render() ever ran, so draw calls/FPS sat at 0 even
-      // though the scene had real geometry in it). The correct equivalent
-      // is BABYLON.BoundingSphere's own isInFrustum(planes) check.
-      if(!chunk._cullSphere) chunk._cullSphere = new BABYLON.BoundingSphere(BABYLON.Vector3.Zero(), BABYLON.Vector3.Zero());
-      chunk._cullSphere.center.copyFrom(center);
-      chunk._cullSphere.radius = radius;
-      chunk._cullSphere.radiusWorld = radius;
-      chunk.mesh.setEnabled(chunk._cullSphere.isInFrustum(frustumPlanes));
+      // THREE.Frustum.intersectsSphere -> BABYLON.Frustum.IsSphereInFrustum,
+      // same sphere-vs-6-planes test. TransformNode has no built-in
+      // .setEnabled visibility toggle used elsewhere for "hide without
+      // disposing", so we drive setEnabled on the node directly, which
+      // (like THREE's group.visible=false) skips the whole chunk's meshes
+      // in one call instead of testing each face-mesh individually.
+      chunk.mesh.setEnabled(BABYLON.Frustum.IsSphereInFrustum(frustumPlanes, center, radius));
     }
   }
 
@@ -7349,51 +7324,11 @@ window.addEventListener('DOMContentLoaded', async ()=>{
   localStorage.removeItem('vf_blocksidetex');
   loadSavedBlockSounds();
 
-  // BABYLON_ACTIVE_SCENE was previously only ever set inside the Game
-  // class constructor (see ~line 3285), which doesn't run until the player
-  // actually starts a world. But block texture loading below happens right
-  // here on the loading screen, before any Game exists — so every
-  // `new BABYLON.Texture(url, BABYLON_ACTIVE_SCENE, ...)` call was
-  // constructed against a null scene. Babylon doesn't throw for this; it
-  // just creates a dead texture object that never queues a real network
-  // request and never fires either callback, which is what silently froze
-  // the loading bar with zero console errors and zero Network entries.
-  // Creating a real engine+scene up front (and running its render loop)
-  // fixes that. The Game class re-running `BABYLON_ACTIVE_SCENE = this.scene`
-  // later, when a world actually starts, is unaffected by this.
-  if(!BABYLON_ACTIVE_SCENE){
-    const bootCanvas = document.getElementById('gameCanvas');
-    const bootEngine = new BABYLON.Engine(bootCanvas, false);
-    const bootScene = new BABYLON.Scene(bootEngine);
-    // Scene.render() throws "No camera defined" if a scene has no active
-    // camera — the boot scene never got one, so it threw on EVERY single
-    // frame of the render loop below, silently, from the moment the page
-    // loaded. That constant per-frame exception (plus a second WebGL
-    // context existing alongside whatever the real game later creates) is
-    // what eventually destabilized the GPU driver into repeated
-    // CONTEXT_LOST_WEBGL cycles and a hard crash. A throwaway camera fixes
-    // this the same way the existing warmScene/warmCamera pattern
-    // elsewhere in this file already does it correctly.
-    const bootCamera = new BABYLON.UniversalCamera('bootCam', new BABYLON.Vector3(0,0,-1), bootScene);
-    bootScene.activeCamera = bootCamera;
-    BABYLON_ACTIVE_SCENE = bootScene;
-    // Nothing is ever drawn to this scene during boot (it only exists so
-    // texture/material loads have a valid scene to attach to) — actually
-    // driving a render loop for it was unnecessary GPU/CPU work and an
-    // extra ongoing failure surface. Removed; the scene still functions
-    // fine as a texture/material target without being rendered.
-    window.addEventListener('resize', ()=>bootEngine.resize());
-  }
-
   startLoadingTips();
   setLoad(2,'Painting blocks…');
   // Let the loading screen actually paint before the texture work below
   // starts, so the bar shows up instead of the page looking frozen.
-  // Uses setTimeout instead of requestAnimationFrame because rAF can be
-  // throttled/paused (backgrounded tab, some mobile browsers, low-power
-  // mode) and never fire, which silently hangs the whole boot sequence
-  // right here with no error and no image requests ever kicked off.
-  await new Promise(r=>setTimeout(r, 0));
+  await new Promise(r=>requestAnimationFrame(r));
 
   // Load hardcoded block textures ONE AT A TIME (see applyHardcodedBlockTextures)
   // and report real per-image progress instead of jumping the bar on a
@@ -7407,13 +7342,13 @@ window.addEventListener('DOMContentLoaded', async ()=>{
   });
 
   setLoad(48,'Carving terrain…');
-  await new Promise(r=>setTimeout(r, 0));
+  await new Promise(r=>requestAnimationFrame(r));
   // warmAllBlockTextures() only builds the procedural-fallback materials
   // (cheap, synchronous, no network) — safe to run in one pass.
   warmAllBlockTextures();
 
   setLoad(60,'Stitching player skins…');
-  await new Promise(r=>setTimeout(r, 0));
+  await new Promise(r=>requestAnimationFrame(r));
   // 2D hotbar/inventory/crafting icons are a separate pipeline from the 3D
   // block materials above (see warmAllIcons() comment) — warm them here too
   // so icons are already decoded data URLs by the time the menu/any panel
