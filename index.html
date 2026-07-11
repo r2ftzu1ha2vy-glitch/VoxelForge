@@ -5496,13 +5496,18 @@ class Game{
         chunk.cy*CHUNK_SIZE + CHUNK_SIZE/2,
         chunk.cz*CHUNK_SIZE + CHUNK_SIZE/2
       );
-      // THREE.Frustum.intersectsSphere -> BABYLON.Frustum.IsSphereInFrustum,
-      // same sphere-vs-6-planes test. TransformNode has no built-in
-      // .setEnabled visibility toggle used elsewhere for "hide without
-      // disposing", so we drive setEnabled on the node directly, which
-      // (like THREE's group.visible=false) skips the whole chunk's meshes
-      // in one call instead of testing each face-mesh individually.
-      chunk.mesh.setEnabled(BABYLON.Frustum.IsSphereInFrustum(frustumPlanes, center, radius));
+      // THREE.Frustum.intersectsSphere -> Babylon has no static
+      // BABYLON.Frustum.IsSphereInFrustum (that call throws every frame,
+      // which is what silently killed rendering — the recovery wrapper
+      // around the render loop caught the exception every single frame
+      // before scene.render() ever ran, so draw calls/FPS sat at 0 even
+      // though the scene had real geometry in it). The correct equivalent
+      // is BABYLON.BoundingSphere's own isInFrustum(planes) check.
+      if(!chunk._cullSphere) chunk._cullSphere = new BABYLON.BoundingSphere(BABYLON.Vector3.Zero(), BABYLON.Vector3.Zero());
+      chunk._cullSphere.center.copyFrom(center);
+      chunk._cullSphere.radius = radius;
+      chunk._cullSphere.radiusWorld = radius;
+      chunk.mesh.setEnabled(chunk._cullSphere.isInFrustum(frustumPlanes));
     }
   }
 
