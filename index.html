@@ -7353,8 +7353,23 @@ window.addEventListener('DOMContentLoaded', async ()=>{
     const bootCanvas = document.getElementById('gameCanvas');
     const bootEngine = new BABYLON.Engine(bootCanvas, false);
     const bootScene = new BABYLON.Scene(bootEngine);
+    // Scene.render() throws "No camera defined" if a scene has no active
+    // camera — the boot scene never got one, so it threw on EVERY single
+    // frame of the render loop below, silently, from the moment the page
+    // loaded. That constant per-frame exception (plus a second WebGL
+    // context existing alongside whatever the real game later creates) is
+    // what eventually destabilized the GPU driver into repeated
+    // CONTEXT_LOST_WEBGL cycles and a hard crash. A throwaway camera fixes
+    // this the same way the existing warmScene/warmCamera pattern
+    // elsewhere in this file already does it correctly.
+    const bootCamera = new BABYLON.UniversalCamera('bootCam', new BABYLON.Vector3(0,0,-1), bootScene);
+    bootScene.activeCamera = bootCamera;
     BABYLON_ACTIVE_SCENE = bootScene;
-    bootEngine.runRenderLoop(()=>{ bootScene.render(); });
+    // Nothing is ever drawn to this scene during boot (it only exists so
+    // texture/material loads have a valid scene to attach to) — actually
+    // driving a render loop for it was unnecessary GPU/CPU work and an
+    // extra ongoing failure surface. Removed; the scene still functions
+    // fine as a texture/material target without being rendered.
     window.addEventListener('resize', ()=>bootEngine.resize());
   }
 
