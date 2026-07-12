@@ -343,22 +343,97 @@ function fbm(x, y, seed, octaves=4, persistence=0.5, scale=0.01) {
   return total / maxAmp;
 }
 
+// ---------- 3D noise (for caves and overhangs) ----------
+function hashCoord3D(x, y, z, seed) {
+  let h = (x * 374761393 + y * 668265263 + z * 2147483647 + seed * 982451653) | 0;
+  h = (h ^ (h >>> 13)) * 1274126177;
+  h = (h ^ (h >>> 16)) >>> 0;
+  return h / 4294967296;
+}
+function smoothNoise3D(x, y, z, seed) {
+  const x0=Math.floor(x), y0=Math.floor(y), z0=Math.floor(z);
+  const x1=x0+1, y1=y0+1, z1=z0+1;
+  const sx=x-x0, sy=y-y0, sz=z-z0;
+  const fx = sx*sx*(3-2*sx), fy = sy*sy*(3-2*sy), fz = sz*sz*(3-2*sz);
+  const c000 = hashCoord3D(x0,y0,z0,seed), c100 = hashCoord3D(x1,y0,z0,seed);
+  const c010 = hashCoord3D(x0,y1,z0,seed), c110 = hashCoord3D(x1,y1,z0,seed);
+  const c001 = hashCoord3D(x0,y0,z1,seed), c101 = hashCoord3D(x1,y0,z1,seed);
+  const c011 = hashCoord3D(x0,y1,z1,seed), c111 = hashCoord3D(x1,y1,z1,seed);
+  const x00 = c000 + (c100-c000)*fx, x10 = c010 + (c110-c010)*fx;
+  const x01 = c001 + (c101-c001)*fx, x11 = c011 + (c111-c011)*fx;
+  const y0i = x00 + (x10-x00)*fy, y1i = x01 + (x11-x01)*fy;
+  return y0i + (y1i-y0i)*fz;
+}
+function fbm3D(x, y, z, seed, octaves=3, persistence=0.5, scale=0.05) {
+  let total=0, amp=1, freq=scale, maxAmp=0;
+  for (let i=0;i<octaves;i++){
+    total += smoothNoise3D(x*freq, y*freq, z*freq, seed+i*101) * amp;
+    maxAmp += amp;
+    amp *= persistence;
+    freq *= 2;
+  }
+  return total / maxAmp;
+}
+
 // ---------- Biomes ----------
 const BIOMES = {
-  plains:  { name:'Plains',  baseHeight:34, amp:6,  surface:1, sub:2, tree:0.02 },
-  desert:  { name:'Desert',  baseHeight:32, amp:4,  surface:5, sub:5, tree:0 },
-  forest:  { name:'Forest',  baseHeight:36, amp:8,  surface:1, sub:2, tree:0.08 },
-  mountains:{ name:'Mountains', baseHeight:50, amp:34, surface:3, sub:3, tree:0.01 },
-  tundra:  { name:'Tundra',  baseHeight:34, amp:5,  surface:12, sub:2, tree:0.01 },
+  plains:   { name:'Plains',    baseHeight:34, amp:5,  surface:1, sub:2, tree:0.015 },
+  desert:   { name:'Desert',    baseHeight:31, amp:3,  surface:5, sub:5, tree:0 },
+  forest:   { name:'Forest',    baseHeight:35, amp:7,  surface:1, sub:2, tree:0.09 },
+  mountains:{ name:'Mountains', baseHeight:48, amp:36, surface:3, sub:3, tree:0.008 },
+  tundra:   { name:'Tundra',    baseHeight:34, amp:6,  surface:12, sub:2, tree:0.01 },
 };
+const BIOME_LIST = [BIOMES.plains, BIOMES.desert, BIOMES.forest, BIOMES.mountains, BIOMES.tundra];
+
+// Returns { biome, weights } where weights is a smoothed influence map used
+// to blend height/amp/surface across biome borders instead of a hard snap,
+// which is what made old borders look like cliffs cut with a knife.
+function biomeWeights(wx, wz, seed) {
+  const t = fbm(wx, wz, seed+999, 3, 0.5, 0.0015); // temperature axis
+  const m = fbm(wx, wz, seed+555, 3, 0.5, 0.0018); // moisture/roughness axis
+
+  // score each biome by distance from its ideal (t,m) point, then convert
+  // distances to soft weights so 2-3 biomes blend near borders
+  const targets = {
+    plains:    [0.5, 0.35],
+    desert:    [0.8, 0.25],
+    forest:    [0.45, 0.65],
+    mountains: [0.5, 0.85],
+    tundra:    [0.15, 0.4],
+  };
+  const weights = {};
+  let sum = 0;
+  for (const key in targets) {
+    const [tt, tm] = targets[key];
+    const d = Math.hypot(t-tt, m-tm);
+    const w = 1 / (0.08 + d*d*6); // sharper falloff = tighter borders, still smooth
+    weights[key] = w;
+    sum += w;
+  }
+  for (const key in weights) weights[key] /= sum;
+
+  let best = 'plains', bestW = -1;
+  for (const key in weights) if (weights[key] > bestW) { bestW = weights[key]; best = key; }
+  return { biome: BIOMES[best], weights };
+}
 function biomeAt(wx, wz, seed) {
-  const t = fbm(wx, wz, seed+999, 3, 0.5, 0.0015); // temperature-ish
-  const m = fbm(wx, wz, seed+555, 3, 0.5, 0.002);  // "moisture"/roughness
-  if (m > 0.62) return BIOMES.mountains;
-  if (t < 0.32) return BIOMES.tundra;
-  if (t > 0.68 && m < 0.45) return BIOMES.desert;
-  if (m > 0.5) return BIOMES.forest;
-  return BIOMES.plains;
+  return biomeWeights(wx, wz, seed).biome;
+}
+function blendedTerrainParams(wx, wz, seed) {
+  const { weights } = biomeWeights(wx, wz, seed);
+  let baseHeight=0, amp=0, treeChance=0;
+  const surfaceVotes = {};
+  for (const key in weights) {
+    const b = BIOMES[key], w = weights[key];
+    baseHeight += b.baseHeight * w;
+    amp += b.amp * w;
+    treeChance += b.tree * w;
+    surfaceVotes[b.surface] = (surfaceVotes[b.surface]||0) + w;
+  }
+  let surface = 1, best = -1;
+  for (const s in surfaceVotes) if (surfaceVotes[s] > best) { best = surfaceVotes[s]; surface = parseInt(s); }
+  const dominant = biomeAt(wx, wz, seed);
+  return { baseHeight, amp, treeChance, surface, sub: dominant.sub, dominant };
 }
 
 // ---------- World data structure (sparse chunk map) ----------
@@ -410,61 +485,100 @@ class World {
         const wx = originX + lx, wz = originZ + lz;
 
         if (farlands) {
-          // Gray pillars: stone+ore columns of varying height up to limit, gaps of air between pillars
           const pillar = hashCoord(Math.floor(wx/3), Math.floor(wz/3), this.seed+7777) > 0.35;
           const pillarHeight = pillar ? (HEIGHT_LIMIT - 1 - Math.floor(hashCoord(wx,wz,this.seed+42)*10)) : 0;
           for (let y = 0; y < HEIGHT_LIMIT; y++) {
             let id = 0;
-            if (y === 0) id = 17; // bedrock
+            if (y === 0) id = 17;
             else if (pillar && y <= pillarHeight) {
               const oreRoll = hashCoord(wx, wz*131+y, this.seed+31);
               if (oreRoll > 0.965) id = 16;
               else if (oreRoll > 0.93) id = 15;
               else if (oreRoll > 0.85) id = 14;
               else if (oreRoll > 0.75) id = 13;
-              else id = 3; // stone
+              else id = 3;
             }
             data[this.idx(lx,y,lz)] = id;
           }
           continue;
         }
 
-        const biome = biomeAt(wx, wz, this.seed);
-        const h = fbm(wx, wz, this.seed, 5, 0.5, 0.008);
-        const height = Math.floor(biome.baseHeight + h * biome.amp);
+        const params = blendedTerrainParams(wx, wz, this.seed);
+        // Two octave bands: broad shape (amp'd by biome) + finer detail,
+        // so mountains get jagged relief instead of one smooth bump.
+        const broad = fbm(wx, wz, this.seed, 4, 0.5, 0.007);
+        const detail = fbm(wx, wz, this.seed+321, 3, 0.55, 0.03) * 0.25;
+        const surfaceHeight = Math.floor(params.baseHeight + (broad + detail) * params.amp);
 
+        // Cliff/overhang mask: where this 3D ridge noise is high near the
+        // surface, we carve outward horizontally so rock overhangs the air
+        // below it instead of every surface being a flat heightmap top.
         for (let y = 0; y < HEIGHT_LIMIT; y++) {
           let id = 0;
-          if (y === 0) id = 17; // bedrock
-          else if (y < height - 4) {
-            // stone with ore veins
-            const oreRoll = hashCoord(wx*3+y, wz*7-y, this.seed+31);
-            if (y < 6 && oreRoll > 0.97) id = 16;
-            else if (y < 20 && oreRoll > 0.95) id = 15;
-            else if (oreRoll > 0.92) id = 14;
-            else if (oreRoll > 0.88) id = 13;
-            else id = 3;
-          } else if (y < height) {
-            id = biome.sub === 5 ? 5 : 2; // sand column or dirt
-          } else if (y === height) {
-            id = biome.surface;
-          } else if (y <= 33 && height <= 33) {
-            id = 10; // water fill up to sea level 33
-          } else {
-            id = 0;
+          if (y === 0) { data[this.idx(lx,y,lz)] = 17; continue; }
+
+          // 3D density: positive = solid. Height term pulls solid below
+          // surfaceHeight; 3D noise adds caves/overhangs by perturbing it.
+          const heightTerm = (surfaceHeight - y) / 12; // smooth falloff band
+          const caveNoise = fbm3D(wx, y, wz, this.seed+4242, 3, 0.5, 0.045);
+          const overhangNoise = fbm3D(wx, y, wz, this.seed+909, 2, 0.5, 0.02) * (params.dominant === BIOMES.mountains ? 1.4 : 0.5);
+          const density = heightTerm + overhangNoise - 0.5;
+
+          let solid = density > 0;
+
+          // Carve caves only underground and away from bedrock/surface skin,
+          // using a separate 3D noise field so tunnels wind in 3D, not just
+          // dips in a 2D heightmap.
+          if (solid && y > 4 && y < surfaceHeight - 2) {
+            const caveDensity = caveNoise - 0.62;
+            if (caveDensity > 0) solid = false;
           }
-          data[this.idx(lx,y,lz)] = id;
+
+          if (!solid) { data[this.idx(lx,y,lz)] = (y <= 32) ? 10 : 0; continue; }
+
+          // Determine material by depth below the *local* solid surface top,
+          // recomputed per-column below after the density pass (see surface
+          // detection loop underneath).
+          data[this.idx(lx,y,lz)] = 3; // temp: stone, refined to surface/dirt below
         }
 
-        // simple tree placement (trunk + leaf ball), avoid edges to keep single-chunk local
-        if (biome.tree > 0 && lx > 1 && lx < CHUNK_SIZE-2 && lz > 1 && lz < CHUNK_SIZE-2) {
+        // Second pass: find the actual topmost solid per-column (may differ
+        // from surfaceHeight due to overhangs/caves) and paint surface/sub
+        // layers downward from there, plus ore veins in deep stone.
+        let topSolidY = -1;
+        for (let y = HEIGHT_LIMIT-1; y >= 1; y--) {
+          if (data[this.idx(lx,y,lz)] === 3) { topSolidY = y; break; }
+        }
+        if (topSolidY >= 0) {
+          for (let y = topSolidY; y >= 1; y--) {
+            const cur = data[this.idx(lx,y,lz)];
+            if (cur !== 3) continue; // already air/water/bedrock
+            const depth = topSolidY - y;
+            if (depth === 0) {
+              data[this.idx(lx,y,lz)] = params.surface;
+            } else if (depth < 4) {
+              data[this.idx(lx,y,lz)] = params.sub === 5 ? 5 : 2;
+            } else {
+              const oreRoll = hashCoord(wx*3+y, wz*7-y, this.seed+31);
+              let id = 3;
+              if (y < 6 && oreRoll > 0.97) id = 16;
+              else if (y < 20 && oreRoll > 0.95) id = 15;
+              else if (oreRoll > 0.92) id = 14;
+              else if (oreRoll > 0.88) id = 13;
+              data[this.idx(lx,y,lz)] = id;
+            }
+          }
+        }
+
+        // trees on top of the real (post-carving) surface
+        if (params.treeChance > 0 && lx > 1 && lx < CHUNK_SIZE-2 && lz > 1 && lz < CHUNK_SIZE-2 && topSolidY >= 32) {
           const roll = hashCoord(wx, wz, this.seed+8888);
-          if (roll < biome.tree && height > 33) {
+          if (roll < params.treeChance && data[this.idx(lx,topSolidY,lz)] !== 5) {
             const trunkH = 4 + Math.floor(hashCoord(wx,wz,this.seed+11)*2);
-            for (let ty = height+1; ty < Math.min(height+1+trunkH, HEIGHT_LIMIT); ty++) {
+            for (let ty = topSolidY+1; ty < Math.min(topSolidY+1+trunkH, HEIGHT_LIMIT); ty++) {
               data[this.idx(lx,ty,lz)] = 6;
             }
-            const topY = height + trunkH;
+            const topY = topSolidY + trunkH;
             for (let dx=-2; dx<=2; dx++)
               for (let dz=-2; dz<=2; dz++)
                 for (let dy=-1; dy<=1; dy++) {
@@ -942,7 +1056,12 @@ function initScene() {
   camera.angularSensibility = 2200;
   camera.checkCollisions = true;
   camera.applyGravity = true;
-  camera.ellipsoid = new BABYLON.Vector3(0.35, 0.9, 0.35);
+  // Player is 1.8 blocks tall. Babylon's ellipsoid Y is a half-height, so
+  // 0.9 gives a full 1.8-block capsule. ellipsoidOffset raises the capsule
+  // so the camera (eyes) sits near the top of it rather than at its center,
+  // matching real first-person eye height (~1.62 blocks off the ground).
+  camera.ellipsoid = new BABYLON.Vector3(0.3, 0.9, 0.3);
+  camera.ellipsoidOffset = new BABYLON.Vector3(0, 0.9, 0);
   camera.minZ = 0.05;
   camera.speed = 0.35;
   camera.keysUp = [87]; camera.keysDown=[83]; camera.keysLeft=[65]; camera.keysRight=[68];
