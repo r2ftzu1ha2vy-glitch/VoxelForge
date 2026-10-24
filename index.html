@@ -3159,6 +3159,7 @@ class Game{
     this.chunkGroup = new THREE.Group();
     this.chunkGroup.matrixAutoUpdate = false; // chunks are static; skip per-frame matrix work
     this.scene.add(this.chunkGroup);
+    this._initClouds();
     this.meshPool = new MeshPool(buildMesherTables());
     this._meshReady = [];   // finished worker results waiting to be turned into geometry
     this._stream = null;    // cached chunk list, see _rebuildStreamCache()
@@ -3255,8 +3256,12 @@ class Game{
   /* ---------------- Settings application ---------------- */
   applyGraphicsSettings(){
     const profile = currentGraphicsProfile();
-    this.scene.fog.near = profile.fogNear;
-    this.scene.fog.far = profile.fogFar;
+    // Fog has to finish BEFORE the last loaded chunk, otherwise the edge of the
+    // world is visible and chunks look like they pop in. So the tier's fog
+    // distance is capped by what render distance actually loads.
+    const fogEdge = Math.max(24, RENDER_DISTANCE*CHUNK_SIZE - CHUNK_SIZE*0.75);
+    this.scene.fog.far = Math.min(profile.fogFar, fogEdge);
+    this.scene.fog.near = Math.min(profile.fogNear, fogEdge*0.4);
 
     // Pixel ratio: the tier sets the ceiling; dynamic resolution (see
     // _updateDynamicResolution) may sit below it while FPS is low.
@@ -3276,6 +3281,52 @@ class Game{
       BlockAtlas.applyFilterPolicy();
     }
     this._lastMipmapPolicy = profile.mipmaps;
+  }
+
+  /* ---------------- Clouds ----------------
+     One big flat plane that follows the player. The cloud pattern is a
+     blocky tiling canvas texture whose offset tracks the player, so clouds
+     stay fixed in the world, and a slow drift moves them across the sky. */
+  _initClouds(){
+    const CELLS = 64, PX = 8;
+    const c = document.createElement('canvas'); c.width = c.height = CELLS*PX;
+    const ctx = c.getContext('2d');
+    const rnd = mulberry32(90210);
+    const grid = new Float32Array(CELLS*CELLS);
+    // low-res value noise, blurred a little so clouds clump into puffs
+    for(let i=0;i<grid.length;i++) grid[i] = rnd();
+    const at = (x,y)=> grid[((y+CELLS)%CELLS)*CELLS + ((x+CELLS)%CELLS)];
+    for(let y=0;y<CELLS;y++) for(let x=0;x<CELLS;x++){
+      const v = (at(x,y)*2 + at(x+1,y) + at(x-1,y) + at(x,y+1) + at(x,y-1) + at(x+1,y+1)+at(x-1,y-1))/8;
+      if(v > 0.61){ ctx.fillStyle = '#ffffff'; ctx.fillRect(x*PX, y*PX, PX, PX); }
+    }
+    const tex = new THREE.CanvasTexture(c);
+    tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.NearestFilter; tex.generateMipmaps = false;
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    this._cloudPeriod = 768;      // world blocks per texture repeat (12 blocks per cell)
+    this._cloudSize = 700;
+    tex.repeat.set(this._cloudSize/this._cloudPeriod, this._cloudSize/this._cloudPeriod);
+    this._cloudMat = new THREE.MeshBasicMaterial({ map: tex, transparent:true, opacity:0.85, depthWrite:false, side:THREE.DoubleSide, fog:false });
+    const geo = new THREE.PlaneGeometry(this._cloudSize, this._cloudSize);
+    geo.rotateX(-Math.PI/2);
+    this.clouds = new THREE.Mesh(geo, this._cloudMat);
+    this.clouds.renderOrder = -1;
+    this.clouds.frustumCulled = false;
+    this._cloudDrift = 0;
+    this._dayFactor = 1;
+    this.scene.add(this.clouds);
+  }
+  _updateClouds(delta){
+    if(!this.clouds) return;
+    this.clouds.visible = !this._inArchBClearing;
+    this._cloudDrift += delta*1.5; // blocks per second
+    const px = this.pos.x, pz = this.pos.z;
+    this.clouds.position.set(px, 112, pz);
+    const P = this._cloudPeriod;
+    this._cloudMat.map.offset.set((px - this._cloudDrift)/P - (this._cloudSize/P)/2, -pz/P - (this._cloudSize/P)/2);
+    // white by day, dim blue-grey at night
+    const d = this._dayFactor;
+    this._cloudMat.color.setRGB(0.18 + 0.82*d, 0.2 + 0.8*d, 0.3 + 0.7*d);
   }
 
   /* ---------------- Dynamic resolution ----------------
@@ -5394,14 +5445,7 @@ class Game{
   /* ---------------- Local self-arm animation (first person bob) ---------------- */
   updateDebugPanel(){
     const panel = document.getElementById('debugPanel');
-    panel.innerHTML = `
-      VOXEL FORGE ${ONLINE_MODE?'(Online: '+WORLD_ID+')':'(Offline)'}<br>
-      XYZ: ${this.pos.x.toFixed(1)}, ${this.pos.y.toFixed(1)}, ${this.pos.z.toFixed(1)}<br>
-      Chunk: ${Math.floor(this.pos.x/CHUNK_SIZE)}, ${Math.floor(this.pos.z/CHUNK_SIZE)}<br>
-      Loaded chunks: ${this.world.chunks.size}<br>
-      Mode: ${this.flying?'Flying':'Walking'} | FPS: ${this.fps||0}<br>
-      Res: ${(this._drRatio||0).toFixed(2)}x | Draw calls: ${this.renderer.info.render.calls} | Meshing: ${this.meshPool.isAsync?'worker':'main'}
-    `;
+    panel.textContent = `XYZ: ${this.pos.x.toFixed(1)}, ${this.pos.y.toFixed(1)}, ${this.pos.z.toFixed(1)}`;
   }
 
   /* ---------------- Health / damage ---------------- */
@@ -5576,6 +5620,7 @@ class Game{
             this.world.stepLiquids(300);
           }
         }
+        this._updateClouds(delta);
         this.animateOtherPlayers(delta);
         if(!this.paused) this.updateDayNight(delta);
         if(!this.paused && !this.dead) this.updateMobs(delta);
@@ -5752,6 +5797,7 @@ class Game{
     if(!this.moonLight.target.parent) this.scene.add(this.moonLight.target);
     this.moonLight.intensity = (1-dayFactor)*0.22;
     this.ambient.intensity = 0.18 + dayFactor*0.47;
+    this._dayFactor = dayFactor;
     chunkTorchUniform.value = 0.25 + 0.75*(1-dayFactor); // baked torch glow: subtle by day, full at night
 
     // sky/fog color: deep navy at night, warm orange at dawn/dusk, sky blue at noon
@@ -6916,6 +6962,7 @@ window.addEventListener('DOMContentLoaded', ()=>{
     SETTINGS.renderDistance = v;
     RENDER_DISTANCE = v;
     saveSettingsToStorage();
+    if(gameInstance) gameInstance.applyGraphicsSettings(); // refit fog to the new distance
   });
   document.getElementById('graphicsSelect').addEventListener('change', (e)=>{
     SETTINGS.graphics = e.target.value;
