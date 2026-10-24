@@ -399,10 +399,7 @@
       background:#ffffff2a; border:2px solid #ffffff55; pointer-events:auto;
       display:flex; align-items:center; justify-content:center; font-size:11px; color:#fff;
     }
-    #jumpBtn{bottom:110px; right:30px;}
-    #breakBtn{bottom:36px; right:120px;}
-    #placeBtn{bottom:36px; right:40px;}
-    .mbtnSmall{
+        .mbtnSmall{
       position:absolute; width:46px; height:46px; border-radius:8px;
       background:#ffffff2a; border:2px solid #ffffff55; pointer-events:auto;
       display:flex; align-items:center; justify-content:center; font-size:9px; color:#fff; text-align:center;
@@ -483,11 +480,47 @@
     text-transform:capitalize;
   }
   #vfTooltip.show{opacity:1; transform:translateY(0);}
+
+  /* ---------- Minecraft-style cursor stack + slot polish ---------- */
+  #cursorStack{position:fixed; left:0; top:0; z-index:10000; pointer-events:none; display:none; width:44px; height:44px;}
+  #cursorStack img{width:100%; height:100%; image-rendering:pixelated; filter:drop-shadow(2px 2px 0 #000a);}
+  #cursorStack .cnt{position:absolute; bottom:-2px; right:-2px; font-size:12px; font-weight:700; text-shadow:1px 1px #000, -1px -1px #000;}
+  .craftSlot, .craftOutSlot, .invSlot2, .invSlot{user-select:none; -webkit-user-select:none; touch-action:none;}
+  .craftSlot:hover, .craftOutSlot:hover, .invSlot2:hover{border-color:#6b7590;}
+  .craftSlot.spreadHL{background:#e0742a55; border-color:var(--vf-orange);}
+  .craftOutSlot.ready{border-color:var(--vf-orange); box-shadow:0 0 8px #e0742a88;}
+  .craftSlot .cnt, .craftOutSlot .cnt, .invSlot2 .cnt, .invSlot .cnt{font-size:11px; font-weight:700;}
+
+  /* ---------- Recipe book ---------- */
+  .recipeEntry{cursor:pointer;}
+  .recipeEntry.can{outline:1px solid var(--vf-orange);}
+  .recipeEntry.cant{opacity:.5;}
+  .recipeEntry.smeltEntry{cursor:default;}
+  .recipeEntry:hover{background:#171c2b;}
+  .recipeEntry .recipeIns .rIn .cnt, .recipeEntry .recipeOut .cnt{
+    position:absolute; bottom:-3px; right:0; font-size:9px; font-weight:700; text-shadow:1px 1px #000, -1px -1px #000;
+  }
+
+  /* ---------- Minecraft-style touch controls ---------- */
+  #descendBtn{display:none;}
+  @media (pointer:coarse){
+    html, body{overscroll-behavior:none; -webkit-touch-callout:none; -webkit-user-select:none; user-select:none;}
+    canvas{touch-action:none;}
+    .panel-box, #recipeBookList{touch-action:pan-y; max-height:92vh; overflow-y:auto;}
+    .joystick{bottom:76px; left:34px; width:120px; height:120px; background:#ffffff1a;}
+    .joystick .stick{width:54px; height:54px; top:33px; left:33px; background:#ffffff66;}
+    #jumpBtn{bottom:92px; right:34px; width:72px; height:72px; font-size:22px; background:#ffffff33;}
+    #descendBtn{bottom:176px; right:44px; width:52px; height:52px;}
+    .hotslot{width:40px; height:40px;}
+    .hotslot img{width:28px; height:28px;}
+    #hotbar{bottom:8px; gap:3px; padding:3px;}
+  }
 </style>
 </head>
 <body>
 
 <div id="vfTooltip"></div>
+<div id="cursorStack"></div>
 
 <div id="loadingScreen">
   <div class="vf-title">VOXEL FORGE</div>
@@ -510,6 +543,10 @@
       <div class="modeBtn selected" data-mode="survival">SURVIVAL</div>
       <div class="modeBtn" data-mode="creative">CREATIVE</div>
     </div>
+    <div class="modeRow" id="typeRow">
+      <div class="modeBtn selected" data-wtype="default">DEFAULT WORLD</div>
+      <div class="modeBtn" data-wtype="flat">FLAT WORLD</div>
+    </div>
 
     <div class="seedRow" id="seedRow">
       <input id="seedInput" class="vf-input" style="margin-bottom:0;" placeholder="Seed (optional)" maxlength="20">
@@ -518,11 +555,11 @@
     <div style="font-size:10px; color:#6b7590; margin-top:-8px; margin-bottom:12px;">Used for Create Room &amp; Play Offline — joined rooms use the host's world</div>
 
     <div class="menu-row">
-      <button class="vf-btn primary" id="createRoomBtn" style="opacity:0.5; cursor:not-allowed; filter:grayscale(60%);" title="Multiplayer is unavailable for now">Create Room</button>
+      <button class="vf-btn primary" id="createRoomBtn">Create Room</button>
     </div>
     <div class="menu-row" style="margin-top:8px;">
-      <input id="roomCodeInput" class="vf-input" style="margin-bottom:0; text-transform:uppercase; letter-spacing:3px; text-align:center; opacity:0.5; cursor:not-allowed;" placeholder="CODE" maxlength="4" disabled>
-      <button class="vf-btn primary" id="joinRoomBtn" style="width:auto; flex:none; padding-left:16px; padding-right:16px; opacity:0.5; cursor:not-allowed; filter:grayscale(60%);" title="Multiplayer is unavailable for now">Join Room</button>
+      <input id="roomCodeInput" class="vf-input" style="margin-bottom:0; text-transform:uppercase; letter-spacing:3px; text-align:center;" placeholder="CODE" maxlength="4">
+      <button class="vf-btn primary" id="joinRoomBtn" style="width:auto; flex:none; padding-left:16px; padding-right:16px;">Join Room</button>
     </div>
     <div class="menu-row" style="margin-top:8px;">
       <button class="vf-btn green" id="soloBtn">Play Offline (Solo)</button>
@@ -566,7 +603,7 @@
     <div class="invGrid" id="invGrid"></div>
     <div style="font-size:11px; color:#8892ab;" id="invHint">Click a block to select it into your hotbar.</div>
     <div class="invCraftSection" id="invCraftSection">
-      <h3>QUICK CRAFT</h3>
+      <h3>QUICK CRAFT <span class="recipeBookBtn" id="openRecipeBookBtn2" title="Recipe Book">📖</span></h3>
       <div class="craftWrap">
         <div class="craftGrid2" id="craftGrid2"></div>
         <div class="craftArrow">➜</div>
@@ -620,7 +657,8 @@
   <div class="panel-box" style="width:480px;">
     <span class="closeX" id="closeRecipeBook">✕</span>
     <h2>Recipe Book</h2>
-    <input id="recipeSearchInput" class="vf-input" placeholder="Search recipes (e.g. pickaxe, torch, planks)…" style="margin-bottom:10px;">
+    <input id="recipeSearchInput" class="vf-input" placeholder="Search recipes (e.g. pickaxe, torch, planks)…" style="margin-bottom:6px;">
+    <div class="craftHint" style="text-align:left; margin:0 0 8px;">Click a recipe to fill the crafting grid from your inventory. Shift-click fills as many sets as you can afford. Highlighted = you have the ingredients.</div>
     <div id="recipeBookList" style="max-height:380px; overflow-y:auto; display:flex; flex-direction:column; gap:6px;"></div>
   </div>
 </div>
@@ -729,9 +767,8 @@
 
 <div id="mobileControls">
   <div class="joystick" id="moveJoystick"><div class="stick" id="moveStick"></div></div>
-  <div class="mbtn" id="jumpBtn">JUMP</div>
-  <div class="mbtn" id="breakBtn">BREAK</div>
-  <div class="mbtn" id="placeBtn">PLACE</div>
+  <div class="mbtn" id="jumpBtn">⬆</div>
+  <div class="mbtn" id="descendBtn">⬇</div>
   <div class="mbtnSmall" id="invBtnMobile">INV</div>
   <div class="mbtnSmall" id="craftBtnMobile">CRAFT</div>
   <div class="mbtnSmall" id="chatBtnMobile">CHAT</div>
@@ -811,9 +848,11 @@ function saveSettingsToStorage(){
 function initFirebase(){
   try{
     if(FIREBASE_CONFIG.apiKey === "REPLACE_ME") return false;
-    fbApp = firebase.initializeApp(FIREBASE_CONFIG);
-    fbDB = firebase.database();
-    fbAuth = firebase.auth();
+    if(!fbApp){
+      fbApp = firebase.apps.length ? firebase.app() : firebase.initializeApp(FIREBASE_CONFIG);
+      fbDB = firebase.database();
+      fbAuth = firebase.auth();
+    }
     return true;
   }catch(e){
     console.warn("Firebase init failed", e);
@@ -1987,6 +2026,8 @@ const SEA_LEVEL = 30;
 let RENDER_DISTANCE = 4; // in chunks (radius) — mutable, adjustable in Settings
 
 let WORLD_SEED = 1337;
+let WORLD_TYPE = 'default'; // 'default' | 'flat' (superflat: bedrock, stone, dirt, grass — no biomes/trees)
+const FLAT_SURFACE_Y = SEA_LEVEL + 2; // first air block above the grass in a flat world
 
 // Distance (in blocks, on either axis) at which the world gives up on normal
 // terrain and switches to "the Gray Pillars" — our nod to Minecraft's
@@ -2287,6 +2328,7 @@ class World{
 
   // height map function (world x,z) -> surface Y
   heightAt(wx,wz){
+    if(WORLD_TYPE==='flat') return FLAT_SURFACE_Y;
     const s = this.seed;
     // NOTE: fbm2's value-noise averages multiple octaves of smoothed hash
     // values, which regresses strongly toward the middle of its range —
@@ -2360,6 +2402,7 @@ class World{
   // tree/cactus placement, and (via heightAt's continent mask) terrain shape.
   // Returns one of: 'ocean','beach','desert','volcanic','mountains','snowy_peak','forest','plains'.
   biomeAt(wx,wz){
+    if(WORLD_TYPE==='flat') return 'plains';
     const surfaceY = this.heightAt(wx,wz);
     if(surfaceY <= SEA_LEVEL) return 'ocean';
     if(surfaceY <= SEA_LEVEL+1) return 'beach';
@@ -2401,7 +2444,7 @@ class World{
   // Mirrors: biome gate, chunk-interior gate (lx/lz 2..13 only), the
   // roll/threshold formula, and the flat-grass-patch requirement.
   _treeRootedAt(wx, wz){
-    if(this.isFarlands(wx,wz)) return false;
+    if(WORLD_TYPE==='flat' || this.isFarlands(wx,wz)) return false;
     const lx = ((wx%CHUNK_SIZE)+CHUNK_SIZE)%CHUNK_SIZE;
     const lz = ((wz%CHUNK_SIZE)+CHUNK_SIZE)%CHUNK_SIZE;
     if(lx<2 || lx>=CHUNK_SIZE-2 || lz<2 || lz>=CHUNK_SIZE-2) return false;
@@ -2569,6 +2612,26 @@ class World{
           continue; // skip the normal biome/height/cave/ore column below
         }
 
+        if(WORLD_TYPE==='flat'){
+          // Superflat: bedrock, stone (with the usual ores), 3 dirt, 1 grass.
+          for(let ly=0; ly<CHUNK_SIZE; ly++){
+            const wy = cy*CHUNK_SIZE+ly;
+            let id = 0;
+            if(wy===0) id = 17;
+            else if(wy < FLAT_SURFACE_Y-4){
+              id = 3;
+              const oreRoll = hash3(wx,wy,wz,this.seed+55);
+              if(wy < FLAT_SURFACE_Y-20 && oreRoll > 0.9978) id = 16;
+              else if(wy < FLAT_SURFACE_Y-12 && oreRoll > 0.9945) id = 15;
+              else if(oreRoll > 0.9870) id = 14;
+              else if(oreRoll > 0.9780) id = 13;
+            }
+            else if(wy < FLAT_SURFACE_Y-1) id = 2;
+            else if(wy === FLAT_SURFACE_Y-1) id = 1;
+            chunk.set(lx,ly,lz,id);
+          }
+          continue;
+        }
         const surfaceY = this.heightAt(wx,wz);
         const biome = this.biomeAt(wx,wz);
         for(let ly=0; ly<CHUNK_SIZE; ly++){
@@ -2655,7 +2718,7 @@ class World{
     for(let lx=2; lx<CHUNK_SIZE-2; lx++){
       for(let lz=2; lz<CHUNK_SIZE-2; lz++){
         const wx = cx*CHUNK_SIZE+lx, wz = cz*CHUNK_SIZE+lz;
-        if(this.isFarlands(wx,wz)) continue; // no trees/cacti out among the pillars
+        if(WORLD_TYPE==='flat' || this.isFarlands(wx,wz)) continue; // no trees/cacti out among the pillars (or in a flat world)
         if(this.isArchClearing(wx,wz)) continue; // no trees/cacti inside either arch's clearing
         const surfaceY = this.heightAt(wx,wz);
         const groundChunkY = Math.floor(surfaceY/CHUNK_SIZE);
@@ -3192,6 +3255,7 @@ class Game{
     // peel exactly one back off into your inventory at a time.
     this.craftGridCounts = [0,0,0,0,0,0,0,0,0];
     this.craftGrid2Counts = [0,0,0,0];
+    this.cursor = {id:0, count:0}; // stack currently "held" by the mouse (Minecraft-style)
 
     if(GAME_MODE==='survival'){
       // survival starts completely empty — no starter tools or blocks.
@@ -3480,6 +3544,7 @@ class Game{
           document.getElementById('furnacePanel').style.display='none';
           document.getElementById('recipeBookPanel').style.display='none';
           if(document.getElementById('craftingPanel')) this.returnCraftGridToInventory();
+          this.returnCraftGrid2ToInventory();
           this.paused = false; // in case settings was opened directly (mobile quick button) rather than via pause
         } else {
           this.togglePause();
@@ -3575,7 +3640,8 @@ class Game{
     if(this.tryHandleChatCommand(msg)) return;
     this.addChatLine(PLAYER_NAME, msg, true);
     if(ONLINE_MODE){
-      fbDB.ref(`worlds/${WORLD_ID}/chat`).push({ name:PLAYER_NAME, msg, t:Date.now() });
+      fbDB.ref(`worlds/${WORLD_ID}/chat`).push({ uid:fbUID, name:PLAYER_NAME, msg, t:Date.now() })
+        .catch(err=>{ console.error('Chat failed:', err); this.showCenterMsg('⚠ Chat failed — check Firebase database rules', 2500); });
     }
   }
 
@@ -3591,26 +3657,80 @@ class Game{
 
     const axis = Math.random() < 0.5 ? 'x' : 'z';
     const sign = Math.random() < 0.5 ? 1 : -1;
-    const dist = 4999000 + Math.floor(Math.random()*900); // ~4.999M, staying under the 5M threshold
+    // ~40-120 blocks short of the 5M border: close enough to see the pillar
+    // field on the horizon, far enough that you haven't crossed into it.
+    const dist = 4999880 + Math.floor(Math.random()*80);
     const coordAlongAxis = sign * dist;
     const otherCoord = Math.floor((Math.random()-0.5)*40); // small jitter on the other axis
 
     const tx = axis==='x' ? coordAlongAxis : otherCoord;
     const tz = axis==='z' ? coordAlongAxis : otherCoord;
 
-    let h;
-    try{
-      h = this.world.heightAt(tx, tz);
-    }catch(err){
-      h = 64; // safe fallback if terrain gen hasn't covered this column yet
-    }
-    if(!isFinite(h)) h = 64;
-
-    this.pos.set(tx+0.5, h+3, tz+0.5);
-    this.vel.set(0,0,0);
-
-    this.addChatLine('System', `Teleported near the Gray Pillars (${Math.round(tx)}, ${Math.round(tz)}).`, false);
+    const spot = this.teleportSafely(tx, tz);
+    this.addChatLine('System', `Teleported near the Gray Pillars (${spot.x}, ${spot.z}).`, false);
     return true;
+  }
+
+  // Is there a good place to stand in this column? Returns the feet Y, or
+  // null if the top of the column is water/lava, a tree (glitch-trunks get
+  // very dense near the border), a cactus, or doesn't have 2 blocks of headroom.
+  _safeStandY(x, z){
+    const w = this.world;
+    for(let y=WORLD_HEIGHT-2; y>=1; y--){
+      const id = w.getBlock(x,y,z);
+      if(id===0) continue;
+      const def = BLOCKS[id];
+      if(!def) return null;
+      if(def.liquid) return null;
+      if(id===6 || id===7 || id===40) return null; // wood, leaves, cactus
+      if(def.solid===false) continue;             // torches etc — look through them
+      if(w.getBlock(x,y+1,z)===0 && w.getBlock(x,y+2,z)===0) return y+1;
+      return null;
+    }
+    return null;
+  }
+
+  // Teleport to (tx,tz), but never into the void, a tree, or water: the
+  // destination's chunks are generated first (so the blocks really exist
+  // when physics starts), then the nearest safe column is used.
+  teleportSafely(tx, tz){
+    const w = this.world;
+    const cx0 = Math.floor(tx/CHUNK_SIZE), cz0 = Math.floor(tz/CHUNK_SIZE);
+    for(let dx=-1; dx<=1; dx++){
+      for(let dz=-1; dz<=1; dz++){
+        for(let cy=0; cy<CHUNKS_Y; cy++){
+          const ch = w.getChunk(cx0+dx, cy, cz0+dz, true);
+          if(!ch.generated) w.generateChunk(ch);
+        }
+      }
+    }
+    let best = null;
+    for(let r=0; r<=14 && !best; r++){
+      for(let dx=-r; dx<=r && !best; dx++){
+        for(let dz=-r; dz<=r; dz++){
+          if(Math.max(Math.abs(dx),Math.abs(dz))!==r) continue;
+          const y = this._safeStandY(tx+dx, tz+dz);
+          if(y!==null){ best = {x:tx+dx, y, z:tz+dz}; break; }
+        }
+      }
+    }
+    if(!best){
+      // Nothing usable nearby (e.g. open ocean): build a small stone platform.
+      let y = SEA_LEVEL + 8;
+      try{ y = Math.min(WORLD_HEIGHT-10, Math.max(w.heightAt(tx,tz), SEA_LEVEL) + 8); }catch(err){}
+      for(let dx=-2; dx<=2; dx++){
+        for(let dz=-2; dz<=2; dz++){
+          w.setBlock(tx+dx, y-1, tz+dz, 3);
+          for(let h=0; h<3; h++) w.setBlock(tx+dx, y+h, tz+dz, 0);
+        }
+      }
+      best = {x:tx, y, z:tz};
+    }
+    this.pos.set(best.x+0.5, best.y+0.05, best.z+0.5);
+    this.vel.set(0,0,0);
+    this.onGround = false;
+    this._stream = null; // force the chunk-streaming cache to rebuild around the new spot
+    return best;
   }
 
   // "/locate <biome>" — spiral-searches outward from the player's current
@@ -3703,55 +3823,124 @@ class Game{
   }
 
   _setupMobile(){
-    // simple touch joystick + buttons for mobile play
-    const joy = document.getElementById('moveJoystick');
-    const stick = document.getElementById('moveStick');
-    this.mobileMove = {x:0,y:0};
-    let dragging=false, cx=0, cy=0;
-    joy.addEventListener('touchstart', (e)=>{
-      dragging=true;
-      const r = joy.getBoundingClientRect(); cx=r.left+r.width/2; cy=r.top+r.height/2;
-    });
-    joy.addEventListener('touchmove', (e)=>{
-      if(!dragging) return;
-      const t = e.touches[0];
-      let dx=t.clientX-cx, dy=t.clientY-cy;
-      const maxD=40; const d=Math.hypot(dx,dy);
-      if(d>maxD){ dx=dx/d*maxD; dy=dy/d*maxD; }
-      stick.style.left = (30+dx)+'px'; stick.style.top=(30+dy)+'px';
-      this.mobileMove.x = dx/maxD; this.mobileMove.y = dy/maxD;
-      e.preventDefault();
-    }, {passive:false});
-    joy.addEventListener('touchend', ()=>{ dragging=false; this.mobileMove.x=0; this.mobileMove.y=0; stick.style.left='30px'; stick.style.top='30px'; });
-
-    document.getElementById('jumpBtn').addEventListener('touchstart', ()=>{ KEY['Space']=true; });
-    document.getElementById('jumpBtn').addEventListener('touchend', ()=>{ KEY['Space']=false; });
-    document.getElementById('breakBtn').addEventListener('touchstart', (e)=>{ e.preventDefault(); this.startMining(); });
-    document.getElementById('breakBtn').addEventListener('touchend', ()=>{ this.stopMining(); });
-    document.getElementById('placeBtn').addEventListener('touchstart', (e)=>{ e.preventDefault(); this.placeBlock(); });
-    document.getElementById('invBtnMobile').addEventListener('touchstart', (e)=>{ e.preventDefault(); this.toggleInventory(); });
-    document.getElementById('craftBtnMobile').addEventListener('touchstart', (e)=>{ e.preventDefault(); this.toggleCraftingPanel(); });
-    document.getElementById('chatBtnMobile').addEventListener('touchstart', (e)=>{ e.preventDefault(); this.openChat(); });
+    /* Minecraft-style touch controls:
+         left stick            move (push it all the way forward to sprint)
+         drag anywhere else    look around
+         tap the world         place a block / use a table or furnace / hit a mob
+         press & hold          break the block you're looking at (keep dragging to look)
+         jump button           jump (double-tap it in creative to toggle flying)
+         down button           fly down (creative only)
+         tap the hotbar        select a slot                                         */
     if(window.matchMedia && window.matchMedia('(pointer:coarse)').matches){
       document.body.classList.add('mobile-ui');
     }
+    this.mobileMove = {x:0,y:0};
+    this.mobileSprint = false;
+    const findTouch = (list, id)=>{ for(const t of list) if(t.identifier===id) return t; return null; };
 
-    // touch-drag look on canvas (single finger, not on joystick/buttons)
-    let lastX=0,lastY=0,looking=false;
-    this.canvas.addEventListener('touchstart',(e)=>{
-      if(e.target!==this.canvas) return;
-      looking=true; lastX=e.touches[0].clientX; lastY=e.touches[0].clientY;
-    });
-    this.canvas.addEventListener('touchmove',(e)=>{
-      if(!looking) return;
-      const t=e.touches[0];
-      const dx=t.clientX-lastX, dy=t.clientY-lastY;
-      lastX=t.clientX; lastY=t.clientY;
+    // ---- movement stick ----
+    const joy = document.getElementById('moveJoystick');
+    const stick = document.getElementById('moveStick');
+    let joyId = null, jcx = 0, jcy = 0;
+    const restPos = ()=> (joy.clientWidth - stick.clientWidth)/2;
+    const joyUpdate = (t)=>{
+      let dx = t.clientX-jcx, dy = t.clientY-jcy;
+      const maxD = joy.clientWidth*0.36;
+      const d = Math.hypot(dx,dy);
+      if(d>maxD){ dx = dx/d*maxD; dy = dy/d*maxD; }
+      const rp = restPos();
+      stick.style.left = (rp+dx)+'px'; stick.style.top = (rp+dy)+'px';
+      this.mobileMove.x = dx/maxD; this.mobileMove.y = dy/maxD;
+      this.mobileSprint = (d > maxD*1.05) && (dy < -maxD*0.6);
+    };
+    const joyReset = ()=>{
+      joyId = null;
+      this.mobileMove.x = 0; this.mobileMove.y = 0; this.mobileSprint = false;
+      const rp = restPos(); stick.style.left = rp+'px'; stick.style.top = rp+'px';
+    };
+    joy.addEventListener('touchstart', (e)=>{
+      if(joyId!==null) return;
+      const t = e.changedTouches[0];
+      joyId = t.identifier;
+      const r = joy.getBoundingClientRect(); jcx = r.left+r.width/2; jcy = r.top+r.height/2;
+      joyUpdate(t);
+      e.preventDefault();
+    }, {passive:false});
+    joy.addEventListener('touchmove', (e)=>{
+      const t = findTouch(e.changedTouches, joyId);
+      if(!t) return;
+      joyUpdate(t);
+      e.preventDefault();
+    }, {passive:false});
+    const joyEnd = (e)=>{ if(findTouch(e.changedTouches, joyId)) joyReset(); };
+    joy.addEventListener('touchend', joyEnd);
+    joy.addEventListener('touchcancel', joyEnd);
+
+    // ---- jump / descend ----
+    const jump = document.getElementById('jumpBtn');
+    jump.addEventListener('touchstart', (e)=>{
+      e.preventDefault();
+      const now = Date.now();
+      if(GAME_MODE==='creative' && now-(this._lastJumpTap||0) < 300){ this.flying = !this.flying; this.vel.y = 0; }
+      this._lastJumpTap = now;
+      KEY['Space'] = true;
+    }, {passive:false});
+    const jumpEnd = ()=>{ KEY['Space'] = false; };
+    jump.addEventListener('touchend', jumpEnd);
+    jump.addEventListener('touchcancel', jumpEnd);
+    const desc = document.getElementById('descendBtn');
+    if(desc){
+      if(GAME_MODE==='creative') desc.style.display = 'flex';
+      desc.addEventListener('touchstart', (e)=>{ e.preventDefault(); KEY['ControlLeft'] = true; }, {passive:false});
+      const descEnd = ()=>{ KEY['ControlLeft'] = false; };
+      desc.addEventListener('touchend', descEnd);
+      desc.addEventListener('touchcancel', descEnd);
+    }
+
+    // ---- menu buttons ----
+    document.getElementById('invBtnMobile').addEventListener('touchstart', (e)=>{ e.preventDefault(); this.toggleInventory(); });
+    document.getElementById('craftBtnMobile').addEventListener('touchstart', (e)=>{ e.preventDefault(); this.toggleCraftingPanel(); });
+    document.getElementById('chatBtnMobile').addEventListener('touchstart', (e)=>{ e.preventDefault(); this.openChat(); });
+
+    // ---- look / tap-to-place / hold-to-break (one finger on the world) ----
+    const HOLD_MS = 280, MOVE_PX = 12, TAP_MS = 400;
+    let look = null;
+    const endLook = (e)=>{
+      if(!look || !findTouch(e.changedTouches, look.id)) return;
+      const L = look; look = null;
+      clearTimeout(L.timer);
+      if(L.mining){ this.stopMining(); return; }
+      if(!L.moved && Date.now()-L.t < TAP_MS && !this.paused && !this.dead){
+        const mob = this.raycastMob(5);
+        if(mob) this.attackMob(mob); else this.placeBlock();
+      }
+    };
+    this.canvas.addEventListener('touchstart', (e)=>{
+      if(e.target!==this.canvas || look) return;
+      const t = e.changedTouches[0];
+      look = { id:t.identifier, x:t.clientX, y:t.clientY, sx:t.clientX, sy:t.clientY, t:Date.now(), moved:false, mining:false, timer:null };
+      look.timer = setTimeout(()=>{
+        if(look && !look.moved && !this.paused && !this.dead){ look.mining = true; this.startMining(); }
+      }, HOLD_MS);
+      e.preventDefault();
+    }, {passive:false});
+    this.canvas.addEventListener('touchmove', (e)=>{
+      if(!look) return;
+      const t = findTouch(e.changedTouches, look.id);
+      if(!t) return;
+      if(!look.moved && !look.mining){
+        if(Math.hypot(t.clientX-look.sx, t.clientY-look.sy) < MOVE_PX) { e.preventDefault(); return; }
+        look.moved = true;
+        clearTimeout(look.timer);
+      }
+      const dx = t.clientX-look.x, dy = t.clientY-look.y;
+      look.x = t.clientX; look.y = t.clientY;
       this.yaw -= dx*0.0035; this.pitch -= dy*0.0035;
       this.pitch = Math.max(-Math.PI/2+0.01, Math.min(Math.PI/2-0.01, this.pitch));
       e.preventDefault();
     }, {passive:false});
-    this.canvas.addEventListener('touchend', ()=>{ looking=false; });
+    this.canvas.addEventListener('touchend', endLook);
+    this.canvas.addEventListener('touchcancel', endLook);
   }
 
   toggleInventory(){
@@ -3767,111 +3956,329 @@ class Game{
     if(this.locked) document.exitPointerLock();
   }
 
-  returnCraftGrid2ToInventory(){
-    for(let i=0;i<4;i++){
-      const id = this.craftGrid2[i];
-      if(id){
-        const n = this.craftGrid2Counts[i]||1;
-        this.inventoryCounts[id] = (this.inventoryCounts[id]||0)+n;
-        if(!this.hotbar.includes(id)){
-          const emptyIdx = this.hotbar.indexOf(0);
-          if(emptyIdx !== -1) this.hotbar[emptyIdx] = id;
-        }
-      }
-      this.craftGrid2[i] = 0;
-      this.craftGrid2Counts[i] = 0;
-    }
-    this.updateHotbarUI();
+  /* =====================================================================
+     MINECRAFT-STYLE CRAFTING
+       Left-click   : pick up a whole stack / place the whole held stack
+       Right-click  : pick up half a stack / place ONE item from the held stack
+       Shift-click  : inventory item -> straight into the grid,
+                      grid item -> straight back to inventory,
+                      result slot -> craft as many as possible
+       Click + drag : with a stack on the cursor, hold left to split it evenly
+                      over the slots you drag across, or hold right to drop
+                      one item into each slot you drag across
+       Ingredients are used up one per craft; the rest stays in the grid.
+       Hover an inventory item + press 1-9 to put it in that hotbar slot.
+       (Touch: tap = left-click, long-press = right-click.)
+     ===================================================================== */
+  _initCraftUI(){
+    if(this._craftUIReady) return;
+    this._craftUIReady = true;
+    const cs = document.getElementById('cursorStack');
+    const move = (e)=>{
+      this._ptr = {x:e.clientX, y:e.clientY};
+      if(cs) cs.style.transform = `translate(${e.clientX-22}px,${e.clientY-22}px)`;
+    };
+    document.addEventListener('pointermove', move);
+    document.addEventListener('pointerdown', move, true);
+    document.addEventListener('pointerup', ()=>this._finishSpread());
+    document.addEventListener('pointercancel', ()=>this._cancelSpread());
+    window.addEventListener('keydown', (e)=>{
+      if(!this._hoverInvId || !/^Digit[1-9]$/.test(e.code)) return;
+      const n = parseInt(e.code.slice(5))-1, id = this._hoverInvId;
+      if(n >= this.hotbar.length) return;
+      const old = this.hotbar.indexOf(id);
+      if(old!==-1 && old!==n) this.hotbar[old] = this.hotbar[n];
+      this.hotbar[n] = id;
+      this.updateHotbarUI();
+    }, true);
   }
 
-  renderCraftGrid2(){
-    const gridEl = document.getElementById('craftGrid2');
+  _updateCursorUI(){
+    const cs = document.getElementById('cursorStack');
+    if(!cs) return;
+    const c = this.cursor;
+    if(!c.id || c.count<=0){ c.id=0; c.count=0; cs.style.display='none'; cs.innerHTML=''; return; }
+    cs.innerHTML = '';
+    const img = document.createElement('img'); img.src = iconDataUrl(c.id); cs.appendChild(img);
+    if(c.count>1){ const n=document.createElement('div'); n.className='cnt'; n.textContent=c.count; cs.appendChild(n); }
+    cs.style.display = 'block';
+    if(this._ptr) cs.style.transform = `translate(${this._ptr.x-22}px,${this._ptr.y-22}px)`;
+  }
+
+  _giveItem(id, n){
+    if(!id || n<=0) return;
+    this.inventoryCounts[id] = (this.inventoryCounts[id]||0) + n;
+    this.addToHotbar(id);
+  }
+
+  _depositCursor(right){
+    const c = this.cursor;
+    if(!c.id) return;
+    const n = right ? 1 : c.count;
+    this._giveItem(c.id, n);
+    c.count -= n;
+    if(c.count<=0){ c.id=0; c.count=0; }
+  }
+
+  returnCursor(){
+    const c = this.cursor;
+    if(!c) return;
+    if(c.id && c.count>0) this._giveItem(c.id, c.count);
+    c.id = 0; c.count = 0;
+    this._cancelSpread();
+    this._updateCursorUI();
+  }
+
+  _refreshAll(){
+    const open = id=>{ const el=document.getElementById(id); return el && el.style.display==='flex'; };
+    if(open('inventoryPanel')){ this.renderInventory(); this.renderCraftGrid2(); }
+    if(open('craftingPanel')) this.renderCraftingPanel();
+    this.updateHotbarUI();
+    this._updateCursorUI();
+  }
+
+  _grid(kind){
+    if(kind===3) return {
+      kind:3, size:9, ids:this.craftGrid, cnt:this.craftGridCounts, match:matchRecipe,
+      gridId:'craftGrid3', outId:'craftOutSlot', hintId:'craftHint',
+      idle:'Arrange items to match a recipe.'
+    };
+    return {
+      kind:2, size:4, ids:this.craftGrid2, cnt:this.craftGrid2Counts, match:matchRecipe2x2,
+      gridId:'craftGrid2', outId:'craftOutSlot2', hintId:'craftHint2',
+      idle:'2x2 grid: planks, sticks, torches & a crafting table. Use a crafting table for everything else.'
+    };
+  }
+
+  _setSlot(g, i, id, n){
+    if(n<=0){ g.ids[i]=0; g.cnt[i]=0; } else { g.ids[i]=id; g.cnt[i]=n; }
+  }
+
+  // Click on a grid slot (right = right mouse button / long-press)
+  _slotAction(g, i, right){
+    const MAX = 64, c = this.cursor, sid = g.ids[i], sn = g.cnt[i]||0;
+    if(!c.id){
+      if(!sid) return;
+      const take = right ? Math.ceil(sn/2) : sn;
+      c.id = sid; c.count = take;
+      this._setSlot(g, i, sid, sn-take);
+    } else if(!sid){
+      const put = Math.min(MAX, right ? 1 : c.count);
+      this._setSlot(g, i, c.id, put);
+      c.count -= put;
+    } else if(sid===c.id){
+      const put = Math.min(MAX-sn, right ? 1 : c.count);
+      if(put<=0) return;
+      this._setSlot(g, i, sid, sn+put);
+      c.count -= put;
+    } else {
+      if(right || c.count>MAX) return;      // swap held stack with the slot
+      this._setSlot(g, i, c.id, c.count);
+      c.id = sid; c.count = sn;
+    }
+    if(c.count<=0){ c.id=0; c.count=0; }
+  }
+
+  _consumeGrid(g){
+    for(let i=0;i<g.size;i++){
+      if(!g.ids[i]) continue;
+      this._setSlot(g, i, g.ids[i], (g.cnt[i]||1)-1);
+    }
+  }
+
+  _outputClick(g, shift){
+    const r = g.match(g.ids);
+    if(!r) return;
+    const c = this.cursor;
+    if(shift){
+      let guard = 0;
+      while(guard++ < 640 && g.match(g.ids)===r){
+        this._consumeGrid(g);
+        this._giveItem(r.out.id, r.out.count);
+      }
+      return;
+    }
+    if(c.id && (c.id!==r.out.id || c.count + r.out.count > 64)) return;
+    this._consumeGrid(g);
+    if(!c.id){ c.id = r.out.id; c.count = 0; }
+    c.count += r.out.count;
+  }
+
+  // Quick-move (shift-click) an inventory stack into a crafting grid.
+  _quickMoveToGrid(g, id){
+    let have = this.inventoryCounts[id]||0;
+    if(have<=0) return;
+    for(let pass=0; pass<2; pass++){
+      for(let i=0; i<g.size && have>0; i++){
+        const sid = g.ids[i];
+        const ok = pass===0 ? (sid===id && g.cnt[i]<64) : !sid;
+        if(!ok) continue;
+        const cur = sid ? g.cnt[i] : 0;
+        const put = Math.min(have, 64-cur);
+        this._setSlot(g, i, id, cur+put);
+        have -= put;
+      }
+    }
+    this.inventoryCounts[id] = have;
+  }
+
+  // Click on an inventory stack (shared by the inventory + crafting panels)
+  _invAction(id, right, e, g){
+    const c = this.cursor;
+    if(e.ctrlKey || e.metaKey){            // ctrl-click: select it on the hotbar
+      this.selectedBlock = id;
+      this.addToHotbar(id);
+      this.selectedSlot = Math.max(0, this.hotbar.indexOf(id));
+      this.updateHotbarUI();
+      return;
+    }
+    if(c.id){ this._depositCursor(right); return; }
+    const have = this.inventoryCounts[id]||0;
+    if(have<=0) return;
+    if(e.shiftKey && g){ this._quickMoveToGrid(g, id); return; }
+    const take = right ? Math.ceil(have/2) : have;
+    c.id = id; c.count = take;
+    this.inventoryCounts[id] = have - take;
+  }
+
+  _bindPress(el, fn){
+    el.oncontextmenu = (e)=>e.preventDefault();
+    el.onpointerdown = (e)=>{
+      if(e.pointerType==='touch'){ el._t = Date.now(); return; }
+      if(e.button!==0 && e.button!==2) return;
+      e.preventDefault();
+      fn(e.button===2, e);
+    };
+    el.onpointerup = (e)=>{
+      if(e.pointerType!=='touch' || !el._t) return;
+      const long = Date.now()-el._t > 400; el._t = 0;
+      fn(long, e);
+    };
+  }
+
+  /* ---- drag-to-spread ---- */
+  _slotEl(g, i){ const gr=document.getElementById(g.gridId); return gr ? gr.children[i] : null; }
+  _spreadMark(g, i){ const el=this._slotEl(g,i); if(el) el.classList.add('spreadHL'); }
+  _startSpread(g, i, btn){
+    this._spread = {g, btn, slots:[i]};
+    this._spreadMark(g, i);
+  }
+  _spreadEnter(g, i){
+    const s = this._spread, c = this.cursor;
+    if(!s || s.g.kind!==g.kind || s.slots.includes(i) || !c.id) return;
+    if(g.ids[i] && g.ids[i]!==c.id) return;
+    if(s.slots.length >= c.count) return;
+    s.slots.push(i);
+    this._spreadMark(g, i);
+  }
+  _cancelSpread(){
+    const s = this._spread;
+    if(!s) return;
+    this._spread = null;
+    s.slots.forEach(i=>{ const el=this._slotEl(s.g,i); if(el) el.classList.remove('spreadHL'); });
+  }
+  _finishSpread(){
+    const s = this._spread;
+    if(!s) return;
+    this._spread = null;
+    const g = s.g, c = this.cursor, right = s.btn===2;
+    if(s.slots.length<=1){
+      this._slotAction(g, s.slots[0], right);
+    } else if(c.id){
+      const per = right ? 1 : Math.max(1, Math.floor(c.count/s.slots.length));
+      for(const i of s.slots){
+        if(c.count<=0) break;
+        const have = g.cnt[i]||0;
+        const put = Math.min(per, 64-have, c.count);
+        if(put>0){ this._setSlot(g, i, c.id, have+put); c.count -= put; }
+      }
+      if(c.count<=0){ c.id=0; c.count=0; }
+    }
+    this._refreshAll();
+  }
+
+  /* ---- shared grid renderer (2x2 and 3x3) ---- */
+  _renderCraft(g){
+    this._initCraftUI();
+    const gridEl = document.getElementById(g.gridId);
     if(!gridEl) return;
     gridEl.innerHTML = '';
-    for(let i=0;i<4;i++){
+    for(let i=0;i<g.size;i++){
       const slot = document.createElement('div');
       slot.className = 'craftSlot';
-      const id = this.craftGrid2[i];
+      const id = g.ids[i], n = g.cnt[i]||0;
       if(id){
         const img = document.createElement('img'); img.src = iconDataUrl(id);
         slot.appendChild(img);
-        const n = this.craftGrid2Counts[i]||1;
         if(n>1){ const cnt=document.createElement('div'); cnt.className='cnt'; cnt.textContent=n; slot.appendChild(cnt); }
-        if(ALL_DEFS[id]) attachTooltip(slot, ALL_DEFS[id].name+(n>1?` x${n}`:''));
-        slot.draggable = true;
-        slot.addEventListener('dragstart', (e)=>{
-          slot.classList.add('dragging');
-          e.dataTransfer.setData('text/plain', String(i));
-          e.dataTransfer.effectAllowed = 'move';
-        });
-        slot.addEventListener('dragend', ()=>{ slot.classList.remove('dragging'); });
+        if(ALL_DEFS[id]) attachTooltip(slot, ALL_DEFS[id].name);
       }
-      slot.addEventListener('dragover', (e)=>{ e.preventDefault(); slot.classList.add('dragOver'); });
-      slot.addEventListener('dragleave', ()=>{ slot.classList.remove('dragOver'); });
-      slot.addEventListener('drop', (e)=>{
+      slot.oncontextmenu = (e)=>e.preventDefault();
+      slot.onpointerdown = (e)=>{
+        if(e.pointerType==='touch'){ slot._t = Date.now(); return; }
+        if(e.button!==0 && e.button!==2) return;
         e.preventDefault();
-        slot.classList.remove('dragOver');
-        const fromIdx = +e.dataTransfer.getData('text/plain');
-        if(isNaN(fromIdx) || fromIdx===i) return;
-        // dragging one stack onto an empty slot, or onto a slot holding the
-        // same id, merges the stacks instead of swapping
-        if(this.craftGrid2[i]===0 || this.craftGrid2[i]===this.craftGrid2[fromIdx]){
-          this.craftGrid2[i] = this.craftGrid2[fromIdx];
-          this.craftGrid2Counts[i] = (this.craftGrid2Counts[i]||0) + (this.craftGrid2Counts[fromIdx]||1);
-          this.craftGrid2[fromIdx] = 0;
-          this.craftGrid2Counts[fromIdx] = 0;
+        if(!this.cursor.id){
+          if(e.shiftKey && g.ids[i]){            // shift-click: straight back to inventory
+            this._giveItem(g.ids[i], g.cnt[i]);
+            this._setSlot(g, i, 0, 0);
+          } else {
+            this._slotAction(g, i, e.button===2);
+          }
+          this._refreshAll();
         } else {
-          const tmpId = this.craftGrid2[i], tmpN = this.craftGrid2Counts[i];
-          this.craftGrid2[i] = this.craftGrid2[fromIdx];
-          this.craftGrid2Counts[i] = this.craftGrid2Counts[fromIdx];
-          this.craftGrid2[fromIdx] = tmpId;
-          this.craftGrid2Counts[fromIdx] = tmpN;
-        }
-        this.renderCraftGrid2();
-      });
-      slot.onclick = ()=>{
-        // clicking a filled grid slot peels ONE off the stack back to
-        // inventory — click repeatedly (or several times) to fully unstack.
-        if(this.craftGrid2[i]){
-          const id = this.craftGrid2[i];
-          this.inventoryCounts[id] = (this.inventoryCounts[id]||0)+1;
-          this.craftGrid2Counts[i] = (this.craftGrid2Counts[i]||1)-1;
-          if(this.craftGrid2Counts[i]<=0){ this.craftGrid2[i]=0; this.craftGrid2Counts[i]=0; }
-          this.renderCraftGrid2();
-          this.renderInventory();
+          this._startSpread(g, i, e.button);     // resolved on pointerup (click or drag-spread)
         }
       };
+      slot.onpointerup = (e)=>{
+        if(e.pointerType!=='touch' || !slot._t) return;
+        const long = Date.now()-slot._t > 400; slot._t = 0;
+        this._slotAction(g, i, long);
+        this._refreshAll();
+      };
+      slot.onpointerenter = ()=>this._spreadEnter(g, i);
       gridEl.appendChild(slot);
     }
 
-    const recipe = matchRecipe2x2(this.craftGrid2);
-    const outSlot = document.getElementById('craftOutSlot2');
-    outSlot.innerHTML = '';
-    const hint = document.getElementById('craftHint2');
+    // result slot — replace the node so old listeners/tooltips don't pile up
+    const oldOut = document.getElementById(g.outId);
+    const outSlot = oldOut.cloneNode(false);
+    oldOut.replaceWith(outSlot);
+    const hint = document.getElementById(g.hintId);
+    const touch = document.body.classList.contains('mobile-ui');
+    const controls = touch
+      ? ' Tap: pick up/place · Long-press: split/place one.'
+      : ' Left-click: pick up/place · Right-click: split/place one · Shift-click: quick move · Drag to spread.';
+    const recipe = g.match(g.ids);
     if(recipe){
+      outSlot.classList.add('ready');
       const img = document.createElement('img'); img.src = iconDataUrl(recipe.out.id);
       outSlot.appendChild(img);
       if(recipe.out.count>1){
         const cnt = document.createElement('div'); cnt.className='cnt'; cnt.textContent = recipe.out.count;
         outSlot.appendChild(cnt);
       }
-      outSlot.onclick = ()=>{
-        for(let i=0;i<4;i++){
-          if(!this.craftGrid2[i]) continue;
-          this.craftGrid2Counts[i] = (this.craftGrid2Counts[i]||1)-1;
-          if(this.craftGrid2Counts[i]<=0){ this.craftGrid2[i]=0; this.craftGrid2Counts[i]=0; }
-        }
-        this.inventoryCounts[recipe.out.id] = (this.inventoryCounts[recipe.out.id]||0)+recipe.out.count;
-        this.addToHotbar(recipe.out.id);
-        this.renderCraftGrid2();
-        this.renderInventory();
-      };
-      attachTooltip(outSlot, ALL_DEFS[recipe.out.id].name);
-      hint.textContent = `Recipe found — click the arrow output to craft ${ALL_DEFS[recipe.out.id].name}.`;
+      attachTooltip(outSlot, ALL_DEFS[recipe.out.id].name + (recipe.out.count>1 ? ` x${recipe.out.count}` : ''));
+      this._bindPress(outSlot, (right, e)=>{
+        this._outputClick(g, e.shiftKey);
+        this._refreshAll();
+      });
+      hint.textContent = `Click the result to take ${ALL_DEFS[recipe.out.id].name}${touch?'':' (Shift-click crafts as many as possible)'}.`;
     } else {
-      outSlot.onclick = null;
-      hint.textContent = 'Click items above to add them here. A crafting table unlocks every recipe.';
+      hint.textContent = g.idle + controls;
     }
+  }
+
+  renderCraftGrid2(){ this._renderCraft(this._grid(2)); }
+
+  returnCraftGrid2ToInventory(){
+    for(let i=0;i<4;i++){
+      if(this.craftGrid2[i]) this._giveItem(this.craftGrid2[i], this.craftGrid2Counts[i]||1);
+      this.craftGrid2[i] = 0;
+      this.craftGrid2Counts[i] = 0;
+    }
+    this.returnCursor();
+    this.updateHotbarUI();
   }
 
   // A 3x3 crafting table grid unless forceTable is false and the player has
@@ -3888,113 +4295,29 @@ class Game{
 
   returnCraftGridToInventory(){
     for(let i=0;i<9;i++){
-      const id = this.craftGrid[i];
-      if(id){
-        const n = this.craftGridCounts[i]||1;
-        this.inventoryCounts[id] = (this.inventoryCounts[id]||0)+n;
-        if(!this.hotbar.includes(id)){
-          const emptyIdx = this.hotbar.indexOf(0);
-          if(emptyIdx !== -1) this.hotbar[emptyIdx] = id;
-        }
-      }
+      if(this.craftGrid[i]) this._giveItem(this.craftGrid[i], this.craftGridCounts[i]||1);
       this.craftGrid[i] = 0;
       this.craftGridCounts[i] = 0;
     }
+    this.returnCursor();
     this.updateHotbarUI();
   }
 
   renderCraftingPanel(){
-    const gridEl = document.getElementById('craftGrid3');
-    gridEl.innerHTML = '';
-    for(let i=0;i<9;i++){
-      const slot = document.createElement('div');
-      slot.className = 'craftSlot';
-      const id = this.craftGrid[i];
-      if(id){
-        const img = document.createElement('img'); img.src = iconDataUrl(id);
-        slot.appendChild(img);
-        const n = this.craftGridCounts[i]||1;
-        if(n>1){ const cnt=document.createElement('div'); cnt.className='cnt'; cnt.textContent=n; slot.appendChild(cnt); }
-        if(ALL_DEFS[id]) attachTooltip(slot, ALL_DEFS[id].name+(n>1?` x${n}`:''));
-        slot.draggable = true;
-        slot.addEventListener('dragstart', (e)=>{
-          slot.classList.add('dragging');
-          e.dataTransfer.setData('text/plain', String(i));
-          e.dataTransfer.effectAllowed = 'move';
-        });
-        slot.addEventListener('dragend', ()=>{ slot.classList.remove('dragging'); });
-      }
-      slot.addEventListener('dragover', (e)=>{ e.preventDefault(); slot.classList.add('dragOver'); });
-      slot.addEventListener('dragleave', ()=>{ slot.classList.remove('dragOver'); });
-      slot.addEventListener('drop', (e)=>{
-        e.preventDefault();
-        slot.classList.remove('dragOver');
-        const fromIdx = +e.dataTransfer.getData('text/plain');
-        if(isNaN(fromIdx) || fromIdx===i) return;
-        // dropping onto an empty slot, or onto a slot holding the same id,
-        // merges the stacks instead of swapping the two slots
-        if(this.craftGrid[i]===0 || this.craftGrid[i]===this.craftGrid[fromIdx]){
-          this.craftGrid[i] = this.craftGrid[fromIdx];
-          this.craftGridCounts[i] = (this.craftGridCounts[i]||0) + (this.craftGridCounts[fromIdx]||1);
-          this.craftGrid[fromIdx] = 0;
-          this.craftGridCounts[fromIdx] = 0;
-        } else {
-          const tmpId = this.craftGrid[i], tmpN = this.craftGridCounts[i];
-          this.craftGrid[i] = this.craftGrid[fromIdx];
-          this.craftGridCounts[i] = this.craftGridCounts[fromIdx];
-          this.craftGrid[fromIdx] = tmpId;
-          this.craftGridCounts[fromIdx] = tmpN;
-        }
-        this.renderCraftingPanel();
-      });
-      slot.onclick = ()=>{
-        // clicking a filled grid slot peels ONE off the stack back to
-        // inventory — keep clicking to fully unstack a slot.
-        if(this.craftGrid[i]){
-          const id = this.craftGrid[i];
-          this.inventoryCounts[id] = (this.inventoryCounts[id]||0)+1;
-          this.craftGridCounts[i] = (this.craftGridCounts[i]||1)-1;
-          if(this.craftGridCounts[i]<=0){ this.craftGrid[i]=0; this.craftGridCounts[i]=0; }
-          this.renderCraftingPanel();
-        }
-      };
-      gridEl.appendChild(slot);
-    }
+    this._renderCraft(this._grid(3));
 
-    const recipe = matchRecipe(this.craftGrid);
-    const outSlot = document.getElementById('craftOutSlot');
-    outSlot.innerHTML = '';
-    const hint = document.getElementById('craftHint');
-    if(recipe){
-      const img = document.createElement('img'); img.src = iconDataUrl(recipe.out.id);
-      outSlot.appendChild(img);
-      if(recipe.out.count>1){
-        const cnt = document.createElement('div'); cnt.className='cnt'; cnt.textContent = recipe.out.count;
-        outSlot.appendChild(cnt);
-      }
-      outSlot.onclick = ()=>{
-        // consume one of each grid item (shapeless recipes just need the single input consumed);
-        // leftover stack (beyond the 1 the recipe needs) stays put for repeat crafting
-        for(let i=0;i<9;i++){
-          if(!this.craftGrid[i]) continue;
-          this.craftGridCounts[i] = (this.craftGridCounts[i]||1)-1;
-          if(this.craftGridCounts[i]<=0){ this.craftGrid[i]=0; this.craftGridCounts[i]=0; }
-        }
-        this.inventoryCounts[recipe.out.id] = (this.inventoryCounts[recipe.out.id]||0)+recipe.out.count;
-        this.addToHotbar(recipe.out.id);
-        this.renderCraftingPanel();
-      };
-      attachTooltip(outSlot, ALL_DEFS[recipe.out.id].name);
-      hint.textContent = `Recipe found — click the arrow output to craft ${ALL_DEFS[recipe.out.id].name}.`;
-    } else {
-      outSlot.onclick = null;
-      hint.textContent = 'Arrange items to match a recipe. Click the output to craft.';
-    }
-
-    // player's inventory to pull items from into the grid
+    // player's inventory (one slot per stack) to pull items from
+    const g = this._grid(3);
     const invEl = document.getElementById('craftInvGrid');
     invEl.innerHTML = '';
-    const ownedIds = Object.keys(this.inventoryCounts).map(Number).filter(id=>this.inventoryCounts[id]>0);
+    invEl.onpointerdown = (e)=>{           // click empty space = drop held stack back
+      if(e.target===invEl && this.cursor.id && (e.button===0||e.button===2)){
+        this._depositCursor(e.button===2); this._refreshAll();
+      }
+    };
+    invEl.oncontextmenu = (e)=>e.preventDefault();
+    const ownedIds = Object.keys(this.inventoryCounts).map(Number)
+      .filter(id=>id!==0 && this.inventoryCounts[id]>0 && ALL_DEFS[id]).sort((a,b)=>a-b);
     ownedIds.forEach(id=>{
       const slot = document.createElement('div');
       slot.className = 'invSlot2';
@@ -4002,23 +4325,131 @@ class Game{
       slot.appendChild(img);
       const cnt = document.createElement('div'); cnt.className='cnt'; cnt.textContent = this.inventoryCounts[id];
       slot.appendChild(cnt);
-      if(ALL_DEFS[id]) attachTooltip(slot, ALL_DEFS[id].name);
-      slot.onclick = ()=>{
-        if(this.inventoryCounts[id]<=0) return;
-        // prefer stacking onto an existing slot with the same id before
-        // spilling into a new empty slot
-        let target = this.craftGrid.indexOf(id);
-        if(target===-1) target = this.craftGrid.indexOf(0);
-        if(target===-1) return;
-        this.craftGrid[target] = id;
-        this.craftGridCounts[target] = (this.craftGridCounts[target]||0)+1;
-        this.inventoryCounts[id]--;
-        this.renderCraftingPanel();
-      };
+      attachTooltip(slot, ALL_DEFS[id].name);
+      slot.onmouseenter = ()=>{ this._hoverInvId = id; };
+      slot.onmouseleave = ()=>{ if(this._hoverInvId===id) this._hoverInvId = null; };
+      this._bindPress(slot, (right, e)=>{
+        this._invAction(id, right, e, g);
+        this._refreshAll();
+      });
       invEl.appendChild(slot);
     });
   }
 
+  /* ---------------- Recipe book ---------------- */
+  openRecipeBook(kind){
+    this._bookKind = kind===2 ? 2 : 3;
+    document.getElementById('recipeBookPanel').style.display = 'flex';
+    document.getElementById('recipeSearchInput').value = '';
+    this.renderRecipeBook();
+    if(this.locked) document.exitPointerLock();
+  }
+
+  _recipeNeeds(r){
+    const need = {};
+    if(r.shapeless) r.inputs.forEach(id=>{ need[id] = (need[id]||0)+1; });
+    else r.pattern.forEach(row=>row.forEach(id=>{ if(id) need[id] = (need[id]||0)+1; }));
+    return need;
+  }
+
+  // inventory + whatever is already sitting in the grid / on the cursor
+  _recipeHave(id){
+    const g = this._grid(this._bookKind||3);
+    let n = this.inventoryCounts[id]||0;
+    for(let i=0;i<g.size;i++) if(g.ids[i]===id) n += g.cnt[i]||0;
+    if(this.cursor.id===id) n += this.cursor.count;
+    return n;
+  }
+
+  renderRecipeBook(){
+    const list = document.getElementById('recipeBookList');
+    if(!list) return;
+    list.innerHTML = '';
+    const q = (document.getElementById('recipeSearchInput').value||'').trim().toLowerCase();
+    const kind = this._bookKind||3;
+    const entries = [];
+    const seen = new Set();
+    (kind===2 ? RECIPES_2x2 : RECIPES).forEach(r=>{
+      if(seen.has(r.out.id)) return;   // mirrored variants of the same tool collapse into one entry
+      seen.add(r.out.id);
+      const need = this._recipeNeeds(r);
+      const can = Object.keys(need).every(id=> this._recipeHave(+id) >= need[id]);
+      entries.push({type:'craft', r, need, can, outId:r.out.id});
+    });
+    if(kind===3){
+      Object.keys(SMELT_RECIPES).forEach(k=>{
+        const sr = SMELT_RECIPES[k];
+        entries.push({type:'smelt', inId:+k, sr, need:{[k]:1}, can:false, outId:sr.out});
+      });
+    }
+    const nameOf = id=> niceName((ALL_DEFS[id]||{}).name||'');
+    const shown = entries.filter(en=>{
+      if(!q) return true;
+      if(nameOf(en.outId).toLowerCase().includes(q)) return true;
+      return Object.keys(en.need).some(id=> nameOf(+id).toLowerCase().includes(q));
+    });
+    shown.sort((a,b)=> (b.can?1:0)-(a.can?1:0)); // craftable first (stable)
+    if(!shown.length){
+      list.innerHTML = '<div style="text-align:center; padding:18px; font-size:12px; color:#6b7590;">No recipes match.</div>';
+      return;
+    }
+    const mkIcon = (id, cls, count)=>{
+      const d = document.createElement('div'); d.className = cls;
+      const img = document.createElement('img'); img.src = iconDataUrl(id); d.appendChild(img);
+      if(count>1){ const c=document.createElement('div'); c.className='cnt'; c.textContent=count; d.appendChild(c); }
+      if(ALL_DEFS[id]) attachTooltip(d, ALL_DEFS[id].name);
+      return d;
+    };
+    shown.forEach(en=>{
+      const row = document.createElement('div');
+      row.className = 'recipeEntry' + (en.type==='smelt' ? ' smeltEntry' : (en.can ? ' can' : ' cant'));
+      const nm = document.createElement('div'); nm.className='recipeName'; nm.textContent = nameOf(en.outId);
+      row.appendChild(nm);
+      const ins = document.createElement('div'); ins.className='recipeIns';
+      Object.keys(en.need).forEach(id=> ins.appendChild(mkIcon(+id, 'rIn', en.need[id])));
+      row.appendChild(ins);
+      const ar = document.createElement('div'); ar.className='recipeArrow'; ar.textContent='➜'; row.appendChild(ar);
+      const outCount = en.type==='craft' ? en.r.out.count : en.sr.count;
+      row.appendChild(mkIcon(en.outId, 'recipeOut', outCount));
+      if(en.type==='smelt'){
+        const tag = document.createElement('span'); tag.className='recipeKindTag furnaceTag'; tag.textContent='furnace';
+        row.appendChild(tag);
+      } else {
+        row.onclick = (e)=> this.fillRecipe(en.r, kind, e.shiftKey);
+      }
+      list.appendChild(row);
+    });
+  }
+
+  // Click a recipe: clear the grid back into the inventory, then lay the
+  // ingredients out in the recipe's shape (Shift = as many sets as you can).
+  fillRecipe(r, kind, shift){
+    const g = this._grid(kind);
+    for(let i=0;i<g.size;i++){
+      if(g.ids[i]) this._giveItem(g.ids[i], g.cnt[i]);
+      this._setSlot(g, i, 0, 0);
+    }
+    this.returnCursor();
+    const need = this._recipeNeeds(r);
+    let sets = 64;
+    Object.keys(need).forEach(id=>{ sets = Math.min(sets, Math.floor((this.inventoryCounts[id]||0)/need[id])); });
+    if(sets < 1){
+      this._refreshAll();
+      this.showCenterMsg && this.showCenterMsg('Missing ingredients', 1200);
+      this.renderRecipeBook();
+      return;
+    }
+    if(!shift) sets = 1;
+    if(r.shapeless){
+      r.inputs.forEach((id,k)=> this._setSlot(g, k, id, sets));
+    } else {
+      const w = kind===3 ? 3 : 2;
+      r.pattern.forEach((row,ri)=>row.forEach((id,ci)=>{ if(id) this._setSlot(g, ri*w+ci, id, sets); }));
+    }
+    Object.keys(need).forEach(id=>{ this.inventoryCounts[id] -= need[id]*sets; });
+    document.getElementById('recipeBookPanel').style.display = 'none';
+    this._refreshAll();
+  }
 
   /* ---------------- Furnace / smelting ----------------
      Each placed furnace block gets its own persistent state (keyed by world
@@ -4302,12 +4733,20 @@ class Game{
     const grid = document.getElementById('invGrid');
     grid.innerHTML='';
     const invHint = document.getElementById('invHint');
+    this._initCraftUI();
+    // Survival: clicking empty space in the inventory drops the held stack back in.
+    grid.onpointerdown = (e)=>{
+      if(GAME_MODE==='survival' && this.cursor.id && !e.target.closest('.invSlot') && (e.button===0||e.button===2)){
+        this._depositCursor(e.button===2); this._refreshAll();
+      }
+    };
+    grid.oncontextmenu = (e)=>{ if(GAME_MODE==='survival') e.preventDefault(); };
 
     if(GAME_MODE==='survival'){
       // Survival has no "pick any block for free" creative palette — the
       // inventory instead shows only what the player has actually
       // collected/crafted, with real counts, matching real survival rules.
-      if(invHint) invHint.textContent = 'Blocks and items you\'ve collected. Click a stack to select it into your hotbar.';
+      if(invHint) invHint.textContent = 'Click a stack to pick it up (right-click = half). Hover + press 1-9 to set a hotbar slot, Ctrl-click to select.';
       const owned = Object.keys(this.inventoryCounts)
         .map(k=>+k)
         .filter(id=> id!==0 && (this.inventoryCounts[id]||0) > 0);
@@ -4335,33 +4774,12 @@ class Game{
         }
         slot.appendChild(cnt);
         attachTooltip(slot, def.name);
-        slot.onclick = ()=>{
-          this.selectedBlock = id;
-          if(!this.hotbar.includes(id)){ this.hotbar[this.hotbar.length%9]=id; }
-          this.updateHotbarUI();
-        };
-        // Quick-craft ingredients (logs/planks) get a small "+" button that
-        // sends one unit straight into the 2x2 grid below, so the player
-        // doesn't have to hunt for a crafting table just to get sticks.
-        if([6,8].includes(id)){
-          const addBtn = document.createElement('div');
-          addBtn.textContent = '+';
-          addBtn.style.cssText = 'position:absolute; top:-2px; left:-2px; width:16px; height:16px; background:var(--vf-orange); color:#000; font-size:12px; font-weight:900; line-height:16px; text-align:center; border-radius:3px; cursor:pointer; z-index:2;';
-          addBtn.title = 'Add one to quick-craft grid';
-          addBtn.onclick = (e)=>{
-            e.stopPropagation();
-            if((this.inventoryCounts[id]||0)<=0) return;
-            let target = this.craftGrid2.indexOf(id);
-            if(target===-1) target = this.craftGrid2.indexOf(0);
-            if(target===-1) return;
-            this.craftGrid2[target] = id;
-            this.craftGrid2Counts[target] = (this.craftGrid2Counts[target]||0)+1;
-            this.inventoryCounts[id]--;
-            this.renderCraftGrid2();
-            this.renderInventory();
-          };
-          slot.appendChild(addBtn);
-        }
+        slot.onmouseenter = ()=>{ this._hoverInvId = id; };
+        slot.onmouseleave = ()=>{ if(this._hoverInvId===id) this._hoverInvId = null; };
+        this._bindPress(slot, (right, e)=>{
+          this._invAction(id, right, e, this._grid(2));
+          this._refreshAll();
+        });
         grid.appendChild(slot);
       });
       return;
@@ -4635,7 +5053,7 @@ class Game{
     // record locally for offline world-save, regardless of online/offline mode
     this.blockDiffs[`${x}_${y}_${z}`] = id;
     if(!ONLINE_MODE) return;
-    fbDB.ref(`worlds/${WORLD_ID}/blocks/${x}_${y}_${z}`).set(id===0?null:id)
+    fbDB.ref(`worlds/${WORLD_ID}/blocks/${x}_${y}_${z}`).set(id)
       .catch(err=>{
         console.error('Block sync failed:', err);
         this.showCenterMsg('⚠ Sync failed — check Firebase database rules', 2500);
@@ -4957,6 +5375,7 @@ class Game{
       worldName: this.worldName || (PLAYER_NAME + "'s World"),
       seed: WORLD_SEED,
       mode: GAME_MODE,
+      worldType: WORLD_TYPE,
       name: PLAYER_NAME,
       palette: PLAYER_PALETTE,
       pos: { x:this.pos.x, y:this.pos.y, z:this.pos.z },
@@ -4990,6 +5409,7 @@ class Game{
   saveAndQuit(){
     this.saveWorld(false);
     // tear down and return to the main menu
+    if(ONLINE_MODE) this.leaveMultiplayer();
     if(this._presenceInterval) clearInterval(this._presenceInterval);
     if(this._autosaveInterval) clearInterval(this._autosaveInterval);
     document.exitPointerLock();
@@ -5060,7 +5480,7 @@ class Game{
 
   updateMovement(delta){
     const speed = this.flying?9:4.3;
-    const sprint = KEY['ShiftLeft']?1.4:1;
+    const sprint = (KEY['ShiftLeft'] || this.mobileSprint)?1.4:1;
     let mx=0, mz=0;
     if(KEY['KeyW']) mz -= 1;
     if(KEY['KeyS']) mz += 1;
@@ -5296,54 +5716,105 @@ class Game{
   /* ---------------- Multiplayer (Firebase Realtime Database) ---------------- */
   initMultiplayer(){
     if(!ONLINE_MODE) return;
-    const myRef = fbDB.ref(`worlds/${WORLD_ID}/players/${fbUID}`);
+    const base = `worlds/${WORLD_ID}`;
+    const myRef = fbDB.ref(`${base}/players/${fbUID}`);
+    this._mpRefs = [];
+    const listen = (ref, evt, fn)=>{ ref.on(evt, fn, err=>console.warn('Listener error', evt, err)); this._mpRefs.push([ref, evt, fn]); };
+    this._mpMyRef = myRef;
     myRef.onDisconnect().remove();
+    const joinedAt = Date.now();
 
-    // listen for block changes from others
-    fbDB.ref(`worlds/${WORLD_ID}/blocks`).on('child_added', snap=>this._applyRemoteBlock(snap));
-    fbDB.ref(`worlds/${WORLD_ID}/blocks`).on('child_changed', snap=>this._applyRemoteBlock(snap));
-    fbDB.ref(`worlds/${WORLD_ID}/blocks`).on('child_removed', snap=>{
+    // block changes from others (also replays every existing edit on join)
+    const blocksRef = fbDB.ref(`${base}/blocks`);
+    listen(blocksRef, 'child_added',   snap=>this._applyRemoteBlock(snap));
+    listen(blocksRef, 'child_changed', snap=>this._applyRemoteBlock(snap));
+    listen(blocksRef, 'child_removed', snap=>{
       const [x,y,z] = snap.key.split('_').map(Number);
-      this.world.setBlock(x,y,z,0);
+      this._setRemoteBlock(x,y,z,0);
     });
 
-    // listen for other players
-    fbDB.ref(`worlds/${WORLD_ID}/players`).on('child_added', snap=>{
+    // other players
+    const playersRef = fbDB.ref(`${base}/players`);
+    listen(playersRef, 'child_added', snap=>{
       if(snap.key===fbUID) return;
-      this._addOtherPlayer(snap.key, snap.val());
+      this._addOtherPlayer(snap.key, snap.val()||{});
     });
-    fbDB.ref(`worlds/${WORLD_ID}/players`).on('child_changed', snap=>{
+    listen(playersRef, 'child_changed', snap=>{
       if(snap.key===fbUID) return;
-      this._updateOtherPlayer(snap.key, snap.val());
+      this._updateOtherPlayer(snap.key, snap.val()||{});
     });
-    fbDB.ref(`worlds/${WORLD_ID}/players`).on('child_removed', snap=>{
-      this._removeOtherPlayer(snap.key);
-    });
+    listen(playersRef, 'child_removed', snap=>this._removeOtherPlayer(snap.key));
 
-    // listen for chat
-    fbDB.ref(`worlds/${WORLD_ID}/chat`).limitToLast(20).on('child_added', snap=>{
+    // chat (skip our own echo by uid, skip old history from before we joined)
+    const chatRef = fbDB.ref(`${base}/chat`).limitToLast(20);
+    listen(chatRef, 'child_added', snap=>{
       const v = snap.val();
-      if(v.name===PLAYER_NAME) return;
-      this.addChatLine(v.name, v.msg, false);
+      if(!v || v.uid===fbUID) return;
+      if(typeof v.t==='number' && v.t < joinedAt-15000) return;
+      this.addChatLine(String(v.name||'Player').slice(0,20), String(v.msg||'').slice(0,120), false);
     });
 
-    this._presenceInterval = setInterval(()=>{
+    // presence: send on change, plus a ~1.5s heartbeat so idle players stay "alive"
+    let last = null, lastSent = 0;
+    const send = ()=>{
+      if(this._quit) return;
+      const moving = (Math.abs(this.vel.x)+Math.abs(this.vel.z))>0.1;
+      const cur = { x:round2(this.pos.x), y:round2(this.pos.y), z:round2(this.pos.z), yaw:round2(this.yaw), pitch:round2(this.pitch), moving };
+      const changed = !last || cur.x!==last.x || cur.y!==last.y || cur.z!==last.z || cur.yaw!==last.yaw || cur.pitch!==last.pitch || cur.moving!==last.moving;
+      const now = Date.now();
+      if(!changed && now-lastSent < 1500) return;
+      last = cur; lastSent = now;
       myRef.set({
         name: PLAYER_NAME,
         playerId: PLAYER_ID,
         palette: PLAYER_PALETTE,
-        x: round2(this.pos.x), y: round2(this.pos.y), z: round2(this.pos.z),
-        yaw: round2(this.yaw), pitch: round2(this.pitch),
-        moving: (Math.abs(this.vel.x)+Math.abs(this.vel.z))>0.1,
-        t: Date.now(),
-      });
+        ...cur,
+        t: now,
+      }).catch(err=>console.warn('Presence write failed', err));
+    };
+    send();
+    this._presenceInterval = setInterval(()=>{
+      send();
+      // drop players that stopped sending (crash / lost connection without onDisconnect firing yet)
+      const nowPerf = performance.now();
+      for(const [uid,p] of this.otherPlayers){
+        if(p.lastSeen && nowPerf - p.lastSeen > 12000) this._removeOtherPlayer(uid);
+      }
     }, 120);
+
+    // best-effort cleanup if the tab is closed
+    this._mpUnload = ()=>{ try{ myRef.remove(); }catch(e){} };
+    window.addEventListener('pagehide', this._mpUnload);
+  }
+
+  // Detach every listener and remove our presence (used by Save & Quit).
+  leaveMultiplayer(){
+    if(this._mpRefs){
+      for(const [ref,evt,fn] of this._mpRefs){ try{ ref.off(evt, fn); }catch(e){} }
+      this._mpRefs = null;
+    }
+    if(this._mpUnload){ window.removeEventListener('pagehide', this._mpUnload); this._mpUnload = null; }
+    if(this._mpMyRef){
+      try{ this._mpMyRef.onDisconnect().cancel(); }catch(e){}
+      try{ this._mpMyRef.remove(); }catch(e){}
+      this._mpMyRef = null;
+    }
+  }
+
+  _setRemoteBlock(x,y,z,id){
+    if(!Number.isFinite(x)||!Number.isFinite(y)||!Number.isFinite(z)) return;
+    const prev = this.world.getBlock(x,y,z);
+    if(prev===id) return;
+    this.world.setBlock(x,y,z,id);
+    if(prev===41 && id!==41) this.removeTorchLight(x,y,z);
+    if(id===41) this.addTorchLight(x,y,z);
   }
 
   _applyRemoteBlock(snap){
     const [x,y,z] = snap.key.split('_').map(Number);
-    const id = snap.val();
-    this.world.setBlock(x,y,z, id==null?0:id);
+    const v = snap.val();
+    const id = (typeof v==='number' && BLOCKS[v]) ? v : 0;
+    this._setRemoteBlock(x,y,z,id);
   }
 
   _addOtherPlayer(uid, data){
@@ -5375,6 +5846,7 @@ class Game{
       current: new THREE.Vector3(x0,y0,z0),
       yaw: Number.isFinite(data.yaw)?data.yaw:0, pitch: Number.isFinite(data.pitch)?data.pitch:0, moving:false, animT:0,
       name: data.name||'Player', playerId: data.playerId||null,
+      lastSeen: performance.now(),
     });
   }
   _updateOtherPlayer(uid, data){
@@ -5392,6 +5864,7 @@ class Game{
     p.pitch = Number.isFinite(data.pitch) ? data.pitch : p.pitch;
     p.moving = !!data.moving;
     p.name = data.name||p.name; p.playerId = data.playerId||p.playerId;
+    p.lastSeen = performance.now();
   }
   _removeOtherPlayer(uid){
     const p = this.otherPlayers.get(uid);
@@ -5419,6 +5892,8 @@ class Game{
 
   updatePlayerListUI(){
     const body = document.getElementById('playerListBody');
+    const hdr = document.querySelector('#playerListPanel h4');
+    if(hdr) hdr.textContent = ONLINE_MODE ? `ROOM ${WORLD_ID} · ${this.otherPlayers.size+1} ONLINE` : 'PLAYERS ONLINE';
     let html = `<div class="plEntry"><span class="plName"><span class="plDot"></span>${escapeHtml(PLAYER_NAME)} (you)</span></div>`;
     for(const [uid,p] of this.otherPlayers){
       const displayName = p.name || 'Player';
@@ -6420,42 +6895,72 @@ function generateRoomCode(){
   return code;
 }
 
+function readPlayerName(){
+  const name = document.getElementById('nameInput').value.trim();
+  PLAYER_NAME = (name || ('Player'+Math.floor(Math.random()*1000))).slice(0,16);
+  localStorage.setItem('vf_name', PLAYER_NAME);
+}
+function setRoomButtonsBusy(busy){
+  ['createRoomBtn','joinRoomBtn'].forEach(id=>{
+    const b = document.getElementById(id);
+    if(b){ b.disabled = busy; b.style.opacity = busy ? '0.6' : ''; }
+  });
+}
+function describeFirebaseError(e){
+  const code = (e && e.code) || '';
+  if(code.includes('PERMISSION_DENIED') || (e && /permission/i.test(e.message||''))) return 'Permission denied — publish the database rules.';
+  if(code==='auth/operation-not-allowed' || code==='auth/admin-restricted-operation') return 'Enable Anonymous sign-in in Firebase Authentication.';
+  if(code==='auth/unauthorized-domain') return 'Add this site\'s domain under Authentication → Settings → Authorized domains.';
+  if(code==='auth/network-request-failed') return 'Network error — check your connection.';
+  return 'Could not connect (' + (code || (e && e.message) || 'unknown error') + ').';
+}
+async function signInFirebase(){
+  if(fbAuth.currentUser){ fbUID = fbAuth.currentUser.uid; return; }
+  const cred = await fbAuth.signInAnonymously();
+  fbUID = cred.user.uid;
+}
+
 async function createRoom(){
   const status = document.getElementById('menuStatus');
-  const ok = initFirebase();
-  if(!ok){
-    status.textContent = 'No Firebase config set — starting offline instead.';
+  PENDING_LOAD = null;
+  readPlayerName();
+  if(!initFirebase()){
+    status.textContent = 'No Firebase config set — use Play Offline instead.';
     status.style.color = '#e0a24a';
-    ONLINE_MODE = false;
-    setTimeout(launchGame, 700);
     return;
   }
+  setRoomButtonsBusy(true);
   try{
     status.textContent = 'Creating room…';
-    const cred = await fbAuth.signInAnonymously();
-    fbUID = cred.user.uid;
-    ONLINE_MODE = true;
+    status.style.color = '#9aa4c0';
+    await signInFirebase();
 
     // pick a fresh 4-char code, retrying on the rare collision with an existing room
-    let code;
+    let code = null;
     for(let tries=0; tries<20; tries++){
-      code = generateRoomCode();
-      const snap = await fbDB.ref(`worlds/${code}/meta`).get();
-      if(!snap.exists()) break;
+      const c = generateRoomCode();
+      const snap = await fbDB.ref(`worlds/${c}/meta`).get();
+      if(!snap.exists()){ code = c; break; }
     }
-    WORLD_ID = code;
-    WORLD_SEED = parseSeedInput() ?? Math.floor(Math.random()*1000000);
-    await fbDB.ref(`worlds/${WORLD_ID}/meta`).set({ seed: WORLD_SEED, created: Date.now() });
+    if(!code) throw new Error('Could not find a free room code, try again.');
+    const seed = parseSeedInput() ?? Math.floor(Math.random()*1000000);
+    const type = (WORLD_TYPE==='flat') ? 'flat' : 'default';
+    await fbDB.ref(`worlds/${code}/meta`).set({ seed, type, host:fbUID, created: Date.now() });
 
+    WORLD_ID = code;
+    WORLD_SEED = seed;
+    WORLD_TYPE = type;
+    ONLINE_MODE = true;
     status.textContent = `Room created: ${WORLD_ID} — share this code with friends!`;
     status.style.color = 'var(--vf-green)';
     launchGame();
   }catch(e){
     console.warn(e);
-    status.textContent = 'Could not create room — starting offline instead.';
-    status.style.color = '#d1495b';
     ONLINE_MODE = false;
-    setTimeout(launchGame, 900);
+    status.textContent = describeFirebaseError(e);
+    status.style.color = '#d1495b';
+  }finally{
+    setRoomButtonsBusy(false);
   }
 }
 
@@ -6467,38 +6972,43 @@ async function joinRoom(rawCode){
     status.style.color = '#e0a24a';
     return;
   }
-  const ok = initFirebase();
-  if(!ok){
-    status.textContent = 'No Firebase config set — starting offline instead.';
+  PENDING_LOAD = null;
+  readPlayerName();
+  if(!initFirebase()){
+    status.textContent = 'No Firebase config set — use Play Offline instead.';
     status.style.color = '#e0a24a';
-    ONLINE_MODE = false;
-    setTimeout(launchGame, 700);
     return;
   }
+  setRoomButtonsBusy(true);
   try{
     status.textContent = 'Joining room…';
-    const cred = await fbAuth.signInAnonymously();
-    fbUID = cred.user.uid;
+    status.style.color = '#9aa4c0';
+    await signInFirebase();
 
-    const seedSnap = await fbDB.ref(`worlds/${code}/meta/seed`).get();
-    if(!seedSnap.exists()){
+    const metaSnap = await fbDB.ref(`worlds/${code}/meta`).get();
+    const meta = metaSnap.val();
+    if(!meta || typeof meta.seed!=='number'){
       status.textContent = `Room "${code}" not found.`;
       status.style.color = '#d1495b';
       return;
     }
-    ONLINE_MODE = true;
     WORLD_ID = code;
-    WORLD_SEED = seedSnap.val();
-
+    WORLD_SEED = meta.seed;
+    WORLD_TYPE = meta.type==='flat' ? 'flat' : 'default';
+    document.querySelectorAll('#typeRow .modeBtn').forEach(b=>{
+      b.classList.toggle('selected', b.dataset.wtype===WORLD_TYPE);
+    });
+    ONLINE_MODE = true;
     status.textContent = 'Connected! Loading world…';
     status.style.color = '#9aa4c0';
     launchGame();
   }catch(e){
     console.warn(e);
-    status.textContent = 'Connection failed — starting offline instead.';
-    status.style.color = '#d1495b';
     ONLINE_MODE = false;
-    setTimeout(launchGame, 900);
+    status.textContent = describeFirebaseError(e);
+    status.style.color = '#d1495b';
+  }finally{
+    setRoomButtonsBusy(false);
   }
 }
 
@@ -6588,6 +7098,7 @@ function saveWorldSlot(save){
     worldId: save.worldId,
     worldName: save.worldName,
     mode: save.mode,
+    worldType: save.worldType,
     savedAt: save.savedAt,
     seed: save.seed, // kept in the lightweight index too, so the Saved
                       // Worlds list can render a thumbnail without having
@@ -6654,6 +7165,10 @@ function startLoadedWorld(save){
   ONLINE_MODE = false;
   WORLD_SEED = save.seed;
   GAME_MODE = save.mode || 'survival';
+  WORLD_TYPE = save.worldType || 'default';
+  document.querySelectorAll('#typeRow .modeBtn').forEach(b=>{
+    b.classList.toggle('selected', b.dataset.wtype===WORLD_TYPE);
+  });
   PLAYER_NAME = save.name || PLAYER_NAME;
   if(save.palette) PLAYER_PALETTE = save.palette;
   document.querySelectorAll('#modeRow .modeBtn').forEach(b=>{
@@ -6791,6 +7306,14 @@ window.addEventListener('DOMContentLoaded', ()=>{
     updateSeedThumbPreview();
   });
 
+  document.querySelectorAll('#typeRow .modeBtn').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      document.querySelectorAll('#typeRow .modeBtn').forEach(b=>b.classList.remove('selected'));
+      btn.classList.add('selected');
+      WORLD_TYPE = btn.dataset.wtype;
+      if(typeof updateSeedThumbPreview==='function') updateSeedThumbPreview();
+    });
+  });
   document.querySelectorAll('#modeRow .modeBtn').forEach(btn=>{
     btn.addEventListener('click', ()=>{
       document.querySelectorAll('#modeRow .modeBtn').forEach(b=>b.classList.remove('selected'));
@@ -6799,11 +7322,9 @@ window.addEventListener('DOMContentLoaded', ()=>{
     });
   });
 
-  document.getElementById('createRoomBtn').addEventListener('click', ()=>{
-    alert('Multiplayer is unavailable for now');
-  });
+  document.getElementById('createRoomBtn').addEventListener('click', ()=>{ createRoom(); });
   document.getElementById('joinRoomBtn').addEventListener('click', ()=>{
-    alert('Multiplayer is unavailable for now');
+    joinRoom(document.getElementById('roomCodeInput').value);
   });
   document.getElementById('roomCodeInput').addEventListener('keydown', (e)=>{
     if(e.key==='Enter') document.getElementById('joinRoomBtn').click();
@@ -6819,11 +7340,16 @@ window.addEventListener('DOMContentLoaded', ()=>{
   });
   document.getElementById('closeInv').addEventListener('click', ()=>{
     document.getElementById('inventoryPanel').style.display='none';
+    if(gameInstance) gameInstance.returnCraftGrid2ToInventory();
   });
   document.getElementById('closeCraft').addEventListener('click', ()=>{
     document.getElementById('craftingPanel').style.display='none';
     if(gameInstance) gameInstance.returnCraftGridToInventory();
   });
+  document.getElementById('openRecipeBookBtn').addEventListener('click', ()=>{ if(gameInstance) gameInstance.openRecipeBook(3); });
+  document.getElementById('openRecipeBookBtn2').addEventListener('click', ()=>{ if(gameInstance) gameInstance.openRecipeBook(2); });
+  document.getElementById('closeRecipeBook').addEventListener('click', ()=>{ document.getElementById('recipeBookPanel').style.display='none'; });
+  document.getElementById('recipeSearchInput').addEventListener('input', ()=>{ if(gameInstance) gameInstance.renderRecipeBook(); });
   document.getElementById('closeTex').addEventListener('click', ()=>{
     document.getElementById('texturePanel').style.display='none';
   });
