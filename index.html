@@ -705,6 +705,10 @@
       </select>
     </div>
     <div class="settingRow">
+      <label for="dynResToggle">Dynamic resolution (auto-lowers resolution when FPS drops)</label>
+      <input type="checkbox" id="dynResToggle" checked>
+    </div>
+    <div class="settingRow">
       <label for="fovSlider">Field of view</label>
       <input type="range" id="fovSlider" min="60" max="110" step="1" value="75">
       <div class="settingVal" id="fovVal">75</div>
@@ -772,6 +776,7 @@ let GAME_MODE = 'survival'; // 'survival' | 'creative'
 const DEFAULT_SETTINGS = {
   renderDistance: 4,
   graphics: 'medium', // 'potato' | 'low' | 'medium' | 'high' — affects fog distance, pixel ratio, torch lights, mipmaps
+  dynamicResolution: true, // auto-lower render resolution when FPS drops below ~45
   fov: 75,
   volume: 70,
   mouseSens: 10, // 1-20, mapped to an actual sensitivity multiplier
@@ -1252,23 +1257,6 @@ for(const id in BLOCKS){
   if(b.solid === undefined) b.solid = (b.name!=='air');
 }
 
-// Build a texture atlas: one canvas material per named painter (shared across blocks)
-const materialCache = {};
-function getFaceMaterial(paintName){
-  if(materialCache[paintName]) return materialCache[paintName];
-  const seed = hashStr(paintName);
-  const tex = buildBlockTexture(paintName, seed);
-  const transparent = (paintName === 'glass' || paintName === 'leaves' || paintName === 'water');
-  const mat = new THREE.MeshLambertMaterial({
-    map: tex,
-    transparent: transparent,
-    opacity: paintName === 'water' ? 0.75 : (paintName==='glass'?0.55:1),
-    alphaTest: (paintName==='leaves') ? 0.1 : 0,
-    side: transparent ? THREE.DoubleSide : THREE.FrontSide,
-  });
-  materialCache[paintName] = mat;
-  return mat;
-}
 function hashStr(s){
   let h=0; for(let i=0;i<s.length;i++){ h = (h*31 + s.charCodeAt(i))|0; }
   return h;
@@ -1337,52 +1325,17 @@ function applyHardcodedBlockTextures(){
   }
 }
 
-// Pre-warm every block-face material key up front, at load time, instead of
-// letting each one get built lazily the first time a chunk mesh happens to
-// need it. Building a THREE.Material means: fetch the image (if custom),
-// decode it into a texture, and (the expensive part) hand it to the GPU the
-// first time it's actually drawn — that GPU upload + shader compile is what
-// causes the little hitch the first time you place a block type you haven't
-// seen yet this session. Running every known slot through
-// getFaceMaterialByKey() here means all of that happens during the loading
-// screen instead of mid-gameplay.
-function warmAllBlockTextures(){
-  const keys = new Set();
-  for(const id in BLOCKS){
-    const b = BLOCKS[id];
-    if(!b.tex || b.name==='air') continue;
-    if(b.tex.all){ keys.add(faceMaterialKey(+id,'all')); continue; }
-    for(const face of ['top','bottom','side','front']){
-      if(b.tex[face]) keys.add(faceMaterialKey(+id, face));
-    }
-  }
-  keys.forEach(k=>{ try{ getFaceMaterialByKey(k); }catch(e){} });
-}
+// Every (block, face) texture now lives in BlockAtlas (see below), which is
+// laid out and painted procedurally at script load; hardcoded/custom images are
+// then drawn over their tiles as they finish loading. Nothing is left to
+// pre-warm per material any more — kept as a no-op so the boot sequence reads
+// the same.
+function warmAllBlockTextures(){ /* atlas is already built */ }
 
-const textureLoader = new THREE.TextureLoader();
-textureLoader.crossOrigin = 'anonymous';
 // Every in-flight/completed custom image load, so callers (see
 // waitForAllTexturesToLoad below) can await actual decode completion instead
-// of just the load being kicked off — this is what closes the remaining gap
-// where a block's real image finishes downloading right as you place/mine
-// it for the first time.
+// of just the load being kicked off.
 const PENDING_TEXTURE_LOADS = [];
-const materialByKeyCache = {}; // "blockId_face" -> THREE.Material
-
-// Called after a WebGL context restore: every THREE.Material/Texture we'd
-// cached pointed at GPU resources that belonged to the now-destroyed
-// context. THREE.js normally handles re-uploading a material's own texture
-// automatically on restore, but our cache also short-circuits
-// getFaceMaterialByKey() by key, and forcing a clean rebuild here is the
-// simplest way to guarantee nothing keeps referencing stale GL objects.
-function materialByKeyCacheClearAll(){
-  for(const k in materialByKeyCache){
-    const mat = materialByKeyCache[k];
-    if(mat.map) mat.map.dispose();
-    mat.dispose();
-    delete materialByKeyCache[k];
-  }
-}
 
 // The one place that decides which BLOCK_SIDE_TEXTURES/material key a given
 // (blockId, face) maps to. Liquids collapse onto a shared "paint_<name>" key
@@ -1415,76 +1368,499 @@ function faceMaterialKey(blockId, face){
   return faceSlotKey(blockId, face);
 }
 
-// Build/return the THREE.Material for a given block+face material key,
-// preferring a custom image URL if one has been set for that exact slot,
-// otherwise falling back to the shared procedural painter texture.
-function getFaceMaterialByKey(key){
-  if(materialByKeyCache[key]) return materialByKeyCache[key];
-  let paintName, blockId=null, face=null;
-  if(key.startsWith('paint_')){
-    paintName = key.slice('paint_'.length); // shared liquid-family key, e.g. "water"/"lava" — not tied to one block id
-  } else {
-    const parts = key.split('_');
-    face = parts.pop();
-    blockId = +parts.join('_');
-    paintName = faceTexName(blockId, face);
-  }
-  const customUrl = BLOCK_SIDE_TEXTURES[key];
-  const transparent = (paintName === 'glass' || paintName === 'leaves' || paintName === 'water');
-  const mat = new THREE.MeshLambertMaterial({
-    map: buildBlockTexture(paintName, hashStr(paintName)),
-    transparent: transparent,
-    opacity: paintName === 'water' ? 0.75 : (paintName==='glass'?0.55:1),
-    alphaTest: (paintName==='leaves') ? 0.1 : 0,
-    side: transparent ? THREE.DoubleSide : THREE.FrontSide,
-  });
-  materialByKeyCache[key] = mat;
-  if(customUrl){
-    const p = new Promise((resolve)=>{
-      textureLoader.load(customUrl, (tex)=>{
-        const useMips = currentGraphicsProfile().mipmaps;
-        tex.magFilter = THREE.NearestFilter; tex.minFilter = useMips ? THREE.NearestMipmapLinearFilter : THREE.NearestFilter; tex.generateMipmaps = useMips;
-        tex.wrapS = THREE.RepeatWrapping; tex.wrapT = THREE.RepeatWrapping;
-        tex.needsUpdate = true;
-        if(mat.map) mat.map.dispose();
-        mat.map = tex; mat.needsUpdate = true;
-        resolve();
-      }, undefined, ()=>{ resolve(); /* keep procedural fallback on load error */ });
-    });
-    PENDING_TEXTURE_LOADS.push(p);
-  }
-  return mat;
+/* =========================================================================
+   BLOCK TEXTURE ATLAS + SHARED CHUNK MATERIALS
+
+   Every block face used to own its own THREE.Material, so a chunk with ten
+   different faces visible produced ten draw calls (and the whole scene several
+   hundred). Now every (block, face) texture lives in ONE canvas atlas and a
+   chunk draws with at most three shared materials:
+     LAYER_SOLID        opaque blocks
+     LAYER_CUTOUT       leaves (alpha-tested, double sided)
+     LAYER_TRANSPARENT  glass + water (per-vertex alpha, double sided)
+   Each atlas cell is TILE px of art surrounded by PAD px of wrapped edge
+   pixels, so mipmapping / distance filtering never bleeds a neighbouring tile
+   into a block face.
+========================================================================= */
+const ATLAS_TILE = 64;
+const ATLAS_PAD = 4;
+const ATLAS_CELL = ATLAS_TILE + ATLAS_PAD*2;
+const ATLAS_SIZE = 1024;
+const ATLAS_COLS = Math.floor(ATLAS_SIZE / ATLAS_CELL);
+const LAYER_SOLID = 0, LAYER_CUTOUT = 1, LAYER_TRANSPARENT = 2;
+const MESH_FACE_KEYS = ['top','bottom','side']; // order must match T.faces[].kind in buildMesherTables()
+const TORCH_LIGHT_RADIUS = 9;                   // blocks; same reach the old PointLight had
+
+// Painter name behind a material key ("3_all", "6_side", "paint_water", ...)
+function paintNameForKey(key){
+  if(key.startsWith('paint_')) return key.slice('paint_'.length);
+  const parts = key.split('_');
+  const face = parts.pop();
+  return faceTexName(+parts.join('_'), face);
+}
+function layerForPaint(paintName){
+  if(paintName === 'leaves') return LAYER_CUTOUT;
+  if(paintName === 'glass' || paintName === 'water') return LAYER_TRANSPARENT;
+  return LAYER_SOLID;
+}
+function alphaForPaint(paintName){
+  return paintName === 'water' ? 0.75 : (paintName === 'glass' ? 0.55 : 1);
 }
 
-// Load (or clear) a custom image URL for one block+face slot. Rebuilds the
-// material in place and invalidates any cached hotbar/inventory icon.
+// Every material key the world can ask for, so the atlas is fully laid out up
+// front (the mesher tables sent to the worker reference these slots).
+function allBlockMaterialKeys(){
+  const keys = new Set();
+  for(const idStr in BLOCKS){
+    const id = +idStr, b = BLOCKS[idStr];
+    if(b.name === 'air') continue;
+    for(const f of MESH_FACE_KEYS) keys.add(faceMaterialKey(id, f));
+    if(b.tex){
+      for(const f of ['all','top','bottom','side','front']){
+        if(b.tex[f]) keys.add(faceMaterialKey(id, f));
+      }
+    }
+  }
+  return keys;
+}
+
+const BlockAtlas = (function(){
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = ATLAS_SIZE;
+  const ctx = canvas.getContext('2d');
+  const tile = document.createElement('canvas');
+  tile.width = tile.height = ATLAS_TILE;
+  const tctx = tile.getContext('2d');
+
+  const slots = new Map();   // material key -> slot index
+  const keyList = [];        // slot index -> material key
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.ClampToEdgeWrapping;
+  texture.wrapT = THREE.ClampToEdgeWrapping;
+  texture.magFilter = THREE.NearestFilter;
+
+  // Mipmap policy follows the graphics tier (potato = no mipmaps).
+  function applyFilterPolicy(){
+    const useMips = currentGraphicsProfile().mipmaps;
+    texture.minFilter = useMips ? THREE.NearestMipmapLinearFilter : THREE.NearestFilter;
+    texture.generateMipmaps = useMips;
+    texture.dispose();
+    texture.needsUpdate = true;
+  }
+
+  // Draw `src` into the cell for `slot`: scaled to TILE x TILE, then the tile
+  // is pattern-filled across the whole cell so the padding holds the tile's
+  // own wrapped edge pixels (same result RepeatWrapping used to give).
+  function paintCell(slot, src){
+    const col = slot % ATLAS_COLS, row = Math.floor(slot / ATLAS_COLS);
+    const x = col*ATLAS_CELL, y = row*ATLAS_CELL;
+    const sw = src.naturalWidth || src.width, sh = src.naturalHeight || src.height;
+    tctx.clearRect(0, 0, ATLAS_TILE, ATLAS_TILE);
+    const smooth = (sw > ATLAS_TILE || sh > ATLAS_TILE);
+    tctx.imageSmoothingEnabled = smooth;
+    if(smooth) tctx.imageSmoothingQuality = 'high';
+    tctx.drawImage(src, 0, 0, sw, sh, 0, 0, ATLAS_TILE, ATLAS_TILE);
+    ctx.save();
+    ctx.clearRect(x, y, ATLAS_CELL, ATLAS_CELL);
+    ctx.translate(x + ATLAS_PAD, y + ATLAS_PAD);
+    ctx.fillStyle = ctx.createPattern(tile, 'repeat');
+    ctx.fillRect(-ATLAS_PAD, -ATLAS_PAD, ATLAS_CELL, ATLAS_CELL);
+    ctx.restore();
+    texture.needsUpdate = true; // uploads once, at the next render, however many tiles changed
+  }
+
+  function paintProcedural(key, slot){
+    const name = paintNameForKey(key);
+    const c = makeCanvas(TEX_SIZE);
+    (TexturePainters[name] || TexturePainters.stone)(c.getContext('2d'), hashStr(name));
+    paintCell(slot, c);
+  }
+
+  function slotFor(key){
+    let s = slots.get(key);
+    if(s !== undefined) return s;
+    s = keyList.length;
+    if(s >= ATLAS_COLS*ATLAS_COLS){
+      console.error('BlockAtlas full — raise ATLAS_SIZE. Key falls back to slot 0:', key);
+      return 0;
+    }
+    slots.set(key, s);
+    keyList.push(key);
+    paintProcedural(key, s);
+    return s;
+  }
+
+  // [u0, vBottom, u1, vTop] of the tile's art area (flipY aware).
+  function rect(key){
+    const s = slotFor(key);
+    const col = s % ATLAS_COLS, row = Math.floor(s / ATLAS_COLS);
+    const u0 = (col*ATLAS_CELL + ATLAS_PAD) / ATLAS_SIZE;
+    const vTop = 1 - (row*ATLAS_CELL + ATLAS_PAD) / ATLAS_SIZE;
+    return [u0, vTop - ATLAS_TILE/ATLAS_SIZE, u0 + ATLAS_TILE/ATLAS_SIZE, vTop];
+  }
+
+  applyFilterPolicy();
+  allBlockMaterialKeys().forEach(k => slotFor(k));
+
+  return {
+    texture,
+    rect,
+    applyFilterPolicy,
+    setImage(key, img){ paintCell(slotFor(key), img); },
+    reset(key){ paintProcedural(key, slotFor(key)); },
+    get slotCount(){ return keyList.length; },
+  };
+})();
+
+// 0 at full day -> 1 at night; scales how strongly baked torch light shows.
+// Updated from updateDayNight().
+const chunkTorchUniform = { value: 0.3 };
+
+function patchChunkShader(shader){
+  shader.uniforms.uTorch = chunkTorchUniform;
+  shader.fragmentShader = 'uniform float uTorch;\n' + shader.fragmentShader.replace(
+    '#include <color_fragment>',
+    [
+      '#if defined( USE_COLOR_ALPHA )',
+      '  diffuseColor.rgb *= mix( vec3( 1.0 ), vColor.rgb, uTorch );',
+      '  diffuseColor.a *= vColor.a;',
+      '#elif defined( USE_COLOR )',
+      '  diffuseColor.rgb *= mix( vec3( 1.0 ), vColor.rgb, uTorch );',
+      '#endif',
+    ].join('\n')
+  );
+}
+
+// The only three block materials in the whole world, shared by every chunk.
+const ChunkMaterials = (function(){
+  const make = (opts)=>{
+    const m = new THREE.MeshLambertMaterial(Object.assign({ map: BlockAtlas.texture, vertexColors: true }, opts));
+    m.onBeforeCompile = patchChunkShader;
+    return m;
+  };
+  const solid  = make({});
+  const cutout = make({ alphaTest: 0.1, side: THREE.DoubleSide });
+  const glass  = make({ transparent: true, side: THREE.DoubleSide });
+  return [solid, cutout, glass];
+})();
+
+/* -------------------------------------------------------------------------
+   MESHER TABLES + CORE
+   vfMeshChunk() is deliberately self-contained (no outer-scope references) so
+   its source can be injected verbatim into a Web Worker. The same function is
+   the main-thread fallback if workers are unavailable.
+------------------------------------------------------------------------- */
+function buildMesherTables(){
+  let maxId = 0;
+  for(const idStr in BLOCKS) maxId = Math.max(maxId, +idStr);
+  const N = maxId + 1;
+  const familyId = (def)=> (def.liquidFamily || 'water') === 'water' ? 1 : ((def.liquidFamily) === 'lava' ? 2 : 3);
+  const T = {
+    size: CHUNK_SIZE,
+    lightRadius: TORCH_LIGHT_RADIUS,
+    exists: new Uint8Array(N), transparent: new Uint8Array(N), liquid: new Uint8Array(N),
+    family: new Uint8Array(N), isSource: new Uint8Array(N), invisible: new Uint8Array(N),
+    flow: new Float32Array(N),
+    faceRect: new Float32Array(N*3*4), faceLayer: new Uint8Array(N*3), faceAlpha: new Float32Array(N*3),
+    faces: FACE_DEFS.map(fd => ({
+      nx: fd.normal[0], ny: fd.normal[1], nz: fd.normal[2],
+      kind: MESH_FACE_KEYS.indexOf(fd.key),
+      corners: [].concat(...fd.corners),
+    })),
+  };
+  for(const idStr in BLOCKS){
+    const id = +idStr, def = BLOCKS[idStr];
+    T.exists[id] = 1;
+    T.transparent[id] = def.transparent ? 1 : 0;
+    T.liquid[id] = def.liquid ? 1 : 0;
+    T.family[id] = def.liquid ? familyId(def) : 0;
+    T.isSource[id] = def.isSource ? 1 : 0;
+    T.invisible[id] = def.renderInvisible ? 1 : 0;
+    T.flow[id] = def.flowLevel === undefined ? 7 : def.flowLevel;
+    if(def.name === 'air') continue;
+    for(let f = 0; f < 3; f++){
+      const key = faceMaterialKey(id, MESH_FACE_KEYS[f]);
+      const paint = paintNameForKey(key);
+      const r = BlockAtlas.rect(key);
+      const o = (id*3 + f);
+      T.faceRect.set(r, o*4);
+      T.faceLayer[o] = layerForPaint(paint);
+      T.faceAlpha[o] = alphaForPaint(paint);
+    }
+  }
+  return T;
+}
+
+function vfMeshChunk(job, T){
+  const S = T.size;
+  const blocks = job.blocks;
+  const nbPX = job.px, nbNX = job.nx, nbPY = job.py, nbNY = job.ny, nbPZ = job.pz, nbNZ = job.nz;
+  const lights = (job.lights && job.lights.length) ? job.lights : null;
+  const L = lights ? Math.floor(lights.length/3) : 0;
+  const LR = T.lightRadius, LR2 = LR*LR;
+  const trans = T.transparent, liq = T.liquid, fam = T.family, flow = T.flow, isSrc = T.isSource, inv = T.invisible;
+  const fr = T.faceRect, fl = T.faceLayer, fa = T.faceAlpha, faces = T.faces;
+
+  const pos = [[],[],[]], nor = [[],[],[]], uvs = [[],[],[]], col = [[],[],[]], idx = [[],[],[]];
+  const vc = [0,0,0];
+
+  function blockAt(x,y,z){
+    if(x>=0 && x<S && y>=0 && y<S && z>=0 && z<S) return blocks[(y*S+z)*S+x];
+    if(x<0)  return nbNX ? nbNX[(y*S+z)*S + (S-1)] : 0;
+    if(x>=S) return nbPX ? nbPX[(y*S+z)*S] : 0;
+    if(y<0)  return nbNY ? nbNY[((S-1)*S+z)*S + x] : 0;
+    if(y>=S) return nbPY ? nbPY[z*S + x] : 0;
+    if(z<0)  return nbNZ ? nbNZ[(y*S+(S-1))*S + x] : 0;
+    return nbPZ ? nbPZ[y*S*S + x] : 0;
+  }
+
+  // Same rules the old shouldDrawFaceLocal() used.
+  function shouldDraw(self, n){
+    if(n === 0) return true;
+    if(liq[n] && liq[self] && fam[n] === fam[self]) return false;
+    if(trans[n]) return n !== self;
+    return false;
+  }
+
+  // Baked torch light at a vertex: squared distance falloff with a soft
+  // N.L term (the old PointLight was unshadowed too, so no occlusion either).
+  function torchLit(vx,vy,vz,nx,ny,nz){
+    let lit = 0;
+    for(let i=0;i<L;i++){
+      const dx = lights[i*3]+0.5-vx, dy = lights[i*3+1]+0.6-vy, dz = lights[i*3+2]+0.5-vz;
+      const d2 = dx*dx + dy*dy + dz*dz;
+      if(d2 >= LR2) continue;
+      const d = Math.sqrt(d2);
+      let f = 1 - d/LR; f *= f;
+      const nl = d > 1e-4 ? (nx*dx + ny*dy + nz*dz)/d : 1;
+      lit += f * (0.35 + 0.65*(nl > 0 ? nl : 0));
+    }
+    return lit > 1.25 ? 1.25 : lit;
+  }
+
+  for(let y=0;y<S;y++){
+    for(let z=0;z<S;z++){
+      for(let x=0;x<S;x++){
+        const id = blocks[(y*S+z)*S+x];
+        if(id === 0 || inv[id]) continue;
+
+        let h = 1;
+        if(liq[id]){
+          const above = blockAt(x,y+1,z);
+          const fed = !!(liq[above] && fam[above] === fam[id]);
+          if(!(fed || isSrc[id])){
+            h = 0.2 + (0.875-0.2) * (flow[id]/7);
+          }
+        }
+
+        for(let fi=0; fi<6; fi++){
+          const fd = faces[fi];
+          const nb = blockAt(x+fd.nx, y+fd.ny, z+fd.nz);
+          if(!shouldDraw(id, nb)) continue;
+
+          const o = id*3 + fd.kind;
+          const li = fl[o];
+          const P = pos[li], N = nor[li], U = uvs[li], C = col[li], I = idx[li];
+          const start = vc[li];
+          const u0 = fr[o*4], v0 = fr[o*4+1], u1 = fr[o*4+2], v1 = fr[o*4+3];
+          const alpha = fa[o];
+          const cn = fd.corners;
+          for(let c=0;c<4;c++){
+            const cy = (h < 1 && cn[c*3+1] === 1) ? h : cn[c*3+1];
+            const vx = x + cn[c*3], vy = y + cy, vz = z + cn[c*3+2];
+            P.push(vx, vy, vz);
+            N.push(fd.nx, fd.ny, fd.nz);
+            // quad UV order: (0,0) (0,1) (1,1) (1,0)
+            const u = (c === 2 || c === 3) ? 1 : 0;
+            const v = (c === 1 || c === 2) ? 1 : 0;
+            U.push(u0 + (u1-u0)*u, v0 + (v1-v0)*v);
+            if(L){
+              const lit = torchLit(vx,vy,vz,fd.nx,fd.ny,fd.nz);
+              C.push(1 + 4.2*lit, 1 + 2.8*lit, 1 + 1.1*lit);
+            } else {
+              C.push(1,1,1);
+            }
+            if(li === 2) C.push(alpha);
+          }
+          I.push(start,start+1,start+2, start,start+2,start+3);
+          vc[li] += 4;
+        }
+      }
+    }
+  }
+
+  const layers = [null,null,null];
+  const transfer = [];
+  let totalFaces = 0;
+  for(let li=0; li<3; li++){
+    if(vc[li] === 0) continue;
+    const l = {
+      pos: new Float32Array(pos[li]),
+      nor: new Float32Array(nor[li]),
+      uv:  new Float32Array(uvs[li]),
+      col: new Float32Array(col[li]),
+      colSize: li === 2 ? 4 : 3,
+      idx: vc[li] > 65535 ? new Uint32Array(idx[li]) : new Uint16Array(idx[li]),
+    };
+    layers[li] = l;
+    transfer.push(l.pos.buffer, l.nor.buffer, l.uv.buffer, l.col.buffer, l.idx.buffer);
+    totalFaces += vc[li]/4;
+  }
+  return { data: { layers, faces: totalFaces }, transfer };
+}
+
+/* -------------------------------------------------------------------------
+   MESH WORKER POOL
+   Meshing runs off the main thread. Each job carries a copy of the chunk's
+   blocks + its 6 face neighbours, so the world can keep changing while a job
+   is in flight (the chunk simply stays/gets marked dirty and is re-queued).
+------------------------------------------------------------------------- */
+class MeshPool{
+  constructor(tables){
+    this.tables = tables;
+    this.workers = [];
+    this.pending = new Map(); // id -> {resolve, job}
+    this.nextId = 1;
+    this.rr = 0;
+    this.inflight = 0;
+    this.url = null;
+    try{
+      if(typeof Worker === 'undefined' || typeof Blob === 'undefined') throw new Error('Workers unavailable');
+      const src = vfMeshChunk.toString() + `
+let T = null;
+self.onmessage = function(e){
+  const m = e.data;
+  if(m.type === 'init'){ T = m.tables; return; }
+  try{
+    const r = vfMeshChunk(m.job, T);
+    self.postMessage({ id: m.id, data: r.data }, r.transfer);
+  }catch(err){
+    self.postMessage({ id: m.id, error: String(err && err.stack || err) });
+  }
+};`;
+      this.url = URL.createObjectURL(new Blob([src], { type:'application/javascript' }));
+      const n = Math.max(1, Math.min(3, (navigator.hardwareConcurrency || 2) - 1));
+      for(let i=0;i<n;i++){
+        const w = new Worker(this.url);
+        w.onmessage = (e)=> this._onMessage(e.data);
+        w.onerror = (e)=>{ console.warn('Mesh worker failed, falling back to main thread:', e && e.message); this._failAll(); };
+        w.postMessage({ type:'init', tables });
+        this.workers.push(w);
+      }
+    }catch(err){
+      console.warn('Mesh workers disabled:', err && err.message);
+      this._teardownWorkers();
+    }
+  }
+  get isAsync(){ return this.workers.length > 0; }
+  get maxInflight(){ return this.isAsync ? this.workers.length*3 : 1; }
+  get perFrame(){ return this.isAsync ? this.workers.length*2 : 1; }
+
+  request(job){
+    if(!this.isAsync){
+      // Main-thread fallback: same code, resolved asynchronously so callers
+      // share one code path. Streaming limits this to one chunk per frame.
+      return new Promise((resolve)=> resolve(vfMeshChunk(job, this.tables).data));
+    }
+    return new Promise((resolve)=>{
+      const id = this.nextId++;
+      this.pending.set(id, { resolve, job });
+      this.inflight++;
+      const w = this.workers[this.rr++ % this.workers.length];
+      w.postMessage({ type:'mesh', id, job });
+    });
+  }
+  _onMessage(msg){
+    const p = this.pending.get(msg.id);
+    if(!p) return;
+    this.pending.delete(msg.id);
+    this.inflight--;
+    if(msg.error){
+      console.warn('Mesh worker error, meshing on main thread:', msg.error);
+      p.resolve(vfMeshChunk(p.job, this.tables).data);
+    } else {
+      p.resolve(msg.data);
+    }
+  }
+  _failAll(){
+    const stuck = Array.from(this.pending.values());
+    this.pending.clear();
+    this.inflight = 0;
+    this._teardownWorkers();
+    for(const p of stuck) p.resolve(vfMeshChunk(p.job, this.tables).data);
+  }
+  _teardownWorkers(){
+    this.workers.forEach(w => { try{ w.terminate(); }catch(e){} });
+    this.workers = [];
+    if(this.url){ try{ URL.revokeObjectURL(this.url); }catch(e){} this.url = null; }
+  }
+  dispose(){ this._teardownWorkers(); this.pending.clear(); this.inflight = 0; }
+}
+
+// Free a chunk's GPU geometry and detach it from the scene.
+function disposeChunkMesh(chunk){
+  if(!chunk.mesh) return;
+  chunk.mesh.children.forEach(m => m.geometry.dispose());
+  if(chunk.mesh.parent) chunk.mesh.parent.remove(chunk.mesh);
+  chunk.mesh = null;
+}
+
+// Turn worker output into the chunk's THREE.Group (<= 3 meshes, shared materials).
+function buildChunkGroup(chunk, data){
+  disposeChunkMesh(chunk);
+  const group = new THREE.Group();
+  group.name = 'chunk_'+chunk.cx+'_'+chunk.cy+'_'+chunk.cz;
+  const bound = new THREE.Sphere(new THREE.Vector3(CHUNK_SIZE/2, CHUNK_SIZE/2, CHUNK_SIZE/2), CHUNK_SIZE*0.87);
+  for(let li=0; li<3; li++){
+    const l = data.layers[li];
+    if(!l) continue;
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(l.pos, 3));
+    geo.setAttribute('normal',   new THREE.BufferAttribute(l.nor, 3));
+    geo.setAttribute('uv',       new THREE.BufferAttribute(l.uv, 2));
+    geo.setAttribute('color',    new THREE.BufferAttribute(l.col, l.colSize));
+    geo.setIndex(new THREE.BufferAttribute(l.idx, 1));
+    geo.boundingSphere = bound.clone();
+    const mesh = new THREE.Mesh(geo, ChunkMaterials[li]);
+    mesh.matrixAutoUpdate = false;
+    mesh.castShadow = false; mesh.receiveShadow = false;
+    group.add(mesh);
+  }
+  group.position.set(chunk.cx*CHUNK_SIZE, chunk.cy*CHUNK_SIZE, chunk.cz*CHUNK_SIZE);
+  group.matrixAutoUpdate = false;
+  group.updateMatrix();
+  chunk.mesh = group;
+  chunk._lastFaceCount = data.faces;
+  return group;
+}
+
+// Load a remote/custom image URL for one block+face slot straight into the atlas.
 // persist=false is used for baked-in hardcoded defaults, which shouldn't be
 // written into the user's own Custom Textures localStorage save.
+function loadImageElement(url){
+  return new Promise((resolve, reject)=>{
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = ()=> resolve(img);
+    img.onerror = ()=> reject(new Error('Failed to load '+url));
+    img.src = url;
+  });
+}
 function loadCustomTexture(blockId, face, url, persist=true){
   const key = faceSlotKey(blockId, face);
-  const p = new Promise((resolve,reject)=>{
-    textureLoader.load(
-      url,
-      (tex)=>{
-        const useMips = currentGraphicsProfile().mipmaps;
-        tex.magFilter = THREE.NearestFilter; tex.minFilter = useMips ? THREE.NearestMipmapLinearFilter : THREE.NearestFilter; tex.generateMipmaps = useMips;
-        tex.wrapS = THREE.RepeatWrapping; tex.wrapT = THREE.RepeatWrapping;
-        tex.needsUpdate = true;
-        const mat = getFaceMaterialByKey(key);
-        if(mat.map) mat.map.dispose();
-        mat.map = tex; mat.needsUpdate = true;
-        BLOCK_SIDE_TEXTURES[key] = url;
-        if(persist) localStorage.setItem('vf_blocksidetex', JSON.stringify(BLOCK_SIDE_TEXTURES));
-        delete iconCache[blockId];
-        // Re-decode the icon immediately instead of leaving it to be rebuilt
-        // lazily (as a raw, undecoded remote URL) the next time some hotbar/
-        // inventory/crafting <img> asks for it — see warmAllIcons() above.
-        prefetchIconUrlToDataUrl(blockId, url);
-        resolve(tex);
-      },
-      undefined,
-      (err)=>{ reject(err); }
-    );
+  const p = loadImageElement(url).then((img)=>{
+    BlockAtlas.setImage(key, img);
+    BLOCK_SIDE_TEXTURES[key] = url;
+    if(persist){
+      try{ localStorage.setItem('vf_blocksidetex', JSON.stringify(BLOCK_SIDE_TEXTURES)); }catch(e){}
+    }
+    delete iconCache[blockId];
+    // Re-decode the icon immediately instead of leaving it to be rebuilt
+    // lazily (as a raw, undecoded remote URL) the next time some hotbar/
+    // inventory/crafting <img> asks for it — see warmAllIcons() below.
+    prefetchIconUrlToDataUrl(blockId, url);
+    return img;
   });
   PENDING_TEXTURE_LOADS.push(p.catch(()=>{}));
   return p;
@@ -1500,14 +1876,8 @@ function waitForAllTexturesToLoad(){
 function resetCustomTexture(blockId, face){
   const key = faceSlotKey(blockId, face);
   delete BLOCK_SIDE_TEXTURES[key];
-  localStorage.setItem('vf_blocksidetex', JSON.stringify(BLOCK_SIDE_TEXTURES));
-  const mat = materialByKeyCache[key];
-  if(mat){
-    const paintName = faceTexName(blockId, face);
-    if(mat.map) mat.map.dispose();
-    mat.map = buildBlockTexture(paintName, hashStr(paintName));
-    mat.needsUpdate = true;
-  }
+  try{ localStorage.setItem('vf_blocksidetex', JSON.stringify(BLOCK_SIDE_TEXTURES)); }catch(e){}
+  BlockAtlas.reset(key);
   delete iconCache[blockId];
 }
 
@@ -1709,6 +2079,7 @@ class World{
     this.seed = seed;
     this.chunks = new Map();
     this.pendingRebuild = new Set(); // chunk keys needing re-mesh
+    this.dirtyVersion = 0;           // bumped whenever any chunk is marked dirty; lets streaming sleep when nothing changed
     this.liquidQueue = new Set();    // "x,y,z" cells that need a liquid-flow check next tick
   }
 
@@ -1764,6 +2135,7 @@ class World{
       // for liquid flow next tick (e.g. breaking a wall lets water through)
       this.queueLiquidNeighbors(wx,wy,wz);
       c.dirty = true;
+      this.dirtyVersion++;
       this.pendingRebuild.add(chunkKey(cx,cy,cz));
       // mark neighbor chunks dirty if the edited block sits on a chunk boundary
       if(lx===0) this._dirtyNeighbor(cx-1,cy,cz);
@@ -1776,7 +2148,7 @@ class World{
   }
   _dirtyNeighbor(cx,cy,cz){
     const c = this.getChunk(cx,cy,cz);
-    if(c){ c.dirty = true; this.pendingRebuild.add(chunkKey(cx,cy,cz)); }
+    if(c){ c.dirty = true; this.dirtyVersion++; this.pendingRebuild.add(chunkKey(cx,cy,cz)); }
   }
 
   /* ---------------- Liquid simulation ----------------
@@ -2387,197 +2759,17 @@ const FACE_DEFS = [
 ];
 const FACE_NEIGHBOR = { px:[1,0,0], nx:[-1,0,0], py:[0,1,0], ny:[0,-1,0], pz:[0,0,1], nz:[0,0,-1] };
 
-// Reads a block by LOCAL coordinates that may spill 1 step outside this
-// chunk's 0..CHUNK_SIZE-1 range, using pre-fetched neighbor chunk references
-// instead of going through World.getBlock (worldToChunk's div/mod math +
-// a Map lookup) for every single face check. buildChunkMesh looks up its
-// 6 face-adjacent chunks ONCE before the loop and passes them in here —
-// since almost every face check lands either inside the current chunk or
-// exactly one of those 6 neighbors, this turns "thousands of Map lookups
-// per chunk rebuild" into "6 Map lookups per chunk rebuild", which is the
-// biggest single cost in the mesher and runs on every block edit, not just
-// in dense areas like the Gray Pillars.
-function getLocalNeighborBlock(chunk, neighbors, lx,ly,lz){
-  if(lx>=0 && lx<CHUNK_SIZE && ly>=0 && ly<CHUNK_SIZE && lz>=0 && lz<CHUNK_SIZE){
-    return chunk.get(lx,ly,lz);
-  }
-  // exactly one coordinate is out of range by exactly 1 (face-adjacent only)
-  if(lx<0) return neighbors.nx ? neighbors.nx.get(CHUNK_SIZE-1,ly,lz) : 0;
-  if(lx>=CHUNK_SIZE) return neighbors.px ? neighbors.px.get(0,ly,lz) : 0;
-  if(ly<0) return neighbors.ny ? neighbors.ny.get(lx,CHUNK_SIZE-1,lz) : 0;
-  if(ly>=CHUNK_SIZE) return neighbors.py ? neighbors.py.get(lx,0,lz) : 0;
-  if(lz<0) return neighbors.nz ? neighbors.nz.get(lx,ly,CHUNK_SIZE-1) : 0;
-  if(lz>=CHUNK_SIZE) return neighbors.pz ? neighbors.pz.get(lx,ly,0) : 0;
-  return 0;
-}
-
-function shouldDrawFaceLocal(blockId, nb){
-  const selfDef = BLOCKS[blockId];
-  const nbDef = BLOCKS[nb];
-  if(nb === 0) return true; // neighbor is air (or ungenerated -> treated as air, culled at chunk edge safely)
-  if(nbDef.liquid && selfDef.liquid && (nbDef.liquidFamily||'water')===(selfDef.liquidFamily||'water')) return false; // same liquid family (e.g. water/water, lava/lava) never draws a seam between them
-  if(nbDef.transparent && nbDef.id !== blockId) return true; // e.g. solid next to glass/water/leaves
-  if(nbDef.transparent && selfDef.transparent && nbDef.id===blockId) return false; // two of same transparent (e.g. glass-glass)
-  if(nbDef.transparent) return true;
-  return false; // neighbor opaque solid -> hide this face
-}
-
-// Kept for any other callers that need cross-chunk face visibility without
-// a pre-fetched neighbor set (rare — buildChunkMesh no longer uses this).
-function shouldDrawFace(world, blockId, nx, ny, nz){
-  const nb = world.getBlock(nx,ny,nz);
-  return shouldDrawFaceLocal(blockId, nb);
-}
-
-// Cheap pre-pass used by the frame budget below: counts non-air blocks in a
-// chunk without doing any neighbor lookups (unlike the real face-culling
-// pass, which touches up to 6 neighbor chunks per block and is much more
-// expensive). This is a fast enough proxy for "how big is this chunk about
-// to be" that we can afford to run it on every candidate chunk each frame.
-// A normal terrain chunk is mostly air or fully-buried interior stone
-// (occludes itself, few faces); a chunk from the Gray Pillars easter egg
-// is a checkerboard where every solid column is exposed on 4 sides for its
-// whole height, so its solid-block count AND its actual emitted face count
-// are both far higher — this heuristic catches that case even though it
-// can't predict the real post-culling face count exactly.
-function estimateChunkCost(chunk){
-  let solid = 0;
-  const blocks = chunk.blocks;
-  for(let i=0;i<blocks.length;i++){ if(blocks[i]!==0) solid++; }
-  return solid;
-}
-
-// -----------------------------------------------------------------------
-// LIQUID SURFACE HEIGHT
-// A source block (isSource, flowLevel 7) is always a full 1-block-tall
-// cube. Every flow-decay step below that renders visibly shorter, so a
-// stream tapers down to a thin sheet as it gets further from its source —
-// classic voxel-liquid look instead of every liquid cell being a full cube.
-// flowLevel 7 (source) -> height 1.0
-// flowLevel 6..0       -> height ~0.86 down to ~0.22
-// A liquid block that has another liquid block of the SAME family directly
-// above it is always rendered as a full cube (it's "fed" from above and
-// visually continuous with the column above it), matching classic voxel
-// water behavior where you don't see a stair-step under a waterfall.
-function liquidHeight(def, fedFromAbove){
-  if(!def || !def.liquid) return 1;
-  if(fedFromAbove || def.isSource) return 1;
-  const lvl = (def.flowLevel===undefined) ? 7 : def.flowLevel;
-  // 8 discrete steps (0..7) mapped from a thin sheet up to just-under-full
-  const MIN_H = 0.2, MAX_H = 0.875; // leave a hair below 1.0 so non-source top is visibly not flush with a full block
-  return MIN_H + (MAX_H-MIN_H) * (lvl/7);
-}
-
-function buildChunkMesh(world, chunk){
-  // dispose old geometry AND remove the stale group from the scene —
-  // otherwise the old (now-empty) group stays parented forever and the
-  // new group is added alongside it, so broken/placed blocks never
-  // visually refresh.
-  if(chunk.mesh){
-    chunk.mesh.children.forEach(m=>{ m.geometry.dispose(); });
-    if(chunk.mesh.parent) chunk.mesh.parent.remove(chunk.mesh);
-  }
-  const group = new THREE.Group();
-  group.name = 'chunk_'+chunk.cx+'_'+chunk.cy+'_'+chunk.cz;
-
-  // buffers per texture-paint-name
-  const buffers = {}; // paintName -> {pos:[],norm:[],uv:[],idx:[]}
-  function getBuf(name){
-    if(!buffers[name]) buffers[name] = {pos:[], norm:[], uv:[], idx:[], vcount:0};
-    return buffers[name];
-  }
-
-  const {cx,cy,cz} = chunk;
-  const baseX = cx*CHUNK_SIZE, baseY = cy*CHUNK_SIZE, baseZ = cz*CHUNK_SIZE;
-
-  // Fetch all 6 face-adjacent chunks ONCE per chunk build (6 Map lookups
-  // total) instead of doing a full World.getBlock (div/mod + Map lookup)
-  // for every one of the up to 24,576 face checks below. A neighbor that
-  // isn't generated yet is treated as absent -> its side reads as air,
-  // same as before (matches getBlock's "ungenerated -> air" behavior).
-  const neighbors = {
-    px: world.getChunk(cx+1,cy,cz), nx: world.getChunk(cx-1,cy,cz),
-    py: world.getChunk(cx,cy+1,cz), ny: world.getChunk(cx,cy-1,cz),
-    pz: world.getChunk(cx,cy,cz+1), nz: world.getChunk(cx,cy,cz-1),
-  };
-
-  for(let lx=0; lx<CHUNK_SIZE; lx++){
-    for(let ly=0; ly<CHUNK_SIZE; ly++){
-      for(let lz=0; lz<CHUNK_SIZE; lz++){
-        const id = chunk.get(lx,ly,lz);
-        if(id===0) continue;
-        const def = BLOCKS[id];
-        if(def && def.renderInvisible) continue; // Test_Block etc: occupies a cell but draws nothing
-
-        // Liquids get a variable top height based on flow level so a
-        // stream visibly tapers as it flows away from its source, instead
-        // of every liquid cell rendering as a full unit cube.
-        let h = 1;
-        if(def && def.liquid){
-          const aboveId = getLocalNeighborBlock(chunk, neighbors, lx, ly+1, lz);
-          const aboveDef = BLOCKS[aboveId];
-          const fedFromAbove = !!(aboveDef && aboveDef.liquid && (aboveDef.liquidFamily||'water')===(def.liquidFamily||'water'));
-          h = liquidHeight(def, fedFromAbove);
-        }
-
-        for(const fd of FACE_DEFS){
-          const [dx,dy,dz] = fd.normal;
-          const nb = getLocalNeighborBlock(chunk, neighbors, lx+dx, ly+dy, lz+dz);
-          if(!shouldDrawFaceLocal(id, nb)) continue;
-
-          // Skip the top face entirely when this liquid is fed from a
-          // matching liquid directly above — nothing would ever be visible
-          // there anyway (matches shouldDrawFaceLocal's same-family cull)
-          // but this also avoids emitting a stray flat quad mid-column.
-          if(fd.name==='py' && def && def.liquid){
-            const aboveDef = BLOCKS[nb];
-            if(aboveDef && aboveDef.liquid && (aboveDef.liquidFamily||'water')===(def.liquidFamily||'water')) continue;
-          }
-
-          const paintName = faceMaterialKey(id, fd.key);
-          const buf = getBuf(paintName);
-          const startIndex = buf.vcount;
-          for(const corner of fd.corners){
-            // Only pull down corners that sit on the TOP of the block
-            // (corner[1]===1); bottom corners (0) and non-liquid blocks
-            // are untouched, so the liquid sits flush with the ground and
-            // only its visible top/upper-side edge is squashed down.
-            const cy2 = (h<1 && corner[1]===1) ? h : corner[1];
-            buf.pos.push(lx+corner[0], ly+cy2, lz+corner[2]);
-            buf.norm.push(dx,dy,dz);
-          }
-          // uv mapping (simple 0..1 quad, with slight tint for ao-ish shading baked via vertex normal lighting)
-          buf.uv.push(0,0, 0,1, 1,1, 1,0);
-          buf.idx.push(startIndex,startIndex+1,startIndex+2, startIndex,startIndex+2,startIndex+3);
-          buf.vcount += 4;
-        }
-      }
-    }
-  }
-
-  for(const paintName in buffers){
-    const b = buffers[paintName];
-    if(b.pos.length===0) continue;
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(b.pos,3));
-    geo.setAttribute('normal', new THREE.Float32BufferAttribute(b.norm,3));
-    geo.setAttribute('uv', new THREE.Float32BufferAttribute(b.uv,2));
-    geo.setIndex(b.idx);
-    const mat = getFaceMaterialByKey(paintName);
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.castShadow = false; mesh.receiveShadow = false;
-    group.add(mesh);
-  }
-
-  let totalFaces = 0;
-  for(const paintName in buffers){ totalFaces += buffers[paintName].vcount/4; }
-
-  group.position.set(baseX, baseY, baseZ);
-  chunk.mesh = group;
-  chunk.dirty = false;
-  chunk._lastFaceCount = totalFaces;
-  return totalFaces;
-}
+// The actual mesher now lives in vfMeshChunk() (see the BLOCK TEXTURE ATLAS
+// section above) so it can run inside a Web Worker. It reads blocks through
+// the chunk + its 6 face-adjacent neighbours, culls hidden faces with the
+// same rules as before, and batches output into three layers (solid /
+// cutout / transparent) that draw with the shared ChunkMaterials.
+//
+// LIQUID SURFACE HEIGHT (implemented inside vfMeshChunk):
+// A source block (isSource, flowLevel 7) is always a full 1-block-tall cube.
+// Flowing levels 6..0 render ~0.86 down to ~0.22 tall, so a stream tapers with
+// distance from its source. A liquid with the same family directly above it
+// is rendered as a full cube (it is "fed" from above).
 
 /* -------------------------------------------------------------------------
    5. PLAYER MODEL — a classic blocky humanoid (head/body/arms/legs), built
@@ -2938,14 +3130,13 @@ class Game{
       // materials/geometries were never actually recreated).
       if(this.world){
         for(const [,chunk] of this.world.chunks){
-          if(chunk.mesh){
-            if(chunk.mesh.parent) chunk.mesh.parent.remove(chunk.mesh);
-            chunk.mesh = null;
-          }
+          disposeChunkMesh(chunk);
           chunk.dirty = true;
         }
+        this.world.dirtyVersion++;
       }
-      materialByKeyCacheClearAll();
+      // The shared atlas texture re-uploads itself on next use.
+      BlockAtlas.texture.needsUpdate = true;
     }, false);
 
     // lighting
@@ -2966,7 +3157,11 @@ class Game{
 
     this.world = new World(WORLD_SEED);
     this.chunkGroup = new THREE.Group();
+    this.chunkGroup.matrixAutoUpdate = false; // chunks are static; skip per-frame matrix work
     this.scene.add(this.chunkGroup);
+    this.meshPool = new MeshPool(buildMesherTables());
+    this._meshReady = [];   // finished worker results waiting to be turned into geometry
+    this._stream = null;    // cached chunk list, see _rebuildStreamCache()
 
     // player state
     this.pos = new THREE.Vector3(0, 60, 0);
@@ -3011,9 +3206,9 @@ class Game{
 
     this.otherPlayers = new Map(); // uid -> {group, parts, targetPos, targetYaw, nameSprite}
     this.chatMessages = [];
-    this.torchLights = new Map(); // "x_y_z" -> THREE.PointLight, only for torches currently within budget/range
-    this.torchLightPositions = new Map(); // "x_y_z" -> {x,y,z}, every placed torch regardless of light budget
-    this._torchBudgetTimer = 0; // throttles _enforceTorchLightBudget re-checks as the player moves
+    // Torch light is baked into chunk vertex colors (see vfMeshChunk), so there
+    // are no realtime PointLights at all — only this registry of placed torches.
+    this.torchLightPositions = new Map(); // "x_y_z" -> {x,y,z}
     this.animals = []; // wandering passive mobs
     this.hostiles = []; // night-spawned hostile mobs
     this._nightMobTimer = 0;
@@ -3062,31 +3257,76 @@ class Game{
     const profile = currentGraphicsProfile();
     this.scene.fog.near = profile.fogNear;
     this.scene.fog.far = profile.fogFar;
-    this.renderer.setPixelRatio(Math.min(devicePixelRatio, profile.pixelRatioCap));
+
+    // Pixel ratio: the tier sets the ceiling; dynamic resolution (see
+    // _updateDynamicResolution) may sit below it while FPS is low.
+    const base = Math.min(devicePixelRatio, profile.pixelRatioCap);
+    if(this._drBase !== base || !SETTINGS.dynamicResolution || this._drRatio === undefined || this._drRatio > base){
+      this._drRatio = base;
+    }
+    this._drBase = base;
+    this.renderer.setPixelRatio(this._drRatio);
+
     this.camera.fov = SETTINGS.fov;
     this.camera.updateProjectionMatrix();
-    // Torch lighting policy just changed tiers (e.g. dropped to potato) —
-    // drop everything over the new cap / outside the new radius right
-    // away instead of waiting for the player to walk near each one.
-    this._enforceTorchLightBudget(true);
 
-    // If the mipmap policy for this tier differs from what's currently
-    // cached, rebuild materials + remesh visible chunks so the switch
-    // (e.g. dropping into 'potato' mid-game) actually takes effect rather
-    // than only applying to chunks that stream in fresh afterward.
+    // The mipmap policy lives on the single shared atlas texture now, so a
+    // tier switch is just a filter change — no material rebuild, no remesh.
     if(this._lastMipmapPolicy !== undefined && this._lastMipmapPolicy !== profile.mipmaps){
-      materialByKeyCacheClearAll();
-      if(this.world){
-        for(const [,chunk] of this.world.chunks){
-          if(chunk.mesh){
-            if(chunk.mesh.parent) chunk.mesh.parent.remove(chunk.mesh);
-            chunk.mesh = null;
-          }
-          chunk.dirty = true;
-        }
-      }
+      BlockAtlas.applyFilterPolicy();
     }
     this._lastMipmapPolicy = profile.mipmaps;
+  }
+
+  /* ---------------- Dynamic resolution ----------------
+     Watches real frame time and lowers the render pixel ratio when FPS stays
+     under DR_LOW_FPS, then creeps back up when there is clear headroom.
+     Resolution is the one cost that scales with every device, so this is what
+     keeps the game near 40+ fps even on weak GPUs. */
+  _updateDynamicResolution(rawDt){
+    if(!SETTINGS.dynamicResolution){
+      if(this._drRatio !== this._drBase){
+        this._drRatio = this._drBase;
+        this.renderer.setPixelRatio(this._drRatio);
+      }
+      return;
+    }
+    if(!(rawDt > 0) || rawDt > 0.25 || document.hidden) return; // tab switch / big hitch: not a rendering signal
+    const DR_LOW_FPS = 45, DR_HIGH_FPS = 57, DR_MIN_RATIO = 0.5;
+    this._drEma = this._drEma === undefined ? rawDt : this._drEma*0.9 + rawDt*0.1;
+    const fps = 1/this._drEma;
+    this._drCooldown = Math.max(0, (this._drCooldown||0) - rawDt);
+    if(this._drCooldown > 0) return;
+
+    if(fps < DR_LOW_FPS){
+      this._drLowT = (this._drLowT||0) + rawDt;
+      this._drHighT = 0;
+      if(this._drLowT >= 1.0 && this._drRatio > DR_MIN_RATIO){
+        // dropping right after a raise means the higher setting does not hold: wait longer next time
+        if(this._drSinceRaise !== undefined && this._drSinceRaise < 10) this._drRaiseWait = Math.min(120, (this._drRaiseWait||6)*2);
+        this._drRatio = Math.max(DR_MIN_RATIO, this._drRatio*0.88);
+        this._drSinceRaise = undefined;
+        this._applyDynamicRatio();
+      }
+    } else if(fps > DR_HIGH_FPS && this._drRatio < this._drBase){
+      this._drLowT = 0;
+      this._drHighT = (this._drHighT||0) + rawDt;
+      this._drSinceRaise = (this._drSinceRaise===undefined) ? undefined : this._drSinceRaise + rawDt;
+      if(this._drHighT >= (this._drRaiseWait||6)){
+        this._drRatio = Math.min(this._drBase, this._drRatio*1.1);
+        this._drSinceRaise = 0;
+        this._applyDynamicRatio();
+      }
+    } else {
+      this._drLowT = 0; this._drHighT = 0;
+      if(this._drSinceRaise !== undefined) this._drSinceRaise += rawDt;
+    }
+  }
+  _applyDynamicRatio(){
+    this.renderer.setPixelRatio(this._drRatio);
+    this._drLowT = 0; this._drHighT = 0;
+    this._drCooldown = 1.5;           // let the new resolution settle before judging it
+    this._drEma = 1/50;               // neutral reading so one change does not trigger the next
   }
 
   // Try to find a spawn point that lands on grass, up to maxAttempts times.
@@ -3213,6 +3453,7 @@ class Game{
     document.getElementById('renderDistSlider').value = SETTINGS.renderDistance;
     document.getElementById('renderDistVal').textContent = SETTINGS.renderDistance;
     document.getElementById('graphicsSelect').value = SETTINGS.graphics;
+    document.getElementById('dynResToggle').checked = !!SETTINGS.dynamicResolution;
     document.getElementById('fovSlider').value = SETTINGS.fov;
     document.getElementById('fovVal').textContent = SETTINGS.fov;
     document.getElementById('volumeSlider').value = SETTINGS.volume;
@@ -4706,6 +4947,7 @@ class Game{
     document.getElementById('mobileControls').style.display = 'none';
     document.getElementById('menuScreen').style.display = 'flex';
     this._quit = true; // main loop checks this and stops rendering next frame
+    if(this.meshPool) this.meshPool.dispose();
     updateLoadWorldButtonVisibility();
   }
 
@@ -4846,112 +5088,158 @@ class Game{
         }
       }
     }
+    // Meshing pass: workers build the geometry in parallel; we only copy blocks
+    // in and wrap the result. Chunks already meshed are just (re)attached.
+    const toMesh = [];
     for(const [cx,cz] of columns){
       for(let cy=0; cy<CHUNKS_Y; cy++){
         const chunk = this.world.getChunk(cx,cy,cz);
-        if(chunk && chunk.generated && (chunk.dirty || !chunk.mesh)){
-          buildChunkMesh(this.world, chunk);
-          this.chunkGroup.add(chunk.mesh);
-        } else if(chunk && chunk.mesh && !chunk.mesh.parent){
-          this.chunkGroup.add(chunk.mesh);
-        }
-        done++;
-        if(done%MESH_BATCH===0){
-          if(onProgress) onProgress(done, total, 'Building the world…');
-          await new Promise(r=>requestAnimationFrame(r));
-        }
+        if(!chunk || !chunk.generated) { done++; continue; }
+        if(chunk.dirty || !chunk.mesh) toMesh.push(chunk);
+        else { if(!chunk.mesh.parent) this.chunkGroup.add(chunk.mesh); done++; }
       }
     }
+    let next = 0;
+    const lanes = this.meshPool.isAsync ? this.meshPool.maxInflight : 1;
+    const lane = async ()=>{
+      while(next < toMesh.length){
+        const chunk = toMesh[next++];
+        const res = await this._requestMesh(chunk);
+        this._installMesh(chunk, res);
+        done++;
+        if(onProgress) onProgress(Math.min(done,total), total, 'Building the world…');
+        // worker results arrive between frames; without workers, yield a frame
+        // per chunk so the loading bar keeps repainting like before
+        if(!this.meshPool.isAsync) await new Promise(r=>requestAnimationFrame(r));
+      }
+    };
+    await Promise.all(Array.from({length:lanes}, lane));
     if(onProgress) onProgress(total, total, 'World ready!');
   }
 
-  /* ---------------- Chunk streaming: only load/mesh what's near & visible ---------------- */
-  updateChunkStreaming(){
-    const pcx = Math.floor(this.pos.x/CHUNK_SIZE);
-    const pcz = Math.floor(this.pos.z/CHUNK_SIZE);
-    const needed = new Set();
+  /* ---------------- Chunk meshing (async, worker-backed) ---------------- */
+  // Snapshot the chunk + its 6 neighbours and hand them to the mesh pool. The
+  // chunk's dirty flag is cleared now; a block edit while the job is in flight
+  // sets it again, so the chunk is simply re-queued after this result lands.
+  _requestMesh(chunk){
+    const w = this.world, cx = chunk.cx, cy = chunk.cy, cz = chunk.cz;
+    const blocksOf = (x,y,z)=>{ const c = w.getChunk(x,y,z); return c ? c.blocks : null; };
+    const job = {
+      blocks: chunk.blocks,
+      px: blocksOf(cx+1,cy,cz), nx: blocksOf(cx-1,cy,cz),
+      py: blocksOf(cx,cy+1,cz), ny: blocksOf(cx,cy-1,cz),
+      pz: blocksOf(cx,cy,cz+1), nz: blocksOf(cx,cy,cz-1),
+      lights: this.collectTorchLights(chunk),
+    };
+    const seq = chunk._reqSeq = (this._meshSeq = (this._meshSeq||0) + 1);
+    chunk._meshing = true;
+    chunk.dirty = false;
+    return this.meshPool.request(job).then(data=>{ chunk._meshing = false; return {data, seq}; });
+  }
+  // Results can come back out of order (several workers); never let an older
+  // snapshot overwrite a newer one.
+  _installMesh(chunk, res){
+    if(res.seq < (chunk._instSeq||0)) return;
+    chunk._instSeq = res.seq;
+    const group = buildChunkGroup(chunk, res.data);
+    this.chunkGroup.add(group);
+  }
+  // Turn finished worker results into geometry, a few per frame so GPU
+  // uploads are spread out instead of landing all in one frame.
+  _drainMeshResults(maxPerFrame){
+    let n = 0;
+    while(this._meshReady.length && n < maxPerFrame){
+      const {chunk, res} = this._meshReady.shift();
+      const s = this._stream;
+      if(s && s.needed.has(chunkKey(chunk.cx,chunk.cy,chunk.cz))){
+        this._installMesh(chunk, res);
+      } else {
+        // scrolled out of range while meshing: drop the result, rebuild if it is ever needed again
+        chunk.dirty = true;
+      }
+      n++;
+    }
+    return n;
+  }
 
-    // Collect needed chunk columns, nearest first, but DO NOT generate them
-    // all synchronously — that's what caused the freeze at high render
-    // distance (hundreds of chunk generations + meshes in a single frame).
-    // Instead we gather what's needed and let a small per-frame budget
-    // below do the actual (expensive) generation/meshing work over several
-    // frames, so the game keeps rendering smoothly while chunks stream in.
+  /* ---------------- Chunk streaming: only load/mesh what's near & visible ---------------- */
+  // The set of chunks around the player only changes when the player crosses a
+  // chunk border (or render distance changes), so it is computed once then and
+  // cached — not rebuilt, re-sorted and re-keyed every frame. Chunks well
+  // beyond render distance get their GPU geometry freed here too.
+  _rebuildStreamCache(pcx, pcz){
+    const rd = RENDER_DISTANCE;
     const columns = [];
-    for(let dx=-RENDER_DISTANCE; dx<=RENDER_DISTANCE; dx++){
-      for(let dz=-RENDER_DISTANCE; dz<=RENDER_DISTANCE; dz++){
-        if(dx*dx+dz*dz > RENDER_DISTANCE*RENDER_DISTANCE) continue;
-        const cx = pcx+dx, cz = pcz+dz;
-        columns.push([cx,cz,dx*dx+dz*dz]);
-        for(let cy=0; cy<CHUNKS_Y; cy++){
-          needed.add(chunkKey(cx,cy,cz));
-        }
+    for(let dx=-rd; dx<=rd; dx++){
+      for(let dz=-rd; dz<=rd; dz++){
+        const d2 = dx*dx+dz*dz;
+        if(d2 > rd*rd) continue;
+        columns.push([pcx+dx, pcz+dz, d2]);
       }
     }
     columns.sort((a,b)=>a[2]-b[2]); // nearest columns first
-
-    // Budgeted terrain generation: only generate a handful of NEW chunk
-    // columns per frame instead of every chunk in render distance at once.
-    let genBudget = 6;
-    outer:
+    const chunks = [];
+    const needed = new Set();
     for(const [cx,cz] of columns){
       for(let cy=0; cy<CHUNKS_Y; cy++){
-        if(genBudget<=0) break outer;
-        let chunk = this.world.getChunk(cx,cy,cz,true);
-        if(!chunk.generated){
-          this.world.generateChunk(chunk);
-          genBudget--;
-        }
+        chunks.push(this.world.getChunk(cx,cy,cz,true));
+        needed.add(chunkKey(cx,cy,cz));
       }
     }
-
-    // Build/rebuild dirty & needed chunks (throttled per frame to avoid hitches).
-    // Soft cap: how many blocks' worth of work we're willing to spend
-    // building meshes this frame. A chunk's real (post-culling) face count
-    // isn't known until after we've built it, so we use the cheap
-    // estimateChunkCost() pre-check (solid-block count, no neighbor lookups)
-    // to decide whether a candidate chunk fits the REMAINING budget before
-    // committing to building it. If it doesn't fit yet, it's left dirty and
-    // retried on a later frame (once earlier/cheaper chunks have gone
-    // through) instead of forcing an oversized build through in a frame
-    // that already has other work queued — that stacking is what could
-    // stall the main thread long enough for the GPU driver to give up
-    // (WebGL context loss / white screen) when loading or placing blocks
-    // near a very dense area like the Gray Pillars easter egg.
-    let costBudget = 3000;
-    let builtCount = 0;
-    const MIN_BUILT_PER_FRAME = 1; // always let at least one chunk through, even if it's oversized, so nothing gets stuck forever
-    // Mesh nearest-needed chunks first (previously this iterated the `needed`
-    // Set in arbitrary insertion order, so distant chunks could get meshed
-    // before nearby ones, delaying what the player actually sees).
-    const neededSorted = columns.flatMap(([cx,cz])=>{
-      const arr = [];
-      for(let cy=0; cy<CHUNKS_Y; cy++) arr.push(chunkKey(cx,cy,cz));
-      return arr;
-    });
-    for(const key of neededSorted){
-      const [cx,cy,cz] = key.split(',').map(Number);
-      const chunk = this.world.getChunk(cx,cy,cz);
-      if(!chunk || !chunk.generated) continue; // not generated yet — mesh it once it is
-      if(chunk.dirty || !chunk.mesh){
-        const cost = estimateChunkCost(chunk);
-        if(cost > costBudget && builtCount >= MIN_BUILT_PER_FRAME) continue; // too expensive for what's left this frame — try again next frame
-        // only mesh if it or any neighbor is generated enough to know exposure
-        buildChunkMesh(this.world, chunk);
-        this.chunkGroup.add(chunk.mesh);
-        costBudget -= cost;
-        builtCount++;
-      } else if(chunk.mesh && !chunk.mesh.parent){
-        this.chunkGroup.add(chunk.mesh);
-      }
-    }
-
-    // Unload far chunks (visibility-based: nothing beyond render distance is shown)
+    // Free far chunks: beyond rd+2 the mesh is disposed (rebuilt on demand);
+    // the rd..rd+2 ring just leaves the scene so walking back and forth at the
+    // border does not thrash meshing.
+    const keep2 = (rd+2)*(rd+2);
     for(const [key, chunk] of this.world.chunks){
-      if(!needed.has(key) && chunk.mesh && chunk.mesh.parent){
-        this.chunkGroup.remove(chunk.mesh);
+      if(!chunk.mesh || needed.has(key)) continue;
+      const dx = chunk.cx-pcx, dz = chunk.cz-pcz;
+      if(dx*dx+dz*dz > keep2) disposeChunkMesh(chunk);
+      else if(chunk.mesh.parent) this.chunkGroup.remove(chunk.mesh);
+    }
+    this._stream = { pcx, pcz, rd, chunks, needed, idle:false, seenVersion:-1 };
+    return this._stream;
+  }
+
+  updateChunkStreaming(){
+    this._drainMeshResults(this.meshPool.perFrame*2);
+    const pcx = Math.floor(this.pos.x/CHUNK_SIZE);
+    const pcz = Math.floor(this.pos.z/CHUNK_SIZE);
+    let st = this._stream;
+    if(!st || st.pcx!==pcx || st.pcz!==pcz || st.rd!==RENDER_DISTANCE) st = this._rebuildStreamCache(pcx, pcz);
+
+    // Nothing to generate, mesh or attach and nothing edited since the last
+    // full pass: skip the whole scan.
+    if(st.idle && st.seenVersion === this.world.dirtyVersion && !this._meshReady.length) return;
+    const versionAtStart = this.world.dirtyVersion;
+    let pending = false;
+
+    // Budgeted terrain generation: only a handful of NEW chunks per frame.
+    let genBudget = 6;
+    for(const chunk of st.chunks){
+      if(chunk.generated) continue;
+      if(genBudget <= 0){ pending = true; break; }
+      this.world.generateChunk(chunk);
+      genBudget--;
+    }
+
+    // Queue meshing nearest-first. Workers do the heavy lifting, so the main
+    // thread only snapshots blocks; a small per-frame cap keeps even that smooth.
+    const pool = this.meshPool;
+    let sent = 0;
+    for(const chunk of st.chunks){
+      if(!chunk.generated){ pending = true; continue; }
+      if(chunk._meshing){ pending = true; continue; }
+      if(chunk.dirty || !chunk.mesh){
+        if(sent >= pool.perFrame || pool.inflight >= pool.maxInflight){ pending = true; continue; }
+        sent++;
+        pending = true;
+        this._requestMesh(chunk).then(res=> this._meshReady.push({chunk, res}));
+      } else if(!chunk.mesh.parent){
+        this.chunkGroup.add(chunk.mesh);
       }
     }
+    st.idle = !pending;
+    st.seenVersion = versionAtStart;
   }
 
   /* ---------------- Multiplayer (Firebase Realtime Database) ---------------- */
@@ -5111,7 +5399,8 @@ class Game{
       XYZ: ${this.pos.x.toFixed(1)}, ${this.pos.y.toFixed(1)}, ${this.pos.z.toFixed(1)}<br>
       Chunk: ${Math.floor(this.pos.x/CHUNK_SIZE)}, ${Math.floor(this.pos.z/CHUNK_SIZE)}<br>
       Loaded chunks: ${this.world.chunks.size}<br>
-      Mode: ${this.flying?'Flying':'Walking'} | FPS: ${this.fps||0}
+      Mode: ${this.flying?'Flying':'Walking'} | FPS: ${this.fps||0}<br>
+      Res: ${(this._drRatio||0).toFixed(2)}x | Draw calls: ${this.renderer.info.render.calls} | Meshing: ${this.meshPool.isAsync?'worker':'main'}
     `;
   }
 
@@ -5254,6 +5543,10 @@ class Game{
       // gets skipped instead of permanently killing rendering.
       try{
         const delta = Math.min(0.05, this.clock.getDelta());
+        const nowTs = performance.now();
+        const rawDt = this._lastFrameTs ? (nowTs - this._lastFrameTs)/1000 : 0;
+        this._lastFrameTs = nowTs;
+        if(!this.paused && !this.dead) this._updateDynamicResolution(rawDt);
         this._fpsTimer += delta; this._frameCount++;
         if(this._fpsTimer>=1){ this.fps=this._frameCount; this._frameCount=0; this._fpsTimer=0; }
 
@@ -5262,7 +5555,7 @@ class Game{
         if(!this.paused && !this.dead){
           this.updateMovement(delta);
           this.updateCamera();
-          // Skip while the GL context is down — buildChunkMesh creates
+          // Skip while the GL context is down — chunk meshes need a live context to upload
           // THREE.BufferGeometry/Material objects that need a live context;
           // everything stays marked dirty and streams back in automatically
           // once webglcontextrestored fires (see renderer setup above).
@@ -5287,18 +5580,6 @@ class Game{
         if(!this.paused) this.updateDayNight(delta);
         if(!this.paused && !this.dead) this.updateMobs(delta);
         if(!this.paused) this.updateFootsteps(delta);
-
-        // Re-derive which placed torches currently get a real-time light
-        // (nearest-N within budget — see _enforceTorchLightBudget). This
-        // is O(number of placed torches), so it's throttled to a few
-        // times a second rather than run every frame.
-        if(!this.paused){
-          this._torchBudgetTimer = (this._torchBudgetTimer||0) + delta;
-          if(this._torchBudgetTimer >= 0.5){
-            this._torchBudgetTimer = 0;
-            this._enforceTorchLightBudget();
-          }
-        }
 
         this.updateDebugPanel();
         if(this._frameCount%20===0) this.updatePlayerListUI();
@@ -5434,6 +5715,7 @@ class Game{
       this.scene.fog.color = voidColor;
       this.scene.fog.near = 8;
       this.scene.fog.far = 34;
+      chunkTorchUniform.value = 1; // sunless: baked torch glow at full strength
       this.isNight = true; // keeps hostile-mob light-level checks consistent if mobs ever wander in
       this._leftArchBClearing = true; // arm the one-shot restore for whenever we do leave
       return;
@@ -5470,6 +5752,7 @@ class Game{
     if(!this.moonLight.target.parent) this.scene.add(this.moonLight.target);
     this.moonLight.intensity = (1-dayFactor)*0.22;
     this.ambient.intensity = 0.18 + dayFactor*0.47;
+    chunkTorchUniform.value = 0.25 + 0.75*(1-dayFactor); // baked torch glow: subtle by day, full at night
 
     // sky/fog color: deep navy at night, warm orange at dawn/dusk, sky blue at noon
     const nightColor = new THREE.Color(0x0a0e1c);
@@ -5509,70 +5792,44 @@ class Game{
     return Math.max(0, Math.min(15, base));
   }
 
-  // Real-time point light for a placed torch (id 41), on top of the
-  // lightLevelAt() gameplay number above, so torches actually look lit.
-  //
-  // Unbounded dynamic point lights are one of the most expensive things a
-  // WebGL scene can do — every extra light adds real per-fragment cost
-  // across everything it touches, and a long-lived survival world can
-  // easily accumulate dozens of placed torches. So this is capped and
-  // tier-aware rather than "one light per torch, forever":
-  //  - 'potato' tier skips real-time torch lights entirely (the block
-  //    itself still emits its lightLevelAt() glow via the voxel light
-  //    grid — this only removes the extra realtime THREE.PointLight).
-  //  - other tiers cap the *live* light count (GRAPHICS_PROFILES.maxTorchLights)
-  //    and keep only the ones nearest the player lit; farther torches are
-  //    remembered (torchLightPositions) but not instantiated as lights
-  //    until the player gets close enough / an older one frees up.
+  // Torches (id 41) no longer create realtime THREE.PointLights. Every extra
+  // dynamic light adds per-fragment cost to the whole scene, and a survival
+  // world piles up dozens of torches. Instead the mesher bakes each torch's
+  // warm glow into the vertex colors of the faces within TORCH_LIGHT_RADIUS
+  // (see vfMeshChunk); the lightLevelAt() gameplay number is unchanged.
+  // Placing/removing a torch just re-meshes the chunks its light can reach.
   addTorchLight(x,y,z){
     const key = `${x}_${y}_${z}`;
     if(this.torchLightPositions.has(key)) return;
     this.torchLightPositions.set(key, {x,y,z});
-    this._enforceTorchLightBudget();
+    this._dirtyTorchArea(x,y,z);
   }
   removeTorchLight(x,y,z){
     const key = `${x}_${y}_${z}`;
-    this.torchLightPositions.delete(key);
-    const light = this.torchLights.get(key);
-    if(light){ this.scene.remove(light); this.torchLights.delete(key); }
+    if(!this.torchLightPositions.delete(key)) return;
+    this._dirtyTorchArea(x,y,z);
   }
-  // Re-derive which torches currently have a real THREE.PointLight,
-  // based on distance to the player and the current graphics tier's
-  // budget. Cheap enough to call every time a torch is placed/removed or
-  // the graphics tier changes; also called periodically from the main
-  // loop (throttled) so lights fade in/out as the player walks around.
-  _enforceTorchLightBudget(force){
-    const profile = currentGraphicsProfile();
-    if(!profile.torchLights || profile.maxTorchLights<=0){
-      if(this.torchLights.size){
-        for(const [,light] of this.torchLights) this.scene.remove(light);
-        this.torchLights.clear();
-      }
-      return;
+  _dirtyTorchArea(x,y,z){
+    const R = TORCH_LIGHT_RADIUS;
+    const x0 = Math.floor((x-R)/CHUNK_SIZE), x1 = Math.floor((x+R)/CHUNK_SIZE);
+    const y0 = Math.floor((y-R)/CHUNK_SIZE), y1 = Math.floor((y+R)/CHUNK_SIZE);
+    const z0 = Math.floor((z-R)/CHUNK_SIZE), z1 = Math.floor((z+R)/CHUNK_SIZE);
+    for(let cx=x0; cx<=x1; cx++) for(let cy=y0; cy<=y1; cy++) for(let cz=z0; cz<=z1; cz++){
+      this.world._dirtyNeighbor(cx,cy,cz); // no-op for chunks that do not exist yet
     }
-    const px=this.pos.x, py=this.pos.y, pz=this.pos.z;
-    const maxDist = profile.torchLightDist;
-    // gather candidates within range, sorted nearest-first
-    const candidates = [];
-    for(const [key,p] of this.torchLightPositions){
-      const d = Math.hypot(p.x+0.5-px, p.y+0.6-py, p.z+0.5-pz);
-      if(d<=maxDist) candidates.push({key,p,d});
+  }
+  // Flat [x,y,z,...] (chunk-local) of every torch whose light reaches `chunk`.
+  collectTorchLights(chunk){
+    if(!this.torchLightPositions.size) return null;
+    const R = TORCH_LIGHT_RADIUS, S = CHUNK_SIZE;
+    const bx = chunk.cx*S, by = chunk.cy*S, bz = chunk.cz*S;
+    const out = [];
+    for(const p of this.torchLightPositions.values()){
+      if(p.x < bx-R || p.x > bx+S+R || p.y < by-R || p.y > by+S+R || p.z < bz-R || p.z > bz+S+R) continue;
+      out.push(p.x-bx, p.y-by, p.z-bz);
+      if(out.length >= 96) break; // 32 torches per chunk is plenty
     }
-    candidates.sort((a,b)=>a.d-b.d);
-    const keep = new Set(candidates.slice(0, profile.maxTorchLights).map(c=>c.key));
-    // drop lights that fell out of budget/range
-    for(const [key,light] of this.torchLights){
-      if(!keep.has(key)){ this.scene.remove(light); this.torchLights.delete(key); }
-    }
-    // create lights that newly made the cut
-    for(const key of keep){
-      if(this.torchLights.has(key)) continue;
-      const p = this.torchLightPositions.get(key);
-      const light = new THREE.PointLight(0xffaa55, 1.1, 9, 2);
-      light.position.set(p.x+0.5, p.y+0.6, p.z+0.5);
-      this.scene.add(light);
-      this.torchLights.set(key, light);
-    }
+    return out.length ? new Float32Array(out) : null;
   }
 }
 
@@ -6002,30 +6259,28 @@ let PENDING_LOAD = null; // set by loadSavedWorld() before launchGame() runs
 // side scene so nothing is visible), then discard them. Must run AFTER
 // `gameInstance` (and its renderer) exist.
 function warmAllBlockMaterialsOnGPU(game){
+  // There are only three shared chunk materials plus one atlas texture now, so
+  // warming means drawing one tiny triangle with each (matching the vertex
+  // attribute layout the real chunk meshes use) once, off-screen.
   const warmScene = new THREE.Scene();
-  const geo = new THREE.BoxGeometry(0.01,0.01,0.01); // tiny — cost is per-material/texture, not per-triangle
   const meshes = [];
-  const seen = new Set();
-  for(const id in BLOCKS){
-    const b = BLOCKS[id];
-    if(!b.tex || b.name==='air' || b.renderInvisible) continue;
-    const faces = b.tex.all ? ['all'] : ['top','bottom','side','front'];
-    faces.forEach(face=>{
-      if(!b.tex.all && !b.tex[face]) return;
-      const key = faceMaterialKey(+id, face);
-      if(seen.has(key)) return;
-      seen.add(key);
-      const mat = getFaceMaterialByKey(key);
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.position.set(meshes.length*0.02, 5000, 0); // stacked far away, never actually visible on screen
-      warmScene.add(mesh);
-      meshes.push(mesh);
-    });
+  const geos = [];
+  for(let li=0; li<3; li++){
+    const size = (li===2) ? 4 : 3;
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([0,0,0, 0.01,0,0, 0,0.01,0]), 3));
+    geo.setAttribute('normal',   new THREE.BufferAttribute(new Float32Array([0,0,1, 0,0,1, 0,0,1]), 3));
+    geo.setAttribute('uv',       new THREE.BufferAttribute(new Float32Array([0,0, 1,0, 0,1]), 2));
+    geo.setAttribute('color',    new THREE.BufferAttribute(new Float32Array(3*size).fill(1), size));
+    const mesh = new THREE.Mesh(geo, ChunkMaterials[li]);
+    mesh.position.set(li*0.02, 5000, 0); // far away, never visible
+    warmScene.add(mesh);
+    meshes.push(mesh); geos.push(geo);
   }
-  // one render call compiles + uploads every material used in warmScene
+  // one render call compiles every shader variant + uploads the atlas
   game.renderer.render(warmScene, game.camera);
   meshes.forEach(m=> warmScene.remove(m));
-  geo.dispose();
+  geos.forEach(g=> g.dispose());
 }
 
 async function launchGame(){
@@ -6615,6 +6870,7 @@ window.addEventListener('DOMContentLoaded', ()=>{
     document.getElementById('renderDistSlider').value = SETTINGS.renderDistance;
     document.getElementById('renderDistVal').textContent = SETTINGS.renderDistance;
     document.getElementById('graphicsSelect').value = SETTINGS.graphics;
+    document.getElementById('dynResToggle').checked = !!SETTINGS.dynamicResolution;
     document.getElementById('fovSlider').value = SETTINGS.fov;
     document.getElementById('fovVal').textContent = SETTINGS.fov;
     document.getElementById('volumeSlider').value = SETTINGS.volume;
@@ -6663,6 +6919,11 @@ window.addEventListener('DOMContentLoaded', ()=>{
   });
   document.getElementById('graphicsSelect').addEventListener('change', (e)=>{
     SETTINGS.graphics = e.target.value;
+    saveSettingsToStorage();
+    if(gameInstance) gameInstance.applyGraphicsSettings();
+  });
+  document.getElementById('dynResToggle').addEventListener('change', (e)=>{
+    SETTINGS.dynamicResolution = e.target.checked;
     saveSettingsToStorage();
     if(gameInstance) gameInstance.applyGraphicsSettings();
   });
