@@ -1437,6 +1437,20 @@ const TexturePainters = {
     ctx.strokeStyle='rgba(0,0,0,0.4)'; ctx.lineWidth=1;
     ctx.strokeRect(3.5,9.5,TEX_SIZE-7,6);
   },
+  bed_top_foot(ctx, seed){ // blanket (foot half, top face)
+    paintNoise(ctx, '#b5352f', seed, {variance:10, speckleChance:0.12, speckleColor:'#8f2924', speckleVariance:12});
+    ctx.fillStyle='#e9edf2'; ctx.fillRect(0,0,TEX_SIZE,2);
+    ctx.fillStyle='rgba(0,0,0,0.25)'; ctx.fillRect(0,TEX_SIZE-1,TEX_SIZE,1); ctx.fillRect(0,2,TEX_SIZE,1);
+  },
+  bed_top_head(ctx, seed){ // pillow (head half, top face)
+    paintNoise(ctx, '#e9edf2', seed, {variance:8, speckleChance:0.1, speckleColor:'#d3d9e0', speckleVariance:8});
+    ctx.strokeStyle='rgba(0,0,0,0.3)'; ctx.lineWidth=1; ctx.strokeRect(1.5,1.5,TEX_SIZE-3,TEX_SIZE-3);
+  },
+  bed_side(ctx, seed){ // red mattress edge over a wooden base
+    paintNoise(ctx, '#9c7a44', seed, {variance:10});
+    ctx.fillStyle='#b5352f'; ctx.fillRect(0,0,TEX_SIZE,9);
+    ctx.fillStyle='rgba(0,0,0,0.3)'; ctx.fillRect(0,9,TEX_SIZE,1);
+  },
   stairs_stone(ctx, seed){ TexturePainters.stone(ctx, seed); },
   stairs_wood(ctx, seed){ TexturePainters.planks(ctx, seed); },
   gravel(ctx, seed){ paintNoise(ctx, '#8f8a82', seed, {variance:24, speckleChance:0.25, speckleColor:'#5f5a52', speckleVariance:30}); },
@@ -1546,6 +1560,7 @@ const BLOCKS = {
   18: { name:'crafting_table', tex:{top:'crafting_table_top', bottom:'wood_top', side:'crafting_table_side'}, hardness:1.0, tool:'axe' },
   19: { name:'furnace',    tex:{top:'furnace_side', bottom:'furnace_side', side:'furnace_side', front:'furnace_front'}, hardness:3.0, tool:'pickaxe' },
   20: { name:'barrier',    tex:{all:'barrier'}, hardness:0, unbreakable:true, creativeOnly:true },
+  150: { name:'bed', tex:{top:'bed_top_foot', bottom:'wood_top', side:'bed_side'}, transparent:true, hardness:0.4, tool:'axe' },
   21: { name:'door_wood',  tex:{all:'door_wood'}, transparent:true, hardness:1.0, tool:'axe' },
   22: { name:'stairs_stone', tex:{all:'stairs_stone'}, hardness:1.5, tool:'pickaxe' },
   23: { name:'stairs_wood',  tex:{all:'stairs_wood'}, hardness:1.0, tool:'axe' },
@@ -1638,7 +1653,7 @@ const ITEMS = {
 // resolved with one table where convenient (definitions, not the placeable list).
 const ALL_DEFS = Object.assign({}, BLOCKS, ITEMS);
 for(const id in ITEMS){ ITEMS[id].id = +id; }
-const BLOCK_IDS_SOLID_HOTBAR = [1,2,3,4,5,6,7,8,9,11,12,18,19,21,22,23,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,59,60,61,20,62]; // placeable in default hotbar/inventory (barrier + test_block kept last: creative-only marker blocks, not normal building blocks)
+const BLOCK_IDS_SOLID_HOTBAR = [1,2,3,4,5,6,7,8,9,11,12,18,19,21,22,23,150,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,59,60,61,20,62]; // placeable in default hotbar/inventory (barrier + test_block kept last: creative-only marker blocks, not normal building blocks)
 
 // Everything the creative palette offers: every placeable block (not air, not
 // the transient flowing-liquid levels), then every hand item, then the
@@ -1724,7 +1739,20 @@ const SHAPE = (function(){
     base.transparent = true; base.boxes = sb(0); base.facing = 0; base.dropId = baseId;
     for(let f=0; f<4; f++) ids.stairs[baseId+'_'+f] = f===0 ? baseId : hide(base, { facing:f, boxes:sb(f), texFrom:baseId, dropId:baseId });
   });
+  // bed: 2 cells, foot (blanket) + head (pillow); head sits in front of the foot along the facing.
+  const BED_H = 9/16, bedBoxes = [[0,0,0,1,BED_H,1]];
+  const bedBase = BLOCKS[150];
+  const bedHeadBase = Object.assign({}, bedBase, { tex:{top:'bed_top_head', bottom:'wood_top', side:'bed_side'} });
+  ids.bed = {};
+  for(let f=0; f<4; f++){
+    ids.bed['foot'+f] = f===0 ? 150 : hide(bedBase, { bedPart:'foot', facing:f, boxes:bedBoxes, texFrom:150, dropId:150 });
+    ids.bed['head'+f] = hide(bedHeadBase, { bedPart:'head', facing:f, boxes:bedBoxes, dropId:150 });
+  }
+  Object.assign(bedBase, { bedPart:'foot', facing:0, boxes:bedBoxes, dropId:150 });
+  const FACE_OFF = [[0,-1],[1,0],[0,1],[-1,0]]; // [dx,dz] for facing 0..3 (matches facingOf)
   return {
+    bed:(part,f)=> ids.bed[part+f],
+    bedOff:(f)=> FACE_OFF[f],
     door:(half,f,open)=> ids.door[half+f+(open?1:0)],
     stairs:(baseId,f)=> ids.stairs[baseId+'_'+f],
     facingOf:(dir)=> Math.abs(dir.x)>Math.abs(dir.z) ? (dir.x>0?1:3) : (dir.z>0?2:0),
@@ -3864,6 +3892,10 @@ const RECIPES = [
   // iron sword
   { pattern:[[113,0,0],[113,0,0],[100,0,0]], out:{id:112,count:1} },
   // glass -> not craftable here (needs furnace smelting, kept simple/omitted)
+  // bed: 3 wool over 3 planks
+  { pattern:[[31,31,31],[8,8,8],[0,0,0]], out:{id:150,count:1} },
+  // wool (no sheep yet): 4 sticks make 2 white wool
+  { pattern:[[100,100,0],[100,100,0],[0,0,0]], out:{id:31,count:2} },
   // wood door
   { pattern:[[8,8,0],[8,8,0],[8,8,0]], out:{id:21,count:3} },
   // stone stairs (simplified: 6 stone -> 4 stairs)
@@ -6104,6 +6136,15 @@ class Game{
         this.syncBlockChange(m.x,oy,m.z,0);
       }
     }
+    if(def && def.bedPart){ // a bed is two blocks: take the other half too (no second drop)
+      const [dx,dz] = SHAPE.bedOff(def.facing), sg = def.bedPart==='foot' ? 1 : -1;
+      const ox = m.x+dx*sg, oz = m.z+dz*sg, ob = BLOCKS[this.world.getBlock(ox,m.y,oz)];
+      if(ob && ob.bedPart && ob.bedPart!==def.bedPart && ob.facing===def.facing){
+        this.world.setBlock(ox,m.y,oz,0);
+        this.markChunkRebuildsAround(ox,m.y,oz);
+        this.syncBlockChange(ox,m.y,oz,0);
+      }
+    }
     if(m.id===41) this.removeTorchLight(m.x,m.y,m.z);
 
     // determine if the held tool actually qualifies to harvest a drop
@@ -6177,8 +6218,20 @@ class Game{
   }
   // 0 = not a shaped item, 1 = placed, -1 = refused (no room)
   _placeShaped(x,y,z,heldId){
-    if(heldId!==21 && heldId!==22 && heldId!==23) return 0;
+    if(heldId!==21 && heldId!==22 && heldId!==23 && heldId!==150) return 0;
     const f = SHAPE.facingOf(this.getLookRay().dir);
+    if(heldId===150){
+      const [dx,dz] = SHAPE.bedOff(f), hx = x+dx, hz = z+dz;
+      const free = (bx,by,bz)=>{ const b = this.world.getBlock(bx,by,bz); return b===0 || (BLOCKS[b] && BLOCKS[b].liquid); };
+      if(!free(x,y,z) || !free(hx,y,hz)) return -1;
+      const solidBelow = (bx,bz)=>{ const b = BLOCKS[this.world.getBlock(bx,y-1,bz)]; return !!(b && b.solid && !b.liquid); };
+      if(!solidBelow(x,z) || !solidBelow(hx,hz)) return -1;
+      const feet = this.pos.clone().floor();
+      if((feet.x===x && feet.z===z) || (feet.x===hx && feet.z===hz)) return -1;
+      this._setShaped(x,y,z, SHAPE.bed('foot',f));
+      this._setShaped(hx,y,hz, SHAPE.bed('head',f));
+      return 1;
+    }
     if(heldId===21){
       const above = this.world.getBlock(x,y+1,z);
       if(above!==0 && !BLOCKS[above].liquid) return -1;
@@ -6188,6 +6241,18 @@ class Game{
       this._setShaped(x,y+1,z, SHAPE.door('upper',f,false));
     } else this._setShaped(x,y,z, SHAPE.stairs(heldId,f));
     return 1;
+  }
+  _useBed(x,y,z){
+    this.bedPos = {x,y,z};
+    this.respawnPos.set(x+0.5, y+0.6, z+0.5);
+    const t = this.dayTime;
+    if(t < 0.25 || t > 0.75){ // night: skip to morning
+      this.dayTime = 0.27;
+      this.isNight = false;
+      this.addChatLine('System', 'You slept through the night. Spawn point set.', false);
+    } else {
+      this.addChatLine('System', 'Spawn point set. You can only sleep at night.', false);
+    }
   }
   _toggleDoor(x,y,z){
     const b = BLOCKS[this.world.getBlock(x,y,z)];
@@ -6203,6 +6268,7 @@ class Game{
     if(!hit) return;
     if(hit.id===18){ this.toggleCraftingPanel(true); return; } // crafting_table: interact instead of place
     if(hit.id===19){ this.toggleFurnacePanel(hit.x,hit.y,hit.z); return; } // furnace: interact instead of place
+    if(BLOCKS[hit.id].bedPart){ this._useBed(hit.x,hit.y,hit.z); return; } // bed: sleep / set spawn
     if(BLOCKS[hit.id].doorHalf){ this._toggleDoor(hit.x,hit.y,hit.z); this._swingOnce(); return; } // door: open/close
     const px = hit.x+hit.normal[0], py = hit.y+hit.normal[1], pz = hit.z+hit.normal[2];
     // don't place inside player
@@ -8106,6 +8172,12 @@ class Game{
     this.vel.set(0,0,0);
     this.pos.copy(this.respawnPos);
     this.pos.y += 3;
+    const bp = this.bedPos;
+    if(bp){
+      const bb = BLOCKS[this.world.getBlock(bp.x,bp.y,bp.z)];
+      if(bb && bb.bedPart) this.pos.set(bp.x+0.5, bp.y+1.1, bp.z+0.5);
+      else { this.bedPos = null; this.addChatLine('System', 'Your bed was missing or obstructed.', false); }
+    }
     this.updateHealthUI();
   }
 
