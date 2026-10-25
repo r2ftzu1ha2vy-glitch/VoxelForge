@@ -1755,17 +1755,18 @@ const SHAPE = (function(){
     return id;
   };
   // doors: base id 21 = lower, closed, facing 0
-  const doorBoxes = (f, open)=> [ rot(open ? [0,0,0,TH,1,1] : [0,0,1-TH,1,1,1], f) ];
+  // hinge 0 = hinge on the left (panel swings to x=0 side), hinge 1 = hinge on the right (mirrored)
+  const doorBoxes = (f, open, hinge)=> [ rot(open ? (hinge ? [1-TH,0,0,1,1,1] : [0,0,0,TH,1,1]) : [0,0,1-TH,1,1,1], f) ];
   const lowerBase = BLOCKS[21];
   const upperBase = Object.assign({}, lowerBase, { tex:{all:'door_wood_top'} });
   let doorTopId = 0; // first hidden upper-half id: every upper variant shares its art (and its 21_top.png)
   for(let f=0; f<4; f++) for(let o=0; o<2; o++){
-    const meta = { facing:f, open:!!o, boxes:doorBoxes(f,o), solid:true, transparent:true, dropId:21 };
+    const meta = { facing:f, open:!!o, hinge:0, boxes:doorBoxes(f,o,0), solid:true, transparent:true, dropId:21 };
     ids.door['lower'+f+o] = (f===0 && o===0) ? 21 : hide(lowerBase, Object.assign({ doorHalf:'lower', texFrom:21 }, meta));
     ids.door['upper'+f+o] = hide(upperBase, Object.assign({ doorHalf:'upper' }, doorTopId ? { texFrom:doorTopId } : {}, meta));
     if(!doorTopId) doorTopId = ids.door['upper'+f+o];
   }
-  Object.assign(lowerBase, { doorHalf:'lower', facing:0, open:false, boxes:doorBoxes(0,false), dropId:21 });
+  Object.assign(lowerBase, { doorHalf:'lower', facing:0, open:false, hinge:0, boxes:doorBoxes(0,false,0), dropId:21 });
   // stairs: base ids 22 (stone) + 23 (wood) = facing 0
   [22,23].forEach(baseId=>{
     const base = BLOCKS[baseId];
@@ -1783,12 +1784,20 @@ const SHAPE = (function(){
     ids.bed['head'+f] = hide(bedHeadBase, { bedPart:'head', facing:f, boxes:bedBoxes, dropId:150 });
   }
   Object.assign(bedBase, { bedPart:'foot', facing:0, boxes:bedBoxes, dropId:150 });
+  // right-hinged door variants. They live in a free id range (121+) so ids of everything
+  // that already exists (and therefore saved worlds) stay exactly as they were.
+  next = 121;
+  for(let f=0; f<4; f++) for(let o=0; o<2; o++){
+    const meta = { facing:f, open:!!o, hinge:1, flipU:true, boxes:doorBoxes(f,o,1), solid:true, transparent:true, dropId:21 };
+    ids.door['lower'+f+o+'R'] = hide(lowerBase, Object.assign({ doorHalf:'lower', texFrom:21 }, meta));
+    ids.door['upper'+f+o+'R'] = hide(upperBase, Object.assign({ doorHalf:'upper', texFrom:doorTopId }, meta));
+  }
   const FACE_OFF = [[0,-1],[1,0],[0,1],[-1,0]]; // [dx,dz] for facing 0..3 (matches facingOf)
   return {
     doorTopId,
     bed:(part,f)=> ids.bed[part+f],
     bedOff:(f)=> FACE_OFF[f],
-    door:(half,f,open)=> ids.door[half+f+(open?1:0)],
+    door:(half,f,open,hinge)=> ids.door[half+f+(open?1:0)+(hinge?'R':'')],
     stairs:(baseId,f)=> ids.stairs[baseId+'_'+f],
     facingOf:(dir)=> Math.abs(dir.x)>Math.abs(dir.z) ? (dir.x>0?1:3) : (dir.z>0?2:0),
   };
@@ -2103,7 +2112,7 @@ function buildMesherTables(){
     lightRadius: TORCH_LIGHT_RADIUS,
     exists: new Uint8Array(N), transparent: new Uint8Array(N), liquid: new Uint8Array(N),
     family: new Uint8Array(N), isSource: new Uint8Array(N), invisible: new Uint8Array(N),
-    flow: new Float32Array(N), boxes: new Array(N).fill(null),
+    flow: new Float32Array(N), boxes: new Array(N).fill(null), flipU: new Uint8Array(N),
     faceRect: new Float32Array(N*3*4), faceLayer: new Uint8Array(N*3), faceAlpha: new Float32Array(N*3),
     faces: FACE_DEFS.map(fd => ({
       nx: fd.normal[0], ny: fd.normal[1], nz: fd.normal[2],
@@ -2115,6 +2124,7 @@ function buildMesherTables(){
     const id = +idStr, def = BLOCKS[idStr];
     T.exists[id] = 1;
     T.boxes[id] = def.boxes || null;
+    T.flipU[id] = def.flipU ? 1 : 0;
     T.transparent[id] = def.transparent ? 1 : 0;
     T.liquid[id] = def.liquid ? 1 : 0;
     T.family[id] = def.liquid ? familyId(def) : 0;
@@ -2143,7 +2153,7 @@ function vfMeshChunk(job, T){
   const L = lights ? Math.floor(lights.length/3) : 0;
   const LR = T.lightRadius, LR2 = LR*LR;
   const trans = T.transparent, liq = T.liquid, fam = T.family, flow = T.flow, isSrc = T.isSource, inv = T.invisible;
-  const fr = T.faceRect, fl = T.faceLayer, fa = T.faceAlpha, faces = T.faces, boxes = T.boxes;
+  const fr = T.faceRect, fl = T.faceLayer, fa = T.faceAlpha, faces = T.faces, boxes = T.boxes, flipU = T.flipU;
 
   const pos = [[],[],[]], nor = [[],[],[]], uvs = [[],[],[]], col = [[],[],[]], idx = [[],[],[]];
   const vc = [0,0,0];
@@ -2199,7 +2209,9 @@ function vfMeshChunk(job, T){
               const o = id*3 + fd.kind, li = fl[o];
               const P = pos[li], N = nor[li], U = uvs[li], C = col[li], I = idx[li];
               const start = vc[li];
-              const u0 = fr[o*4], v0 = fr[o*4+1], u1 = fr[o*4+2], v1 = fr[o*4+3];
+              let u0 = fr[o*4], u1 = fr[o*4+2];
+              const v0 = fr[o*4+1], v1 = fr[o*4+3];
+              if(flipU[id]){ const tu = u0; u0 = u1; u1 = tu; } // mirrored (right-hinged) door art
               const cn = fd.corners;
               let ua = 0, va = 0;
               for(let a=0;a<3;a++){ if(cn[9+a] !== cn[a]) ua = a; if(cn[3+a] !== cn[a]) va = a; }
@@ -3840,6 +3852,65 @@ function buildPlayerModel(palette, skinCanvas){
   return { group, parts, canvas };
 }
 
+// ---- Mob models: every mob is a stack of boxes textured from a 64x64 "tile map" PNG ----------
+// Drop your own art in  assets/mobs/<name>.png  (cow.png, pig.png, zombie.png). Missing files fall
+// back to the built-in art below. Layout per box is the same unfolded strip the player skin uses
+// (see faceRects): top | bottom on the first row, right | front | left | back under it.
+// Units below are skin pixels; 1 px = P blocks. Front of every mob is -Z.
+const MOB_TEX_DIR = 'assets/mobs/';
+const MOB_DEFAULT_PNG = {"cow": "data:image/png;base64,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", "pig": "data:image/png;base64,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", "zombie": "data:image/png;base64,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"};
+const MOB_DEFS = (function(){
+  const leg = (n,x,z,h,uv)=>({ n, s:[4,h,4], uv, pv:[x,h,z], off:[0,-h/2,0] });
+  const L = LIMB_DEFS;
+  const limb = (n,pv,off)=>({ n, s:[L[n].w,L[n].h,L[n].d], uv:L[n].uv, ov:L[n].ov, pv, off });
+  return {
+    cow: { P:1/16, parts:[
+      { n:'body',  s:[12,10,18], uv:[0,0],  pv:[0,15,0],        off:[0,0,0] },
+      { n:'head',  s:[8,8,6],    uv:[0,32], pv:[0,19,-12],      off:[0,0,0] },
+      { n:'hornL', s:[2,3,2],    uv:[48,32],pv:[5,23.5,-11],    off:[0,0,0] },
+      { n:'hornR', s:[2,3,2],    uv:[48,32],pv:[-5,23.5,-11],   off:[0,0,0] },
+      leg('leg0',-4,-6,10,[32,32]), leg('leg1',4,-6,10,[32,32]),
+      leg('leg2',-4, 6,10,[32,32]), leg('leg3',4, 6,10,[32,32]),
+    ]},
+    pig: { P:1/16, parts:[
+      { n:'body',  s:[10,8,16],  uv:[0,0],  pv:[0,10,0],        off:[0,0,0] },
+      { n:'head',  s:[8,8,8],    uv:[0,28], pv:[0,12,-12],      off:[0,0,0] },
+      { n:'snout', s:[4,3,1],    uv:[32,28],pv:[0,10.5,-16.5],  off:[0,0,0] },
+      leg('leg0',-3,-5,6,[0,46]), leg('leg1',3,-5,6,[0,46]),
+      leg('leg2',-3, 5,6,[0,46]), leg('leg3',3, 5,6,[0,46]),
+    ]},
+    zombie: { P:1.8/32, parts:[
+      limb('legR',[ 2,12,0],[0,-6,0]), limb('legL',[-2,12,0],[0,-6,0]),
+      limb('body',[0,18,0],[0,0,0]),
+      limb('armR',[ 6,24,0],[0,-6,0]), limb('armL',[-6,24,0],[0,-6,0]),
+      limb('head',[0,24,0],[0,4,0]),
+    ]},
+  };
+})();
+const MOB_TEX = {}; // kind -> { tex, mats:[...], custom }
+function getMobTex(kind){
+  if(MOB_TEX[kind]) return MOB_TEX[kind];
+  const mk = (src)=>{
+    const t = new THREE.Texture(src);
+    t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestFilter;
+    t.generateMipmaps = false; t.needsUpdate = true; return t;
+  };
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  c.getContext('2d').fillStyle = '#8a8a8a'; c.getContext('2d').fillRect(0,0,64,64); // shown for a split second
+  const rec = MOB_TEX[kind] = { tex: mk(c), mats: [], custom: false };
+  const apply = (img)=>{
+    const cv = document.createElement('canvas');
+    cv.width = img.naturalWidth || img.width; cv.height = img.naturalHeight || img.height;
+    cv.getContext('2d').drawImage(img, 0, 0);
+    const t = mk(cv), old = rec.tex; rec.tex = t;
+    rec.mats.forEach(m=>{ m.map = t; m.needsUpdate = true; });
+    old.dispose();
+  };
+  const dflt = new Image(); dflt.onload = ()=>{ if(!rec.custom) apply(dflt); }; dflt.src = MOB_DEFAULT_PNG[kind];
+  const mine = new Image(); mine.onload = ()=>{ rec.custom = true; apply(mine); }; mine.onerror = ()=>{}; mine.src = MOB_TEX_DIR + kind + '.png';
+  return rec;
+}
+
 // Restore a custom skin saved by Skin Studio.
 (function loadStoredSkin(){
   try{
@@ -4150,6 +4221,7 @@ function matchShaped(grid, pattern){
 const CHAT_COMMANDS = [
   { name:'/help',    desc:'List commands' },
   { name:'/locate',  desc:'Find the nearest biome, e.g. /locate jungle' },
+  { name:'/slot',    desc:'/slot 3 diamond_sword - put any block/item in hotbar slot 3 (/slot 3 empty clears)' },
   { name:'/pos',     desc:'Show your coordinates' },
   { name:'/clear',   desc:'Clear the chat window' },
 ];
@@ -4743,6 +4815,7 @@ class Game{
       CHAT_COMMANDS.forEach(c=> this.addChatLine('System', `${c.name} - ${c.desc}`));
       return true;
     }
+    if(/^\/slot(\s|$)/.test(low)){ this._cmdSlot(t); return true; }
     if(low === '/clear'){ document.getElementById('chatBox').innerHTML = ''; return true; }
     if(low === '/pos'){
       this.addChatLine('System', `You are at X ${this.pos.x.toFixed(1)}  Y ${this.pos.y.toFixed(1)}  Z ${this.pos.z.toFixed(1)}`);
@@ -5204,10 +5277,7 @@ class Game{
       if(!this._hoverInvId || !/^Digit[1-9]$/.test(e.code)) return;
       const n = parseInt(e.code.slice(5))-1, id = this._hoverInvId;
       if(n >= this.hotbar.length) return;
-      const old = this.hotbar.indexOf(id);
-      if(old!==-1 && old!==n) this.hotbar[old] = this.hotbar[n];
-      this.hotbar[n] = id;
-      this.updateHotbarUI();
+      this._assignHotbar(n, id);
     }, true);
   }
 
@@ -6028,6 +6098,12 @@ class Game{
       }
     }
     grid.classList.add('creative');
+    if(!document.getElementById('invSlotPicker')){
+      const sp = document.createElement('div'); sp.id = 'invSlotPicker';
+      sp.style.cssText = 'display:flex;gap:4px;align-items:center;justify-content:center;margin:6px 0 10px;flex-wrap:wrap;';
+      grid.parentNode.insertBefore(sp, grid);
+    }
+    this._refreshSlotPicker();
     const norm = (t)=> String(t||'').toLowerCase().replace(/[_\-]+/g,' ').trim();
     const terms = norm(search ? search.value : '').split(/\s+/).filter(Boolean);
     const matches = CREATIVE_IDS.filter(id=>{
@@ -6037,8 +6113,8 @@ class Game{
       return terms.every(t=> hay.includes(t));
     });
     if(invHint) invHint.textContent = terms.length
-      ? matches.length + ' result' + (matches.length===1?'':'s') + ' — click one (or press Enter for the first) to put it in your hotbar.'
-      : 'Click any block or item to put it in your hotbar. Type above to search.';
+      ? matches.length + ' result' + (matches.length===1?'':'s') + ' — click one (or press Enter for the first) to put it in the slot picked above.'
+      : 'Pick a slot above, then click an item. Or hover an item and press 1-9, or drag it onto a slot. Type to search.';
     if(!matches.length){
       const none = document.createElement('div');
       none.className = 'invEmpty';
@@ -6055,16 +6131,98 @@ class Game{
       img.src = iconDataUrl(id);
       slot.appendChild(img);
       attachTooltip(slot, b.creativeOnly ? b.name+' (creative only)' : b.name);
-      slot.onclick = ()=>{
-        this.selectedBlock = id;
-        const have = this.hotbar.indexOf(id);
-        if(have !== -1){ this.selectedSlot = have; }
-        else { this.hotbar[this.selectedSlot] = id; }   // replace the slot you're holding
-        this.inventoryCounts[id]=99;
-        this.updateHotbarUI();
-      };
+      slot.onclick = ()=>{ this._assignHotbar(this.selectedSlot, id); };   // fills the slot you picked above
+      slot.onmouseenter = ()=>{ this._hoverInvId = id; };                  // hover + 1-9 = that slot
+      slot.onmouseleave = ()=>{ if(this._hoverInvId===id) this._hoverInvId = null; };
+      slot.draggable = true;                                                // or drag onto any slot
+      slot.ondragstart = (e)=>{ e.dataTransfer.setData('text/plain', 'vfitem:'+id); e.dataTransfer.effectAllowed = 'copy'; };
       grid.appendChild(slot);
     });
+  }
+
+  // Put `id` (0 = empty) into hotbar slot n. If the item already sits in another slot the two swap,
+  // so nothing is duplicated or lost. Works for blocks and items alike.
+  _assignHotbar(n, id){
+    if(n < 0 || n >= this.hotbar.length) return;
+    const old = id ? this.hotbar.indexOf(id) : -1;
+    if(old !== -1 && old !== n) this.hotbar[old] = this.hotbar[n];
+    this.hotbar[n] = id;
+    if(id && GAME_MODE==='creative') this.inventoryCounts[id] = Math.max(this.inventoryCounts[id]||0, 99);
+    if(n === this.selectedSlot) this.selectedBlock = id;
+    else if(old !== -1 && old === this.selectedSlot) this.selectedBlock = this.hotbar[old];
+    this.updateHotbarUI();
+  }
+  _wireSlotDrop(el, idx){
+    el.ondragover = (e)=>{ if(GAME_MODE==='creative'){ e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } };
+    el.ondrop = (e)=>{
+      e.preventDefault();
+      const t = (e.dataTransfer && e.dataTransfer.getData('text/plain')) || '';
+      if(!t.startsWith('vfitem:')) return;
+      const id = +t.slice(7);
+      if(ALL_DEFS[id]) this._assignHotbar(idx, id);
+    };
+  }
+  // numbered copy of the hotbar shown inside the creative inventory: click = choose the target slot,
+  // drop an item on it = put it there
+  _refreshSlotPicker(){
+    const el = document.getElementById('invSlotPicker');
+    if(!el) return;
+    el.style.display = GAME_MODE==='creative' ? 'flex' : 'none';
+    el.innerHTML = '';
+    const lab = document.createElement('span');
+    lab.textContent = 'Slot:'; lab.style.cssText = 'font-size:12px;opacity:.8;margin-right:2px;';
+    el.appendChild(lab);
+    this.hotbar.forEach((id, i)=>{
+      const b = document.createElement('div');
+      b.style.cssText = 'position:relative;width:34px;height:34px;box-sizing:border-box;border-radius:5px;cursor:pointer;' +
+        'background:#00000066;border:2px solid ' + (i===this.selectedSlot ? '#ffb347' : '#ffffff33') + ';display:flex;align-items:center;justify-content:center;';
+      if(id){ const img = document.createElement('img'); img.src = iconDataUrl(id); img.style.cssText = 'width:24px;height:24px;image-rendering:pixelated;pointer-events:none;'; b.appendChild(img); }
+      const num = document.createElement('div');
+      num.textContent = i+1; num.style.cssText = 'position:absolute;left:2px;top:0;font-size:9px;opacity:.75;pointer-events:none;';
+      b.appendChild(num);
+      const def = ALL_DEFS[id]; if(def) b.title = def.name;
+      b.onclick = ()=>{ this.selectedSlot = i; this.selectedBlock = this.hotbar[i]; this.updateHotbarUI(); };
+      this._wireSlotDrop(b, i);
+      el.appendChild(b);
+    });
+  }
+  // name / partial name / numeric id -> list of matching block+item ids
+  _findItemIds(raw){
+    if(!CREATIVE_IDS) CREATIVE_IDS = buildCreativeIdList();
+    const q = String(raw).toLowerCase().trim();
+    if(/^\d+$/.test(q)){ const id = +q; return CREATIVE_IDS.includes(id) ? [id] : []; }
+    const toks = q.split(/[\s_\-]+/).filter(Boolean);
+    if(!toks.length) return [];
+    const qj = toks.join('_');
+    const nm = (id)=> String(ALL_DEFS[id].name).toLowerCase().replace(/[\s\-]+/g,'_');
+    const exact = CREATIVE_IDS.filter(id=> nm(id)===qj);
+    if(exact.length) return exact;
+    const pre = CREATIVE_IDS.filter(id=> nm(id).startsWith(qj));
+    if(pre.length === 1) return pre;
+    const subs = CREATIVE_IDS.filter(id=> toks.every(t=> nm(id).includes(t)));
+    return subs.length ? subs : pre;
+  }
+  // /slot <1-9> <name|id|empty>
+  _cmdSlot(t){
+    const sys = (m)=> this.addChatLine('System', m, false);
+    const parts = t.trim().split(/\s+/).slice(1);
+    const n = parseInt(parts[0], 10), len = this.hotbar.length;
+    if(!(n >= 1 && n <= len) || parts.length < 2){
+      sys(`Usage: /slot <1-${len}> <block or item name | id | empty>   e.g. /slot 3 diamond_sword`);
+      return;
+    }
+    const q = parts.slice(1).join(' ');
+    if(/^(empty|clear|none|air|0)$/i.test(q)){ this._assignHotbar(n-1, 0); sys(`Slot ${n} cleared.`); return; }
+    const res = this._findItemIds(q);
+    if(res.length !== 1){
+      sys(res.length ? `Which one? ${res.slice(0,8).map(id=> ALL_DEFS[id].name).join(', ')}${res.length>8 ? ', …' : ''}`
+                     : `No block or item matches "${q}".`);
+      return;
+    }
+    const id = res[0];
+    if(GAME_MODE!=='creative' && (this.inventoryCounts[id]||0) <= 0){ sys('In survival you can only slot items you already have.'); return; }
+    this._assignHotbar(n-1, id);
+    sys(`Slot ${n}: ${ALL_DEFS[id].name}`);
   }
 
   updateHotbarUI(){
@@ -6078,11 +6236,13 @@ class Game{
       });
     }
     this._updateHeldItem();
+    this._refreshSlotPicker();
     const bar = document.getElementById('hotbar');
     bar.innerHTML='';
     this.hotbar.forEach((id,idx)=>{
       const slot = document.createElement('div');
       slot.className = 'hotslot' + (idx===this.selectedSlot?' active':'');
+      this._wireSlotDrop(slot, idx);
       if(id===0){
         slot.onclick = ()=>{ this.selectedSlot = idx; this.selectedBlock = id; this.updateHotbarUI(); };
         bar.appendChild(slot);
@@ -6395,6 +6555,18 @@ class Game{
     this.markChunkRebuildsAround(x,y,z);
     this.syncBlockChange(x,y,z,id);
   }
+  // Would this block (its real collision boxes) intersect the player's body? Used so a block
+  // can never be placed on top of / beside the player in a way that traps them.
+  _placeOverlapsPlayer(x,y,z,id){
+    const b = BLOCKS[id];
+    if(!b || !b.solid || b.liquid) return false;
+    const w = this.width/2, p = this.pos, top = p.y + this.height, e = 0.001;
+    const boxes = b.boxes || [[0,0,0,1,1,1]];
+    return boxes.some(q=>
+      p.x+w > x+q[0]+e && p.x-w < x+q[3]-e &&
+      top   > y+q[1]+e && p.y   < y+q[4]-e &&
+      p.z+w > z+q[2]+e && p.z-w < z+q[5]-e);
+  }
   // 0 = not a shaped item, 1 = placed, -1 = refused (no room)
   _placeShaped(x,y,z,heldId){
     if(heldId!==21 && heldId!==22 && heldId!==23 && heldId!==150) return 0;
@@ -6407,6 +6579,7 @@ class Game{
       if(!solidBelow(x,z) || !solidBelow(hx,hz)) return -1;
       const feet = this.pos.clone().floor();
       if((feet.x===x && feet.z===z) || (feet.x===hx && feet.z===hz)) return -1;
+      if(this._placeOverlapsPlayer(x,y,z,SHAPE.bed('foot',f)) || this._placeOverlapsPlayer(hx,y,hz,SHAPE.bed('head',f))) return -1;
       this._setShaped(x,y,z, SHAPE.bed('foot',f));
       this._setShaped(hx,y,hz, SHAPE.bed('head',f));
       return 1;
@@ -6416,9 +6589,36 @@ class Game{
       if(above!==0 && !BLOCKS[above].liquid) return -1;
       const feet = this.pos.clone().floor();
       if(x===feet.x && z===feet.z && (y+1===feet.y || y+1===feet.y+1)) return -1;
-      this._setShaped(x,y,z, SHAPE.door('lower',f,false));
-      this._setShaped(x,y+1,z, SHAPE.door('upper',f,false));
-    } else this._setShaped(x,y,z, SHAPE.stairs(heldId,f));
+
+      // --- hinge side (Minecraft rule): a door next to another door gets the opposite hinge,
+      // so the pair becomes a double door whose halves swing apart.
+      const D = SHAPE.bedOff(f), L = [D[1], -D[0]]; // L = the player's left, as a [dx,dz]
+      const isDoorAt = (bx,bz)=>{ const b = BLOCKS[this.world.getBlock(bx,y,bz)]; return !!(b && b.doorHalf==='lower' && b.facing===f); };
+      const leftDoor = isDoorAt(x+L[0], z+L[1]), rightDoor = isDoorAt(x-L[0], z-L[1]);
+      const hinge = (leftDoor && !rightDoor) ? 1 : 0;
+
+      if(this._placeOverlapsPlayer(x,y,z,SHAPE.door('lower',f,false,hinge)) ||
+         this._placeOverlapsPlayer(x,y+1,z,SHAPE.door('upper',f,false,hinge))) return -1;
+      this._setShaped(x,y,z, SHAPE.door('lower',f,false,hinge));
+      this._setShaped(x,y+1,z, SHAPE.door('upper',f,false,hinge));
+
+      // flip the neighbour's hinge too (unless it already belongs to another pair)
+      const rehinge = (bx,bz,hg)=>{
+        const lo = BLOCKS[this.world.getBlock(bx,y,bz)], up = BLOCKS[this.world.getBlock(bx,y+1,bz)];
+        if(!lo || !lo.doorHalf || lo.hinge===hg) return;
+        const loId = SHAPE.door('lower',f,lo.open,hg);
+        const upId = (up && up.doorHalf==='upper') ? SHAPE.door('upper',f,up.open,hg) : 0;
+        if(this._placeOverlapsPlayer(bx,y,bz,loId) || (upId && this._placeOverlapsPlayer(bx,y+1,bz,upId))) return;
+        this._setShaped(bx,y,bz, loId);
+        if(upId) this._setShaped(bx,y+1,bz, upId);
+      };
+      if(leftDoor && !rightDoor && !isDoorAt(x+2*L[0], z+2*L[1])) rehinge(x+L[0], z+L[1], 0);
+      if(rightDoor && !leftDoor && !isDoorAt(x-2*L[0], z-2*L[1])) rehinge(x-L[0], z-L[1], 1);
+    } else {
+      const sid = SHAPE.stairs(heldId,f);
+      if(this._placeOverlapsPlayer(x,y,z,sid)) return -1;
+      this._setShaped(x,y,z, sid);
+    }
     return 1;
   }
   _useBed(x,y,z){
@@ -6438,9 +6638,14 @@ class Game{
     const oy = b.doorHalf==='lower' ? y+1 : y-1;
     const o = BLOCKS[this.world.getBlock(x,oy,z)];
     const open = !b.open;
+    if(!open){ // never swing a door shut on top of the player
+      const y0 = b.doorHalf==='lower' ? y : y-1;
+      if(this._placeOverlapsPlayer(x,y0,z,SHAPE.door('lower',b.facing,false,b.hinge)) ||
+         this._placeOverlapsPlayer(x,y0+1,z,SHAPE.door('upper',b.facing,false,b.hinge))) return;
+    }
     playSfxUrl(open ? DOOR_OPEN_SOUND_URL : DOOR_CLOSE_SOUND_URL);
-    this._setShaped(x,y,z, SHAPE.door(b.doorHalf,b.facing,open));
-    if(o && o.doorHalf && o.doorHalf!==b.doorHalf) this._setShaped(x,oy,z, SHAPE.door(o.doorHalf,o.facing,open));
+    this._setShaped(x,y,z, SHAPE.door(b.doorHalf,b.facing,open,b.hinge));
+    if(o && o.doorHalf && o.doorHalf!==b.doorHalf) this._setShaped(x,oy,z, SHAPE.door(o.doorHalf,o.facing,open,o.hinge));
   }
 
   placeBlock(){
@@ -6462,6 +6667,10 @@ class Game{
     if(GAME_MODE!=='creative'){
       if((this.inventoryCounts[heldId]||0)<=0) return;
     }
+    const isShapedItem = heldId===21 || heldId===22 || heldId===23 || heldId===150;
+    // the feet/head-cell check above only covers the cell the player's centre is in; the body is
+    // 0.6 wide, so also refuse any solid block that touches the player's actual hitbox
+    if(!isShapedItem && this._placeOverlapsPlayer(px,py,pz,heldId)) return;
     const shaped = this._placeShaped(px,py,pz,heldId);
     if(shaped<0) return;
     if(shaped===0){
@@ -6509,84 +6718,99 @@ class Game{
      despawn once they drift far outside the loaded render distance so the mob
      list doesn't grow forever as the player explores. */
   buildMobModel(kind){
+    const def = MOB_DEFS[kind] || MOB_DEFS.zombie;
+    const rec = getMobTex(kind);
+    const base  = new THREE.MeshLambertMaterial({ map: rec.tex });
+    const layer = new THREE.MeshLambertMaterial({ map: rec.tex, transparent:true, alphaTest:0.4 });
+    base.userData.mobKind = layer.userData.mobKind = kind;
+    rec.mats.push(base, layer);
     const group = new THREE.Group();
-    function box(w,h,d,color){
-      const geo = new THREE.BoxGeometry(w,h,d);
-      const mat = new THREE.MeshLambertMaterial({ color });
-      return new THREE.Mesh(geo, mat);
-    }
+    const model = new THREE.Group(); model.scale.setScalar(def.P); group.add(model);
     const parts = {};
-    if(kind==='cow' || kind==='pig'){
-      const bodyColor = kind==='cow' ? 0xe8e0d0 : 0xe8a0a8;
-      const spotColor = kind==='cow' ? 0x3a2a20 : 0xd88090;
-      const body = box(0.55,0.5,0.9, bodyColor);
-      body.position.set(0,0.7,0);
-      const spot = box(0.3,0.2,0.4, spotColor);
-      spot.position.set(0.1,0.85,0.15);
-      const head = box(0.35,0.32,0.32, bodyColor);
-      head.position.set(0,0.72,0.55);
-      const legGeo = ()=>box(0.15,0.4,0.15, bodyColor);
-      const l1=legGeo(); l1.position.set(-0.18,0.2,0.3);
-      const l2=legGeo(); l2.position.set(0.18,0.2,0.3);
-      const l3=legGeo(); l3.position.set(-0.18,0.2,-0.3);
-      const l4=legGeo(); l4.position.set(0.18,0.2,-0.3);
-      group.add(body,spot,head,l1,l2,l3,l4);
-      Object.assign(parts,{body,head,legs:[l1,l2,l3,l4]});
-    } else { // hostile (zombie-ish)
-      const skin = 0x4a8a4a;
-      const shirt = 0x2a5a7a;
-      const head = box(0.45,0.45,0.45, skin);
-      head.position.set(0,1.55,0);
-      const body = box(0.5,0.75,0.3, shirt);
-      body.position.set(0,1.05,0);
-      const armL = box(0.2,0.7,0.2, skin);
-      armL.position.set(-0.35,1.05,0);
-      const armR = box(0.2,0.7,0.2, skin);
-      armR.position.set(0.35,1.05,0);
-      const legL = box(0.2,0.7,0.2, 0x2a3a5a);
-      legL.position.set(-0.13,0.35,0);
-      const legR = box(0.2,0.7,0.2, 0x2a3a5a);
-      legR.position.set(0.13,0.35,0);
-      group.add(head,body,armL,armR,legL,legR);
-      Object.assign(parts,{head,body,armL,armR,legL,legR});
+    for(const p of def.parts){
+      const [w,h,d] = p.s, dims = { w, h, d };
+      const g = skinBox(w, h, d, faceRects(dims, p.uv), 0);
+      g.translate(p.off[0], p.off[1], p.off[2]);
+      const mesh = new THREE.Mesh(g, base);
+      mesh.position.set(p.pv[0], p.pv[1], p.pv[2]);
+      if(p.ov){ // optional second layer (hat / jacket style), drawn slightly bigger
+        const lg = skinBox(w, h, d, faceRects(dims, p.ov), 0.5);
+        lg.translate(p.off[0], p.off[1], p.off[2]);
+        mesh.add(new THREE.Mesh(lg, layer));
+      }
+      model.add(mesh); parts[p.n] = mesh;
     }
+    if(parts.leg0) parts.legs = [parts.leg0, parts.leg1, parts.leg2, parts.leg3];
     return { group, parts };
   }
+  _disposeMob(m){
+    this.scene.remove(m.group);
+    const seen = new Set();
+    m.group.traverse(o=>{
+      if(o.geometry) o.geometry.dispose();
+      const mat = o.material;
+      if(mat && !seen.has(mat)){
+        seen.add(mat);
+        const rec = MOB_TEX[mat.userData.mobKind];
+        if(rec){ const i = rec.mats.indexOf(mat); if(i!==-1) rec.mats.splice(i,1); }
+        mat.dispose();
+      }
+    });
+  }
+  // mobs face -Z, so a heading that points at (dx,dz) is atan2(-dx,-dz)
+  _yawTo(dx,dz){ return Math.atan2(-dx,-dz); }
 
-  trySpawnMobs(){
-    // Passive animals: keep a small population loosely near the player, on
-    // grass, in daylight-agnostic fashion (they just don't like to spawn at
-    // night, matching classic survival-game rules).
-    const maxAnimals = 8, maxHostiles = 6;
-    const px = Math.floor(this.pos.x), pz = Math.floor(this.pos.z);
-    if(this.animals.length < maxAnimals && !this.isNight && Math.random()<0.02){
-      const ax = px + Math.floor((Math.random()-0.5)*40);
-      const az = pz + Math.floor((Math.random()-0.5)*40);
-      const biome = this.world.biomeAt(ax,az);
-      if(biome==='plains' || biome==='forest'){
-        const ay = this.world.heightAt(ax,az)+1;
-        if(this.isSolidAt(ax,ay-1,az) && !this.isSolidAt(ax,ay,az)){
-          this.spawnAnimal(ax+0.5, ay, az+0.5);
+  // Runs a few spawn attempts every ~0.35 s (frame-rate independent). Animals appear in herds on
+  // grass in daylight; zombies appear in the dark at night. Both pick spots in a ring around the
+  // player (inside the loaded area) so there is always something to find.
+  trySpawnMobs(delta=0.016){
+    this._mobSpawnT = (this._mobSpawnT||0) - delta;
+    if(this._mobSpawnT > 0) return;
+    this._mobSpawnT = 0.35;
+    const maxAnimals = 18, maxHostiles = 12;
+    const px = this.pos.x, pz = this.pos.z;
+    const maxR = Math.max(18, Math.min(48, RENDER_DISTANCE*CHUNK_SIZE - 6));
+    const ring = (minR)=>{
+      const a = Math.random()*Math.PI*2, r = minR + Math.random()*(maxR-minR);
+      return [Math.floor(px + Math.cos(a)*r), Math.floor(pz + Math.sin(a)*r)];
+    };
+    const roomAt = (x,gy,z)=> !this.isSolidAt(x+0.5,gy+1,z+0.5) && !this.isSolidAt(x+0.5,gy+2,z+0.5);
+
+    if(!this.isNight && this.animals.length < maxAnimals){
+      for(let tries=0; tries<8; tries++){
+        const [ax,az] = ring(12);
+        const biome = this.world.biomeAt(ax,az);
+        if(biome!=='plains' && biome!=='forest') continue;
+        const gy = this.world.heightAt(ax,az) - 1;          // heightAt = first air cell, so the grass is one below
+        if(this.world.getBlock(ax,gy,az)!==1) continue; // grass only
+        if(!roomAt(ax,gy,az)) continue;
+        const kind = Math.random()<0.5 ? 'cow' : 'pig';
+        const herd = 1 + Math.floor(Math.random()*3);
+        for(let h=0; h<herd && this.animals.length<maxAnimals; h++){
+          const hx = h ? ax + Math.floor((Math.random()-0.5)*4) : ax;
+          const hz = h ? az + Math.floor((Math.random()-0.5)*4) : az;
+          const hy = this.world.heightAt(hx,hz) - 1;
+          if(h && (this.world.getBlock(hx,hy,hz)!==1 || !roomAt(hx,hy,hz))) continue;
+          this.spawnAnimal(hx+0.5, hy+1, hz+0.5, kind);
         }
+        break;
       }
     }
-    // Hostiles: only after nightfall, only in genuinely dark spots (light
-    // level low), never right on top of the player.
-    if(this.isNight && this.hostiles.length < maxHostiles && Math.random()<0.03){
-      const hx = px + Math.floor((Math.random()-0.5)*36);
-      const hz = pz + Math.floor((Math.random()-0.5)*36);
-      const dist = Math.hypot(hx-this.pos.x, hz-this.pos.z);
-      if(dist>10){
-        const hy = this.world.heightAt(hx,hz)+1;
-        if(this.isSolidAt(hx,hy-1,hz) && !this.isSolidAt(hx,hy,hz) && this.lightLevelAt(hx,hy,hz)<=5){
-          this.spawnHostile(hx+0.5, hy, hz+0.5);
-        }
+    if(this.isNight && this.hostiles.length < maxHostiles){
+      for(let tries=0; tries<8; tries++){
+        const [hx,hz] = ring(14);
+        const gy = this.world.heightAt(hx,hz) - 1;          // ground cell (see above)
+        if(gy+1 <= SEA_LEVEL) continue;                      // underwater
+        if(!this.isSolidAt(hx+0.5,gy,hz+0.5) || !roomAt(hx,gy,hz)) continue;
+        if(this.lightLevelAt(hx,gy+1,hz) > 6) continue;
+        this.spawnHostile(hx+0.5, gy+1, hz+0.5);
+        break;
       }
     }
   }
 
-  spawnAnimal(x,y,z){
-    const kind = Math.random()<0.5 ? 'cow' : 'pig';
+  spawnAnimal(x,y,z,kind){
+    kind = kind || (Math.random()<0.5 ? 'cow' : 'pig');
     const { group, parts } = this.buildMobModel(kind);
     group.position.set(x,y,z);
     this.scene.add(group);
@@ -6599,7 +6823,7 @@ class Game{
     });
   }
   spawnHostile(x,y,z){
-    const { group, parts } = this.buildMobModel('hostile');
+    const { group, parts } = this.buildMobModel('zombie');
     group.position.set(x,y,z);
     this.scene.add(group);
     this.hostiles.push({
@@ -6611,39 +6835,39 @@ class Game{
     });
   }
 
-  // Shared ground-follow + simple wander/flee-from-player step used by both
-  // animal and hostile updates, kept small since both mob types move the
-  // same way (walk toward a heading, snap to terrain height, turn sometimes).
+  // Shared ground-follow step. headingYaw is a model yaw: the mob walks toward -Z rotated by yaw,
+  // i.e. (-sin yaw, -cos yaw), which is also the way its model faces.
   stepMobPos(m, delta, speed, headingYaw){
-    const dx = -Math.sin(headingYaw)*speed*delta;
-    const dz = -Math.cos(headingYaw)*speed*delta;
-    const nx = m.pos.x+dx, nz = m.pos.z+dz;
-    // don't walk off into a solid wall or straight off a big ledge
-    const groundY = this.world.heightAt(Math.floor(nx), Math.floor(nz))+1;
-    if(!this.isSolidAt(nx, groundY, nz) && Math.abs(groundY-m.pos.y)<=1.1){
-      m.pos.x = nx; m.pos.z = nz;
-      m.pos.y += (groundY-m.pos.y)*Math.min(1,delta*10); // smooth step up/down
-    }
     m.yaw = headingYaw;
+    const nx = m.pos.x - Math.sin(headingYaw)*speed*delta;
+    const nz = m.pos.z - Math.cos(headingYaw)*speed*delta;
+    const groundY = this.world.heightAt(Math.floor(nx), Math.floor(nz)); // y the mob's feet rest at (first air cell)
+    if(groundY <= SEA_LEVEL) return false;                         // don't wade into the sea
+    if(this.isSolidAt(nx, groundY, nz) || this.isSolidAt(nx, groundY+1, nz)) return false; // wall
+    if(Math.abs(groundY-m.pos.y) > 1.1) return false;             // too big a ledge
+    m.pos.x = nx; m.pos.z = nz;
+    m.pos.y += (groundY-m.pos.y)*Math.min(1,delta*10);              // smooth step up/down
+    return true;
   }
 
   updateMobs(delta){
-    this.trySpawnMobs();
+    this.trySpawnMobs(delta);
     const despawnDist = (RENDER_DISTANCE+2)*CHUNK_SIZE;
 
-    // ---- passive animals: wander, and flee a bit if recently hit ----
+    // ---- passive animals: wander, and run away if recently hit ----
     for(let i=this.animals.length-1; i>=0; i--){
       const m = this.animals[i];
       const distToPlayer = m.pos.distanceTo(this.pos);
-      if(distToPlayer > despawnDist){ this.scene.remove(m.group); this.animals.splice(i,1); continue; }
+      if(distToPlayer > despawnDist){ this._disposeMob(m); this.animals.splice(i,1); continue; }
 
-      m.bobT += delta*6;
+      m.bobT += delta*(m.fleeT>0 ? 11 : 6);
       if(m.hitFlashT>0){ m.hitFlashT -= delta; this.setMobFlash(m, m.hitFlashT>0); }
 
+      let moving = false;
       if(m.fleeT>0){
         m.fleeT -= delta;
-        const awayYaw = Math.atan2(this.pos.x-m.pos.x, this.pos.z-m.pos.z) + Math.PI;
-        this.stepMobPos(m, delta, 3.2, awayYaw);
+        const awayYaw = this._yawTo(m.pos.x-this.pos.x, m.pos.z-this.pos.z);
+        moving = this.stepMobPos(m, delta, 3.2, awayYaw);
       } else {
         m.wanderT -= delta;
         if(m.wanderT<=0){
@@ -6651,31 +6875,32 @@ class Game{
           m.wanderT = 2 + Math.random()*3;
           m.wandering = Math.random()<0.6; // sometimes just stand and graze
         }
-        if(m.wandering) this.stepMobPos(m, delta, 1.1, m.wanderYaw);
+        if(m.wandering) moving = this.stepMobPos(m, delta, 1.1, m.wanderYaw);
       }
       m.group.position.copy(m.pos);
       m.group.rotation.y = m.yaw;
-      const legBob = Math.sin(m.bobT)*0.35;
-      if(m.parts.legs) m.parts.legs.forEach((leg,idx)=>{ leg.rotation.x = (idx%2===0?1:-1)*legBob*(m.wandering||m.fleeT>0?1:0.15); });
+      const swing = Math.sin(m.bobT)*0.6*(moving?1:0);
+      if(m.parts.legs) m.parts.legs.forEach((leg,idx)=>{ leg.rotation.x = ((idx===0||idx===3)?1:-1)*swing; });
     }
 
-    // ---- hostiles: wander until the player is close/visible-ish, then chase and attack ----
+    // ---- zombies: wander until the player is close, then chase and attack ----
     for(let i=this.hostiles.length-1; i>=0; i--){
       const m = this.hostiles[i];
       const distToPlayer = m.pos.distanceTo(this.pos);
       // daylight burns them off (classic rule) as well as simple despawn distance
       if(distToPlayer > despawnDist || (!this.isNight && this.lightLevelAt(Math.floor(m.pos.x),Math.floor(m.pos.y),Math.floor(m.pos.z))>8)){
-        this.scene.remove(m.group); this.hostiles.splice(i,1); continue;
+        this._disposeMob(m); this.hostiles.splice(i,1); continue;
       }
       m.bobT += delta*7;
       if(m.hitFlashT>0){ m.hitFlashT -= delta; this.setMobFlash(m, m.hitFlashT>0); }
       if(m.attackCD>0) m.attackCD -= delta;
 
-      const CHASE_RANGE = 9;
+      const CHASE_RANGE = 14;
+      let moving = false;
       if(distToPlayer < CHASE_RANGE){
-        const towardYaw = Math.atan2(this.pos.x-m.pos.x, this.pos.z-m.pos.z);
+        const towardYaw = this._yawTo(this.pos.x-m.pos.x, this.pos.z-m.pos.z);
         if(distToPlayer > 1.1){
-          this.stepMobPos(m, delta, 2.6, towardYaw);
+          moving = this.stepMobPos(m, delta, 2.6, towardYaw);
         } else {
           m.yaw = towardYaw;
           if(m.attackCD<=0){
@@ -6686,26 +6911,21 @@ class Game{
       } else {
         m.wanderT -= delta;
         if(m.wanderT<=0){ m.wanderYaw = Math.random()*Math.PI*2; m.wanderT = 2+Math.random()*3; }
-        this.stepMobPos(m, delta, 1.0, m.wanderYaw);
+        moving = this.stepMobPos(m, delta, 1.0, m.wanderYaw);
       }
       m.group.position.copy(m.pos);
       m.group.rotation.y = m.yaw;
-      const swing = Math.sin(m.bobT)*0.4;
+      const swing = Math.sin(m.bobT)*0.5*(moving?1:0);
       m.parts.legL.rotation.x = swing; m.parts.legR.rotation.x = -swing;
-      m.parts.armL.rotation.x = -swing*0.6; m.parts.armR.rotation.x = swing*0.6;
+      // arms held out in front like a classic zombie
+      m.parts.armL.rotation.x = 1.4 - swing*0.15; m.parts.armR.rotation.x = 1.4 + swing*0.15;
     }
   }
 
+  // tint every mesh of the mob (works with textured materials, unlike changing .color)
   setMobFlash(m, on){
-    const parts = m.parts.legs ? [m.parts.body, m.parts.head, ...m.parts.legs] : Object.values(m.parts);
-    parts.forEach(p=>{
-      if(!p.material) return;
-      if(on){
-        if(p.userData._origColor===undefined) p.userData._origColor = p.material.color.getHex();
-        p.material.color.setHex(0xff5555);
-      } else if(p.userData._origColor!==undefined){
-        p.material.color.setHex(p.userData._origColor);
-      }
+    m.group.traverse(o=>{
+      if(o.isMesh && o.material && o.material.emissive) o.material.emissive.setHex(on ? 0x7a1c1c : 0x000000);
     });
   }
 
@@ -6717,7 +6937,7 @@ class Game{
     let best = null, bestT = maxDist;
     const testList = (list, kind)=>{
       for(const m of list){
-        const center = m.pos.clone(); center.y += (kind==='hostile'?1.0:0.6);
+        const center = m.pos.clone(); center.y += (kind==='hostile'?1.0:0.7);
         const toMob = center.clone().sub(origin);
         const t = toMob.dot(dir);
         if(t<0 || t>bestT) continue;
@@ -6744,7 +6964,7 @@ class Game{
       mob.fleeT = 1.6; // spooked animals run for a bit even if they survive
     }
     if(mob.health<=0){
-      this.scene.remove(mob.group);
+      this._disposeMob(mob);
       const idx = list.indexOf(mob);
       if(idx!==-1) list.splice(idx,1);
       if(kind==='animal'){
@@ -6927,7 +7147,25 @@ class Game{
     return false;
   }
 
+  // Safety net: if the player ends up inside solid blocks anyway (another player built on them,
+  // a door closed, lag...) nudge them to the nearest free spot instead of leaving them stuck.
+  _unstick(){
+    const w = this.width/2, p = this.pos, hgt = this.height;
+    if(!this._aabbBlocked(p.x-w,p.x+w,p.y,p.y+hgt,p.z-w,p.z+w)) return;
+    const free = (x,y,z)=> !this._aabbBlocked(x-w,x+w,y,y+hgt,z-w,z+w);
+    for(let r=0.15; r<=1.0001; r+=0.15){
+      for(let k=0; k<8; k++){
+        const a = k*Math.PI/4, nx = p.x+Math.cos(a)*r, nz = p.z+Math.sin(a)*r;
+        if(free(nx,p.y,nz)){ p.x = nx; p.z = nz; this.vel.x = 0; this.vel.z = 0; return; }
+      }
+    }
+    for(let up=0.25; up<=3; up+=0.25){
+      if(free(p.x,p.y+up,p.z)){ p.y += up; if(this.vel.y<0) this.vel.y = 0; return; }
+    }
+  }
+
   collideAndMove(delta){
+    this._unstick();
     const w = this.width/2;
     const velYBeforeCollision = this.vel.y;
     // resolve axis-by-axis (X, Z, Y) with AABB vs block grid
