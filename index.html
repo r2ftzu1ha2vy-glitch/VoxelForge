@@ -126,7 +126,7 @@
     position:absolute; top:10px; right:10px; background:#00000090; padding:8px 12px;
     border-radius:4px; font-size:12px; line-height:1.7; min-width:140px; pointer-events:none;
   }
-  #playerListPanel h4{margin:0 0 4px; color:var(--vf-orange); font-size:11px; letter-spacing:1px;}
+  #playerListPanel h4{margin:0 0 4px; color:var(--vf-orange); font-size:11px; letter-spacing:2px;}
   .plEntry{display:flex; align-items:center; gap:6px;}
   .plDot{width:8px; height:8px; border-radius:50%; background:var(--vf-green); flex:none;}
 
@@ -747,11 +747,11 @@
     <div style="font-size:10px; color:#6b7590; margin-top:-8px; margin-bottom:12px;">Used for Create Room &amp; Play Offline — joined rooms use the host's world</div>
 
     <div class="menu-row">
-      <button class="vf-btn primary" id="createRoomBtn" style="opacity:0.5; cursor:not-allowed; filter:grayscale(60%);" title="Multiplayer is unavailable for now">Create Room</button>
+      <button class="vf-btn primary" id="createRoomBtn">Create Room</button>
     </div>
     <div class="menu-row" style="margin-top:8px;">
-      <input id="roomCodeInput" class="vf-input" style="margin-bottom:0; text-transform:uppercase; letter-spacing:3px; text-align:center; opacity:0.5; cursor:not-allowed;" placeholder="CODE" maxlength="4" disabled>
-      <button class="vf-btn primary" id="joinRoomBtn" style="width:auto; flex:none; padding-left:16px; padding-right:16px; opacity:0.5; cursor:not-allowed; filter:grayscale(60%);" title="Multiplayer is unavailable for now">Join Room</button>
+      <input id="roomCodeInput" class="vf-input" style="margin-bottom:0; text-transform:uppercase; letter-spacing:3px; text-align:center;" placeholder="CODE" maxlength="4" autocomplete="off" autocapitalize="characters">
+      <button class="vf-btn primary" id="joinRoomBtn" style="width:auto; flex:none; padding-left:16px; padding-right:16px;" >Join Room</button>
     </div>
     <div class="menu-row" style="margin-top:8px;">
       <button class="vf-btn green" id="soloBtn">Play Offline (Solo)</button>
@@ -1157,7 +1157,7 @@ function saveSettingsToStorage(){
 function initFirebase(){
   try{
     if(FIREBASE_CONFIG.apiKey === "REPLACE_ME") return false;
-    fbApp = firebase.initializeApp(FIREBASE_CONFIG);
+    fbApp = (firebase.apps && firebase.apps.length) ? firebase.app() : firebase.initializeApp(FIREBASE_CONFIG);
     fbDB = firebase.database();
     fbAuth = firebase.auth();
     return true;
@@ -4247,9 +4247,17 @@ class Game{
 
     sendChat(msg){
     if(this.tryHandleChatCommand(msg)) return;
+    const nowMs = Date.now();
+    if(ONLINE_MODE && nowMs - (this._lastChatSent||0) < 800){
+      this.addChatLine('System', 'Slow down a little.');
+      return;
+    }
+    this._lastChatSent = nowMs;
     this.addChatLine(PLAYER_NAME, msg, true);
     if(ONLINE_MODE){
-      fbDB.ref(`worlds/${WORLD_ID}/chat`).push({ name:PLAYER_NAME, msg, t:Date.now() });
+      fbDB.ref(`worlds/${WORLD_ID}/chat`).push({
+        name: PLAYER_NAME.slice(0,16), msg: msg.slice(0,120), uid: fbUID, t: firebase.database.ServerValue.TIMESTAMP
+      }).catch(()=> this.addChatLine('System', 'Message not sent (connection or rules).'));
     }
   }
 
@@ -5742,7 +5750,7 @@ class Game{
     // record locally for offline world-save, regardless of online/offline mode
     this.blockDiffs[`${x}_${y}_${z}`] = id;
     if(!ONLINE_MODE) return;
-    fbDB.ref(`worlds/${WORLD_ID}/blocks/${x}_${y}_${z}`).set(id===0?null:id)
+    fbDB.ref(`worlds/${WORLD_ID}/blocks/${x}_${y}_${z}`).set(id)
       .catch(err=>{
         console.error('Block sync failed:', err);
         this.showCenterMsg('{{warn}} Sync failed — check Firebase database rules', 2500);
@@ -6100,6 +6108,7 @@ class Game{
     this.saveWorld(false);
     // tear down and return to the main menu
     if(this._presenceInterval) clearInterval(this._presenceInterval);
+    this._leaveMultiplayer();
     if(this._autosaveInterval) clearInterval(this._autosaveInterval);
     document.exitPointerLock();
     document.getElementById('hud').style.display = 'none';
@@ -6957,22 +6966,44 @@ class Game{
     // listen for chat
     fbDB.ref(`worlds/${WORLD_ID}/chat`).limitToLast(20).on('child_added', snap=>{
       const v = snap.val();
-      if(v.name===PLAYER_NAME) return;
-      this.addChatLine(v.name, v.msg, false);
+      if(!v || v.uid === fbUID) return;
+      this.addChatLine(String(v.name||'Player'), String(v.msg||''), false);
     });
 
+    const motion = ()=>({
+      x: round2(this.pos.x), y: round2(this.pos.y), z: round2(this.pos.z),
+      yaw: round2(this.yaw), pitch: round2(this.pitch),
+      moving: (Math.abs(this.vel.x)+Math.abs(this.vel.z))>0.1,
+      swimming: !!this.inWater,
+    });
+    const fullRecord = ()=> Object.assign({
+      name: PLAYER_NAME.slice(0,16), playerId: PLAYER_ID, palette: PLAYER_PALETTE, t: Date.now()
+    }, motion());
+    // (re)create the record whenever we (re)connect, so a dropped connection that
+    // removed it via onDisconnect never leaves us invisible
+    this._connRef = fbDB.ref('.info/connected');
+    this._connRef.on('value', s=>{
+      if(s.val() === true){ myRef.onDisconnect().remove(); myRef.set(fullRecord()).catch(()=>{}); }
+    });
     this._presenceInterval = setInterval(()=>{
-      myRef.set({
-        name: PLAYER_NAME,
-        playerId: PLAYER_ID,
-        palette: PLAYER_PALETTE,
-        x: round2(this.pos.x), y: round2(this.pos.y), z: round2(this.pos.z),
-        yaw: round2(this.yaw), pitch: round2(this.pitch),
-        moving: (Math.abs(this.vel.x)+Math.abs(this.vel.z))>0.1,
-        swimming: !!this.inWater,
-        t: Date.now(),
-      });
-    }, 120);
+      const m = motion(), key = JSON.stringify(m), now = Date.now();
+      if(key === this._lastPres && now - (this._lastPresT||0) < 2000) return; // nothing changed
+      this._lastPres = key; this._lastPresT = now;
+      myRef.update(Object.assign(m, { t: now })).catch(()=>{});
+    }, 150);
+  }
+
+  // Leave the room cleanly (called when quitting to the menu)
+  _leaveMultiplayer(){
+    if(!ONLINE_MODE || !fbDB) return;
+    try{
+      const base = `worlds/${WORLD_ID}`;
+      ['blocks','players','chat'].forEach(p=> fbDB.ref(`${base}/${p}`).off());
+      if(this._connRef) this._connRef.off();
+      const me = fbDB.ref(`${base}/players/${fbUID}`);
+      me.onDisconnect().cancel();
+      me.remove();
+    }catch(e){}
   }
 
   _applyRemoteBlock(snap){
@@ -7077,6 +7108,8 @@ class Game{
         btn.style.opacity = '0.6';
       });
     });
+    const hdr = document.querySelector('#playerListPanel h4');
+    if(hdr) hdr.textContent = ONLINE_MODE ? ('ROOM ' + WORLD_ID) : 'PLAYERS';
     const myRow = document.getElementById('myUidRow');
     if(myRow) myRow.textContent = `Your friend ID: ${PLAYER_ID}`;
   }
@@ -8359,7 +8392,7 @@ async function createRoom(){
     WORLD_ID = code;
     WORLD_SEED = parseSeedInput() ?? Math.floor(Math.random()*1000000);
     WORLD_TYPE = 'default'; // online worlds don't sync a world type yet
-    await fbDB.ref(`worlds/${WORLD_ID}/meta`).set({ seed: WORLD_SEED, created: Date.now() });
+    await fbDB.ref(`worlds/${WORLD_ID}/meta`).set({ seed: WORLD_SEED, created: firebase.database.ServerValue.TIMESTAMP });
 
     status.textContent = `Room created: ${WORLD_ID} — share this code with friends!`;
     status.style.color = 'var(--vf-green)';
@@ -8727,11 +8760,18 @@ window.addEventListener('DOMContentLoaded', ()=>{
     });
   });
 
+  const prepOnline = ()=>{
+    const name = document.getElementById('nameInput').value.trim();
+    PLAYER_NAME = name || ('Player'+Math.floor(Math.random()*1000));
+    localStorage.setItem('vf_name', PLAYER_NAME);
+  };
   document.getElementById('createRoomBtn').addEventListener('click', ()=>{
-    alert('Multiplayer is unavailable for now');
+    prepOnline();
+    createRoom();
   });
   document.getElementById('joinRoomBtn').addEventListener('click', ()=>{
-    alert('Multiplayer is unavailable for now');
+    prepOnline();
+    joinRoom(document.getElementById('roomCodeInput').value);
   });
   document.getElementById('roomCodeInput').addEventListener('keydown', (e)=>{
     if(e.key==='Enter') document.getElementById('joinRoomBtn').click();
