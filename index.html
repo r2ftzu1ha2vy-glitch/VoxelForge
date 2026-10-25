@@ -3337,6 +3337,121 @@ function skinBox(w, h, d, rects, grow){
   return g;
 }
 
+// ---- Held item for third-person / remote player models ----------------------
+// Returns a Group parked at the model's right hand. Blocks are a small cube
+// textured from the block atlas; items/tools are their icon extruded into
+// pixel voxels (icons load async, so the group fills in when ready).
+// Attach the result to parts.armR (pivot is the shoulder, hand = y -12px).
+const HELD_P = 1.8/32; // blocks per skin pixel, same as buildPlayerModel
+function sanitizeHeldId(v){
+  const id = Number(v);
+  if(!Number.isInteger(id) || id <= 0) return 0;
+  return (BLOCKS[id] || ITEMS[id]) ? id : 0;
+}
+function disposeHeldObject(g){
+  if(!g) return;
+  g.userData.dead = true;
+  if(g.parent) g.parent.remove(g);
+  g.traverse(o=>{
+    if(o.geometry) o.geometry.dispose();
+    if(o.material){
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      for(const m of mats){
+        if(m.map && m.map !== BlockAtlas.texture) m.map.dispose();
+        m.dispose();
+      }
+    }
+  });
+}
+function buildHeldObject(id){
+  const holder = new THREE.Group();
+  holder.position.set(0, -11*HELD_P, -3*HELD_P); // in the palm, a touch forward
+  holder.userData.dead = false;
+  id = sanitizeHeldId(id);
+  if(!id) return holder;
+  try{
+    if(BLOCKS[id] && !ITEMS[id]){
+      const def = BLOCKS[id];
+      const geo = new THREE.BoxGeometry(1, 1, 1);
+      const uv = geo.attributes.uv;
+      const faces = ['side','side','top','bottom','side','side']; // px, nx, py, ny, pz, nz
+      for(let f=0; f<6; f++){
+        const r = BlockAtlas.rect(faceMaterialKey(id, faces[f]));
+        for(let v=0; v<4; v++){
+          const i = f*4 + v;
+          uv.setXY(i, r[0] + uv.getX(i)*(r[2]-r[0]), r[1] + uv.getY(i)*(r[3]-r[1]));
+        }
+      }
+      uv.needsUpdate = true;
+      const mat = new THREE.MeshLambertMaterial({ map: BlockAtlas.texture, transparent: !!def.transparent, alphaTest: def.transparent ? 0.3 : 0 });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.scale.setScalar(0.3);
+      mesh.position.set(0, 0.03, -0.06);
+      mesh.rotation.y = Math.PI/4;
+      holder.add(mesh);
+      return holder;
+    }
+    // item / tool: extrude the icon into a one-voxel-thick pixel model
+    const img = new Image();
+    img.onload = ()=>{
+      if(holder.userData.dead) return;
+      const W = img.width, H = img.height, S = Math.max(W, H);
+      if(!W || !H) return;
+      let d = null;
+      try{
+        const c = document.createElement('canvas'); c.width = W; c.height = H;
+        const x = c.getContext('2d', { willReadFrequently:true });
+        x.drawImage(img, 0, 0);
+        d = x.getImageData(0, 0, W, H).data;
+      }catch(e){ d = null; }
+      const item = new THREE.Group();
+      if(!d){
+        const tex = new THREE.Texture(img); tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.NearestFilter;
+        tex.generateMipmaps = false; tex.needsUpdate = true;
+        item.add(new THREE.Mesh(new THREE.PlaneGeometry(W/S, H/S),
+          new THREE.MeshBasicMaterial({ map:tex, transparent:true, alphaTest:0.3, side:THREE.DoubleSide })));
+      } else {
+        let n = 0; for(let i=3; i<d.length; i+=4) if(d[i] > 60) n++;
+        if(!n) return;
+        const inst = new THREE.InstancedMesh(new THREE.BoxGeometry(1/S, 1/S, 1.6/S), new THREE.MeshLambertMaterial(), n);
+        const m4 = new THREE.Matrix4(), col = new THREE.Color();
+        let k = 0;
+        for(let py=0; py<H; py++) for(let px=0; px<W; px++){
+          const i = (py*W + px)*4;
+          if(d[i+3] <= 60) continue;
+          m4.setPosition((px+0.5-W/2)/S, (H/2-(py+0.5))/S, 0);
+          inst.setMatrixAt(k, m4);
+          col.setRGB(d[i]/255, d[i+1]/255, d[i+2]/255);
+          inst.setColorAt(k, col);
+          k++;
+        }
+        inst.instanceMatrix.needsUpdate = true;
+        if(inst.instanceColor) inst.instanceColor.needsUpdate = true;
+        item.add(inst);
+      }
+      // Icon's +x (tool head / far end) points forward (-z), icon plane runs
+      // along the arm so the flat side faces outward, like a held sword.
+      item.scale.setScalar(0.7);
+      item.rotation.set(0, Math.PI/2, -0.35);
+      item.position.set(0, 0.05, -0.1);
+      holder.add(item);
+    };
+    img.src = iconDataUrl(id);
+  }catch(e){ console.warn('held item build failed', e); }
+  return holder;
+}
+// Swap the held object on a model-like record {parts, heldId, heldObj}.
+function setModelHeld(rec, rawId){
+  const id = sanitizeHeldId(rawId);
+  if(rec.heldId === id && rec.heldObj) return;
+  if(rec.heldObj) disposeHeldObject(rec.heldObj);
+  rec.heldId = id;
+  rec.heldObj = null;
+  if(!id || !rec.parts || !rec.parts.armR) return;
+  rec.heldObj = buildHeldObject(id);
+  rec.parts.armR.add(rec.heldObj);
+}
+
 // Build the blocky player (head, body, 2 arms, 2 legs + outer layers).
 // Returns {group, parts:{head,body,armL,armR,legL,legR}} for animation.
 function buildPlayerModel(palette, skinCanvas){
@@ -6589,6 +6704,7 @@ class Game{
     const m = this.selfModel;
     if(!m || !this.viewMode) return;
     const g = m.group, P = m.parts;
+    setModelHeld(m, this.selectedBlock); // keep the third-person model's held item in sync
     const speed = Math.hypot(this.vel.x, this.vel.z);
     const swimming = this.inWater && !this.flying && (speed > 0.4 || Math.abs(this.vel.y) > 1.2);
     g.rotation.y = this.yaw;
@@ -7002,6 +7118,7 @@ class Game{
       yaw: round2(this.yaw), pitch: round2(this.pitch),
       moving: (Math.abs(this.vel.x)+Math.abs(this.vel.z))>0.1,
       swimming: !!this.inWater,
+      held: sanitizeHeldId(this.selectedBlock),
     });
     const fullRecord = ()=> Object.assign({
       name: PLAYER_NAME.slice(0,16), playerId: PLAYER_ID, palette: PLAYER_PALETTE, t: Date.now()
@@ -7068,7 +7185,9 @@ class Game{
       current: new THREE.Vector3(x0,y0,z0),
       yaw: Number.isFinite(data.yaw)?data.yaw:0, pitch: Number.isFinite(data.pitch)?data.pitch:0, moving:false, animT:0,
       name: data.name||'Player', playerId: data.playerId||null,
+      heldId: 0, heldObj: null,
     });
+    setModelHeld(this.otherPlayers.get(uid), data.held);
   }
   _updateOtherPlayer(uid, data){
     const p = this.otherPlayers.get(uid);
@@ -7086,10 +7205,12 @@ class Game{
     p.moving = !!data.moving;
     p.swimming = !!data.swimming;
     p.name = data.name||p.name; p.playerId = data.playerId||p.playerId;
+    setModelHeld(p, data.held);
   }
   _removeOtherPlayer(uid){
     const p = this.otherPlayers.get(uid);
     if(!p) return;
+    if(p.heldObj) disposeHeldObject(p.heldObj);
     this.scene.remove(p.group);
     this.otherPlayers.delete(uid);
   }
