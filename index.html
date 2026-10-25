@@ -1912,7 +1912,8 @@ function paintNameForKey(key){
   return faceTexName(+parts.join('_'), face);
 }
 function layerForPaint(paintName){
-  if(paintName === 'leaves') return LAYER_CUTOUT;
+  // cut-out: pixels with alpha 0 are see-through (leaves, and doors so PNG windows can be transparent)
+  if(paintName === 'leaves' || paintName === 'door_wood' || paintName === 'door_wood_top') return LAYER_CUTOUT;
   if(paintName === 'glass' || paintName === 'water') return LAYER_TRANSPARENT;
   return LAYER_SOLID;
 }
