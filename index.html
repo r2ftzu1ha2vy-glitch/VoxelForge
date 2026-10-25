@@ -771,12 +771,11 @@
     background:url(assets/mobile/jump.png) center/100% 100% no-repeat; border:none; border-radius:0; image-rendering:pixelated; font-size:0;
   }
   body.sk-jump #mobileControls #jumpBtn .ico{display:none;}
-  body.sk-btn #mobileControls .mbtnSmall, body.sk-btn #mobileControls #pauseBtnMobile, body.sk-btn #mobileControls #settingsBtnMobile,
-  body.sk-btn #mobileControls #descendBtn, body.sk-btn #mobileControls #crouchBtn{
-    background:url(assets/mobile/button.png) center/100% 100% no-repeat; border:none; border-radius:0; image-rendering:pixelated; color:#3b3b3b;
+  body.sk-crouch #mobileControls #crouchBtn{
+    background:url(assets/mobile/crouch.png) center/100% 100% no-repeat; border:none; border-radius:0; image-rendering:pixelated; font-size:0;
   }
-  body.sk-btn #mobileControls .mbtnSmall:active, body.sk-btn #mobileControls #descendBtn:active, body.sk-btn #mobileControls #crouchBtn:active,
-  body.sk-jump #mobileControls #jumpBtn:active{filter:brightness(.75);}
+  body.sk-crouch #mobileControls #crouchBtn .ico{display:none;}
+  body.sk-crouch #mobileControls #crouchBtn:active, body.sk-jump #mobileControls #jumpBtn:active{filter:brightness(.75);}
 </style>
 </head>
 <body>
@@ -6943,7 +6942,11 @@ class Game{
       const blocked = this._aabbBlocked(minX,maxX,minY,maxY,minZ,maxZ);
       if(!blocked){
         // crouching on the ground: refuse a step that would leave nothing underfoot (edge safety)
-        if(axis!=='y' && this.crouching && this.onGround && !this._aabbBlocked(minX,maxX,newP.y-0.6,newP.y-0.01,minZ,maxZ)) return;
+        // Support is judged by the whole footprint, not the old center-point onGround flag, which went
+        // false as soon as the player's center passed the edge and switched this protection off mid-step.
+        if(axis!=='y' && this.crouching && !this.flying && this.vel.y<=0 &&
+           this._aabbBlocked(p.x-w,p.x+w,p.y-0.1,p.y-0.01,p.z-w,p.z+w) &&      // currently standing on something
+           !this._aabbBlocked(minX,maxX,newP.y-0.6,newP.y-0.01,minZ,maxZ)) return; // ...and the step leaves nothing under the feet
         this.pos[axis]=newP[axis];
       }
       else {
@@ -10000,7 +10003,7 @@ window.addEventListener('DOMContentLoaded', ()=>{
   warmAllIcons();
   preloadAllSfx();
   // mobile button art: a skin class is added only when its image really loads, so a missing file keeps the old look
-  Object.entries({ 'sk-base':'assets/mobile/joystick_base.png', 'sk-stick':'assets/mobile/joystick_stick.png', 'sk-jump':'assets/mobile/jump.png', 'sk-btn':'assets/mobile/button.png' }).forEach(([cls,url])=>{
+  Object.entries({ 'sk-base':'assets/mobile/joystick_base.png', 'sk-stick':'assets/mobile/joystick_stick.png', 'sk-jump':'assets/mobile/jump.png', 'sk-crouch':'assets/mobile/crouch.png' }).forEach(([cls,url])=>{
     const im = new Image();
     im.onload = ()=> document.body.classList.add(cls);
     im.src = url;
