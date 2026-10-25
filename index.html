@@ -747,6 +747,9 @@
   .hotslot{-webkit-touch-callout:none; -webkit-user-select:none; user-select:none;}
   .hotslot.holding{box-shadow:0 0 0 2px var(--vf-red) inset; animation:vfHold 1.2s linear 1;}
   @keyframes vfHold{from{filter:brightness(1);} 37%{filter:brightness(1.5);} to{filter:brightness(1.2);}}
+  .durBar{position:absolute; left:10%; right:10%; bottom:3px; height:4px; background:#000; border-radius:2px; overflow:hidden; pointer-events:none;}
+  .durBar i{display:block; height:100%; border-radius:2px;}
+  .hotslot, .invSlot, .invSlot2, .craftSlot, .craftOutSlot{position:relative;}
 </style>
 </head>
 <body>
@@ -1650,11 +1653,21 @@ let CREATIVE_IDS = null;
 
 // Some blocks drop a different item than the block itself when mined
 // (e.g. coal ore drops loose coal, not a placeable coal-ore block).
+// Durability bar: green -> yellow -> red as the tool wears down.
+function makeDurBar(cur, max){
+  const f = Math.max(0, Math.min(1, cur / Math.max(1, max)));
+  const bar = document.createElement('div'); bar.className = 'durBar';
+  const i = document.createElement('i');
+  i.style.width = Math.max(6, Math.round(f*100)) + '%';
+  i.style.background = f > 0.5 ? '#5fbf6a' : (f > 0.2 ? '#f0c040' : '#d1495b');
+  bar.appendChild(i);
+  return bar;
+}
 function oreDropFor(blockId){
   // coal_ore drops loose coal and diamond_ore drops the gem directly (as before —
   // neither needs smelting), but iron_ore/gold_ore now drop the RAW ore item
   // instead of a finished ingot: turning raw ore into an ingot is the furnace's job.
-  const map = { 13:116, 14:117, 15:118, 16:115 };
+  const map = { 3:4, 13:116, 14:117, 15:118, 16:115 }; // stone drops cobblestone
   return map[blockId] || null;
 }
 
@@ -3768,6 +3781,7 @@ const RECIPES = [
 const SMELT_RECIPES = {
   117: { out:113, count:1, time:6 },  // raw_iron -> iron_ingot
   118: { out:114, count:1, time:6 },  // raw_gold -> gold_ingot
+  4:   { out:3,   count:1, time:5 },  // cobblestone -> stone
   5:   { out:9,   count:1, time:5 },  // sand -> glass
   119: { out:120, count:1, time:5 },  // raw_meat -> cooked_meat
 };
@@ -3775,7 +3789,7 @@ const SMELT_RECIPES = {
 const FUEL_ITEMS = {
   116: 8,   // coal lump
   8:   3,   // planks
-  6:   2.5, // wood (log-ish "wood" block id)
+  6:   6,   // wood log: burns twice as long as planks
   100: 1,   // stick
 };
 
@@ -5686,14 +5700,14 @@ class Game{
         const img = document.createElement('img');
         img.src = iconDataUrl(id);
         slot.appendChild(img);
-        const cnt = document.createElement('div'); cnt.className='cnt';
         if(def.durability!==undefined){
           const dur = this.toolDurability[id]===undefined ? def.durability : this.toolDurability[id];
-          cnt.textContent = dur;
+          slot.appendChild(makeDurBar(dur, def.durability));
         } else {
+          const cnt = document.createElement('div'); cnt.className='cnt';
           cnt.textContent = this.inventoryCounts[id]||0;
+          slot.appendChild(cnt);
         }
-        slot.appendChild(cnt);
         attachTooltip(slot, def.name);
         slot.onmouseenter = ()=>{ this._hoverInvId = id; };
         slot.onmouseleave = ()=>{ if(this._hoverInvId===id) this._hoverInvId = null; };
@@ -5778,15 +5792,15 @@ class Game{
       const img = document.createElement('img'); img.src = iconDataUrl(id);
       slot.appendChild(img);
       const item = ITEMS[id];
-      const cnt = document.createElement('div'); cnt.className='cnt';
       if(item && item.durability!==undefined){
         const dur = this.toolDurability[id]===undefined ? item.durability : this.toolDurability[id];
-        cnt.textContent = dur;
+        slot.appendChild(makeDurBar(dur, item.durability));
       } else {
+        const cnt = document.createElement('div'); cnt.className='cnt';
         const c = this.inventoryCounts[id]||0;
         cnt.textContent = (GAME_MODE==='creative' || c>90) ? '∞' : c;
+        slot.appendChild(cnt);
       }
-      slot.appendChild(cnt);
       const def = ALL_DEFS[id];
       if(def) attachTooltip(slot, def.name);
       slot.onclick = ()=>{ this.selectedSlot = idx; this.selectedBlock = id; this.updateHotbarUI(); };
@@ -6947,14 +6961,71 @@ class Game{
       if(this.isSolidAt(start.x, start.y, start.z)) start = eye.clone();
       vel = dir.clone().multiplyScalar(5.5); vel.y += 2.2;
     }
-    const d = { id, count, dur, sprite:sp, pos:start, vel, age:0, delay, magnet, grounded:false };
+    const d = { id, count, dur, sprite:sp, pos:start, vel, age:0, delay, magnet, grounded:false, key:(opts && opts.key) || null };
     sp.position.copy(start);
     this.drops.push(d);
+    if(d.key){ (this._netDrops = this._netDrops || {})[d.key] = d; }
+    // Items THROWN by a player (no fixed position given) are shared with the room.
+    else if(ONLINE_MODE && fbDB && !(opts && opts.pos)) this._publishDrop(d);
+    return d;
   }
   _removeDrop(i){
     const d = this.drops[i]; if(!d) return;
+    if(d.key && this._netDrops) delete this._netDrops[d.key];
     this.scene.remove(d.sprite);
     this.drops.splice(i, 1);
+  }
+
+  /* ---- shared drops (multiplayer) ---- */
+  _publishDrop(d){
+    try{
+      const ref = fbDB.ref(`worlds/${WORLD_ID}/drops`).push();
+      d.key = ref.key;
+      (this._netDrops = this._netDrops || {})[d.key] = d;
+      const r = (n)=> Math.round(n*100)/100;
+      const rec = { id:d.id, count:d.count, x:r(d.pos.x), y:r(d.pos.y), z:r(d.pos.z),
+                    vx:r(d.vel.x), vy:r(d.vel.y), vz:r(d.vel.z), by:fbUID, t:Date.now() };
+      if(Number.isFinite(d.dur)) rec.dur = d.dur;
+      ref.set(rec).catch(err=>{
+        console.warn('Drop sync rejected — add the "drops" rules to your database.', err);
+        if(this._netDrops) delete this._netDrops[d.key];
+        d.key = null;
+      });
+    }catch(e){ console.warn('drop publish failed', e); }
+  }
+  _onNetDropAdded(key, v){
+    if(!v || (this._netDrops && this._netDrops[key])) return; // my own, already spawned
+    const ok = (n)=> Number.isFinite(n);
+    if(!ok(v.id) || !ok(v.count) || !ok(v.x) || !ok(v.y) || !ok(v.z) || !ALL_DEFS[v.id]) return;
+    const age = Date.now() - (v.t || 0);
+    if(age > 300000){ fbDB.ref(`worlds/${WORLD_ID}/drops/${key}`).remove().catch(()=>{}); return; } // stale
+    const fresh = age < 3000;
+    this._spawnDrop(v.id, v.count, Number.isFinite(v.dur) ? v.dur : undefined, {
+      pos: new THREE.Vector3(v.x, v.y, v.z),
+      vel: fresh ? new THREE.Vector3(v.vx||0, v.vy||0, v.vz||0) : new THREE.Vector3(),
+      delay: fresh ? 1.2 : 0, magnet: false, key
+    });
+  }
+  _onNetDropRemoved(key){
+    const d = this._netDrops && this._netDrops[key]; if(!d) return;
+    const i = this.drops.indexOf(d); if(i >= 0) this._removeDrop(i);
+  }
+  // Whoever removes the record first gets the item (transaction = no duplicates).
+  _claimNetDrop(d){
+    const finish = (give)=>{
+      const i = this.drops.indexOf(d); if(i >= 0) this._removeDrop(i);
+      if(!give) return;
+      this._giveItem(d.id, d.count);
+      const def = ALL_DEFS[d.id];
+      if(def && def.durability !== undefined && d.dur !== undefined && this.toolDurability[d.id] === undefined) this.toolDurability[d.id] = d.dur;
+      this._popSound(); this._refreshAll();
+    };
+    try{
+      fbDB.ref(`worlds/${WORLD_ID}/drops/${d.key}`).transaction(cur=> cur ? null : undefined, (err, committed)=>{
+        if(err){ console.warn('drop claim failed', err); finish(true); }
+        else finish(!!committed);
+      }, false);
+    }catch(e){ finish(true); }
   }
   _popSound(){
     try{
@@ -6977,7 +7048,10 @@ class Game{
     for(let i=list.length-1; i>=0; i--){
       const d = list[i];
       d.age += delta;
-      if(d.age > 300 || d.pos.y < -30){ this._removeDrop(i); continue; }
+      if(d.age > 300 || d.pos.y < -30){
+        if(d.key && fbDB) fbDB.ref(`worlds/${WORLD_ID}/drops/${d.key}`).remove().catch(()=>{}); // expired: clear it for everyone
+        this._removeDrop(i); continue;
+      }
       const dx = d.pos.x-px, dy = d.pos.y-py, dz = d.pos.z-pz;
       const dist2 = dx*dx + dy*dy + dz*dz;
       if(dist2 > 2304) continue; // farther than 48 blocks: frozen until you return
@@ -7004,6 +7078,7 @@ class Game{
       if(d.grounded){ const f = Math.max(0, 1-10*delta); d.vel.x *= f; d.vel.z *= f; }
       d.sprite.position.set(d.pos.x, d.pos.y + 0.22 + (d.grounded ? Math.sin(d.age*3)*0.05 : 0), d.pos.z);
       if(!this.dead && d.age >= d.delay && dist2 < 2.25){
+        if(d.key){ if(!d.claiming){ d.claiming = true; this._claimNetDrop(d); } continue; }
         this._giveItem(d.id, d.count);
         const def = ALL_DEFS[d.id];
         if(def && def.durability !== undefined && d.dur !== undefined && this.toolDurability[d.id] === undefined){
@@ -7019,12 +7094,12 @@ class Game{
       this._dropMergeT = 0;
       for(let i=0; i<list.length; i++){
         const a = list[i];
-        if(!a || !a.grounded) continue;
+        if(!a || !a.grounded || a.key) continue;
         const adef = ALL_DEFS[a.id];
         if(adef && adef.durability !== undefined) continue;
         for(let j=list.length-1; j>i; j--){
           const b = list[j];
-          if(b.id !== a.id || !b.grounded) continue;
+          if(b.id !== a.id || !b.grounded || b.key) continue;
           const ex = a.pos.x-b.pos.x, ez = a.pos.z-b.pos.z;
           if(ex*ex + ez*ez < 0.5 && Math.abs(a.pos.y-b.pos.y) < 0.6){ a.count += b.count; this._removeDrop(j); }
         }
@@ -7297,6 +7372,12 @@ class Game{
       this._removeOtherPlayer(snap.key);
     });
 
+    // shared dropped items
+    this._netDrops = {};
+    const dropsRef = fbDB.ref(`worlds/${WORLD_ID}/drops`);
+    dropsRef.on('child_added',   snap=>this._onNetDropAdded(snap.key, snap.val()));
+    dropsRef.on('child_removed', snap=>this._onNetDropRemoved(snap.key));
+
     // listen for custom skins (stored apart from the presence record so the
     // large PNG is not re-sent with every position update)
     this._remoteSkins = {};
@@ -7404,7 +7485,7 @@ class Game{
     if(!ONLINE_MODE || !fbDB) return;
     try{
       const base = `worlds/${WORLD_ID}`;
-      ['blocks','players','chat','skins'].forEach(p=> fbDB.ref(`${base}/${p}`).off());
+      ['blocks','players','chat','skins','drops'].forEach(p=> fbDB.ref(`${base}/${p}`).off());
       const mySkin = fbDB.ref(`${base}/skins/${fbUID}`);
       mySkin.onDisconnect().cancel();
       mySkin.remove().catch(()=>{});
