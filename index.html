@@ -1680,6 +1680,10 @@ const ITEMS = {
   118: { name:'raw_gold', isItem:true, icon:'raw_gold' },
   119: { name:'raw_meat', isItem:true, icon:'raw_meat' },
   120: { name:'cooked_meat', isItem:true, icon:'cooked_meat' },
+  // Spawn eggs (creative only): right-click a block to spawn the mob on top of it.
+  400: { name:'zombie_spawn_egg', isItem:true, icon:'egg_zombie', spawnEgg:'zombie' },
+  401: { name:'cow_spawn_egg',    isItem:true, icon:'egg_cow',    spawnEgg:'cow' },
+  402: { name:'pig_spawn_egg',    isItem:true, icon:'egg_pig',    spawnEgg:'pig' },
 };
 // Merge ITEMS into a combined lookup so BLOCKS[id] and ITEMS[id] can both be
 // resolved with one table where convenient (definitions, not the placeable list).
@@ -6656,6 +6660,14 @@ class Game{
     if(BLOCKS[hit.id].bedPart){ this._useBed(hit.x,hit.y,hit.z); return; } // bed: sleep / set spawn
     if(BLOCKS[hit.id].doorHalf){ this._toggleDoor(hit.x,hit.y,hit.z); this._swingOnce(); return; } // door: open/close
     const px = hit.x+hit.normal[0], py = hit.y+hit.normal[1], pz = hit.z+hit.normal[2];
+    const heldItem = ITEMS[this.selectedBlock];
+    if(heldItem && heldItem.spawnEgg){ // spawn egg: creative only, never consumed
+      if(GAME_MODE!=='creative'){ this.addChatLine('System', 'Spawn eggs only work in creative mode.', false); return; }
+      if(this.isSolidAt(px+0.5,py,pz+0.5) || this.isSolidAt(px+0.5,py+1,pz+0.5)) return; // no room
+      this.spawnEggMob(heldItem.spawnEgg, px+0.5, py, pz+0.5);
+      this._swingOnce();
+      return;
+    }
     if(py>MAX_Y || py<MIN_Y){ this.addChatLine('System', py>MAX_Y ? `Build limit reached (y ${MAX_Y}).` : `World floor reached (y ${MIN_Y}).`, false); return; }
     // don't place inside player
     const feet = this.pos.clone().floor();
@@ -6776,7 +6788,7 @@ class Game{
     };
     const roomAt = (x,gy,z)=> !this.isSolidAt(x+0.5,gy+1,z+0.5) && !this.isSolidAt(x+0.5,gy+2,z+0.5);
 
-    if(!this.isNight && this.animals.length < maxAnimals){
+    if(!this.isNight && this.animals.filter(a=>!a.persistent).length < maxAnimals){
       for(let tries=0; tries<8; tries++){
         const [ax,az] = ring(12);
         const biome = this.world.biomeAt(ax,az);
@@ -6796,7 +6808,7 @@ class Game{
         break;
       }
     }
-    if(this.isNight && this.hostiles.length < maxHostiles){
+    if(this.isNight && this.hostiles.filter(h=>!h.persistent).length < maxHostiles){
       for(let tries=0; tries<8; tries++){
         const [hx,hz] = ring(14);
         const gy = this.world.heightAt(hx,hz) - 1;          // ground cell (see above)
@@ -6809,6 +6821,13 @@ class Game{
     }
   }
 
+  // Spawn-egg mobs are flagged `persistent` so daylight doesn't burn zombies off, and they
+  // face the player when they appear.
+  spawnEggMob(kind,x,y,z){
+    const faceYaw = this._yawTo(this.pos.x-x, this.pos.z-z);
+    if(kind==='zombie'){ this.spawnHostile(x,y,z); const m = this.hostiles[this.hostiles.length-1]; m.persistent = true; m.yaw = faceYaw; }
+    else { this.spawnAnimal(x,y,z,kind); const m = this.animals[this.animals.length-1]; m.persistent = true; m.yaw = faceYaw; }
+  }
   spawnAnimal(x,y,z,kind){
     kind = kind || (Math.random()<0.5 ? 'cow' : 'pig');
     const { group, parts } = this.buildMobModel(kind);
@@ -6888,7 +6907,7 @@ class Game{
       const m = this.hostiles[i];
       const distToPlayer = m.pos.distanceTo(this.pos);
       // daylight burns them off (classic rule) as well as simple despawn distance
-      if(distToPlayer > despawnDist || (!this.isNight && this.lightLevelAt(Math.floor(m.pos.x),Math.floor(m.pos.y),Math.floor(m.pos.z))>8)){
+      if(distToPlayer > despawnDist || (!m.persistent && !this.isNight && this.lightLevelAt(Math.floor(m.pos.x),Math.floor(m.pos.y),Math.floor(m.pos.z))>8)){
         this._disposeMob(m); this.hostiles.splice(i,1); continue;
       }
       m.bobT += delta*7;
@@ -9052,6 +9071,17 @@ function positionTooltip(e){
 // Simple flat 2D icon painters for hand items (tools, ingots, sticks) that
 // aren't placeable blocks, so they don't need a pseudo-3D cube icon.
 const ItemIconPainters = {
+  _egg(ctx, base, spot){
+    ctx.fillStyle='#00000040'; ctx.beginPath(); ctx.ellipse(16,28,8,2.2,0,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle=base; ctx.beginPath(); ctx.ellipse(16,17,9.5,12,0,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='#ffffff40'; ctx.beginPath(); ctx.ellipse(12.5,11,2.6,4,-0.4,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle=spot;
+    [[19,12,2.6],[12,19,3],[20,22,2.4],[16,15,1.6],[9,13,1.6]].forEach(([x,y,r])=>{ ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill(); });
+    ctx.strokeStyle='#00000066'; ctx.lineWidth=1.2; ctx.beginPath(); ctx.ellipse(16,17,9.5,12,0,0,Math.PI*2); ctx.stroke();
+  },
+  egg_zombie(ctx){ ItemIconPainters._egg(ctx,'#4a9a4a','#2c5ea8'); },
+  egg_cow(ctx){ ItemIconPainters._egg(ctx,'#4a3426','#e8e8e8'); },
+  egg_pig(ctx){ ItemIconPainters._egg(ctx,'#f0a0a8','#c9707a'); },
   stick(ctx){
     ctx.strokeStyle='#8a5a35'; ctx.lineWidth=3; ctx.lineCap='round';
     ctx.beginPath(); ctx.moveTo(6,26); ctx.lineTo(26,6); ctx.stroke();
