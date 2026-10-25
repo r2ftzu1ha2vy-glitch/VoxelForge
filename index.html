@@ -2554,6 +2554,15 @@ class World{
     const {cx,cy,cz,lx,ly,lz} = this.worldToChunk(wx,wy,wz);
     const c = this.getChunk(cx,cy,cz,true);
     c.set(lx,ly,lz,id);
+    if(markDirty && !c.generated){
+      // Terrain generation would overwrite this edit later, so remember it and
+      // re-apply it as soon as the chunk is generated (remote room edits and
+      // loaded saves often arrive for chunks that do not exist yet).
+      const pk = chunkKey(cx,cy,cz);
+      const pe = this.pendingEdits || (this.pendingEdits = new Map());
+      let m = pe.get(pk); if(!m){ m = new Map(); pe.set(pk, m); }
+      m.set(c.idx(lx,ly,lz), id);
+    }
     if(markDirty){
       // a real (player-driven) edit — re-check this cell and its neighbors
       // for liquid flow next tick (e.g. breaking a wall lets water through)
@@ -3132,6 +3141,15 @@ class World{
           const roll = hash2(wx,wz,this.seed+31337);
           if(roll > 0.485) this._placeCactus(wx, surfaceY, wz);
         }
+      }
+    }
+    // Player edits recorded before this chunk existed always win over fresh terrain.
+    if(this.pendingEdits){
+      const pk = chunkKey(cx,cy,cz), m = this.pendingEdits.get(pk);
+      if(m){
+        for(const [i, id] of m) chunk.blocks[i] = id;
+        this.pendingEdits.delete(pk);
+        chunk.dirty = true; this.dirtyVersion++;
       }
     }
   }
@@ -4813,7 +4831,8 @@ class Game{
       if(L.mining){ this.stopMining(); return; }
       if(!L.moved && Date.now()-L.t < TAP_MS && !this.paused && !this.dead){
         const mob = this.raycastMob(5);
-        if(mob) this.attackMob(mob); else this.placeBlock();
+        const pl = mob ? null : this.raycastPlayer(5);
+        if(mob) this.attackMob(mob); else if(pl) this.attackPlayer(pl); else this.placeBlock();
       }
     };
     this.canvas.addEventListener('touchstart', (e)=>{
@@ -5889,6 +5908,8 @@ class Game{
     // block happens to be behind it.
     const mobHit = this.raycastMob(5);
     if(mobHit){ this.attackMob(mobHit); return; }
+    const plHit = this.raycastPlayer(5);
+    if(plHit){ this.mining = null; this.attackPlayer(plHit); return; }
     const hit = this.raycastBlock(6);
     if(!hit || BLOCKS[hit.id].unbreakable) return;
     this.mining = { x:hit.x, y:hit.y, z:hit.z, id:hit.id, t:0 };
@@ -5929,6 +5950,8 @@ class Game{
     if(this._mineCooldown > 0){ this._mineCooldown -= delta; return; } // brief pause between blocks
     const mobHit = this.raycastMob(5);
     if(mobHit){ this.attackMob(mobHit); return; }
+    const plHit = this.raycastPlayer(5);
+    if(plHit){ this.mining = null; this.attackPlayer(plHit); return; }
     const hit = this.raycastBlock(6);
     if(!hit || BLOCKS[hit.id].unbreakable){
       // nothing minable under the crosshair right now, but button is still
@@ -6395,10 +6418,28 @@ class Game{
      worldId (generated once per world) and listed in a small index so
      the menu can show a "Saved Worlds" browser instead of only ever
      keeping one save slot. */
+  // Online rooms: the blocks live in the database; your own progress (position,
+  // inventory, hotbar, tool wear) is kept in this browser, per room code.
+  saveRoomState(){
+    if(!ONLINE_MODE || !WORLD_ID) return false;
+    try{
+      localStorage.setItem('vf_room_' + WORLD_ID, JSON.stringify({
+        pos:{ x:this.pos.x, y:this.pos.y, z:this.pos.z }, yaw:this.yaw, pitch:this.pitch,
+        hotbar:this.hotbar, selectedBlock:this.selectedBlock, inventoryCounts:this.inventoryCounts,
+        toolDurability:this.toolDurability, health:this.health, savedAt:Date.now()
+      }));
+      return true;
+    }catch(e){ console.warn('room save failed', e); return false; }
+  }
   saveWorld(showMsg=true, autosave=false){
     if(ONLINE_MODE){
-      if(showMsg) this.showCenterMsg('Online worlds sync automatically — nothing to save locally', 2000);
-      return true;
+      const ok = this.saveRoomState();
+      if(showMsg) this.showCenterMsg(ok ? 'Room progress saved {{check}} (blocks sync automatically)' : '{{warn}} Could not save progress', 2200);
+      if(showMsg || !autosave){
+        const note = document.getElementById('saveNote');
+        if(note){ note.textContent = ok ? 'Saved!' : 'Save failed'; note.style.color = ok ? 'var(--vf-green)' : 'var(--vf-red)'; setTimeout(()=>note.textContent='',1800); }
+      }
+      return ok;
     }
     if(!this.worldId) this.worldId = 'w_' + Date.now() + '_' + Math.floor(Math.random()*10000);
     const save = {
@@ -6551,6 +6592,12 @@ class Game{
 
     this.vel.x = wishX*speed*sprint;
     this.vel.z = wishZ*speed*sprint;
+    if(this._kb && (this._kb.x || this._kb.z)){
+      this.vel.x += this._kb.x; this.vel.z += this._kb.z;
+      const f = Math.max(0, 1 - 7*delta);
+      this._kb.x *= f; this._kb.z *= f;
+      if(Math.abs(this._kb.x) < 0.05 && Math.abs(this._kb.z) < 0.05){ this._kb.x = 0; this._kb.z = 0; }
+    }
 
     if(this.flying){
       let vy=0;
@@ -6825,6 +6872,7 @@ class Game{
   }
   _swingOnce(){ this._swingOneT = 0.3; }
   _updateMiningFX(delta){
+    this._publishMining(this.mining);
     // outline of the block under the crosshair (every other frame is plenty)
     this._fxTick++;
     if(this._fxTick % 2 === 0 && !this.paused && !this.dead){
@@ -7372,6 +7420,14 @@ class Game{
       this._removeOtherPlayer(snap.key);
     });
 
+    // PvP hits aimed at me, and what other players are currently breaking
+    fbDB.ref(`worlds/${WORLD_ID}/hits/${fbUID}`).on('child_added', snap=>this._onHitReceived(snap));
+    this._remoteMining = {};
+    const mineRef = fbDB.ref(`worlds/${WORLD_ID}/mining`);
+    mineRef.on('child_added',   snap=>this._onRemoteMining(snap.key, snap.val()));
+    mineRef.on('child_changed', snap=>this._onRemoteMining(snap.key, snap.val()));
+    mineRef.on('child_removed', snap=>this._onRemoteMining(snap.key, null));
+
     // shared dropped items
     this._netDrops = {};
     const dropsRef = fbDB.ref(`worlds/${WORLD_ID}/drops`);
@@ -7485,7 +7541,10 @@ class Game{
     if(!ONLINE_MODE || !fbDB) return;
     try{
       const base = `worlds/${WORLD_ID}`;
-      ['blocks','players','chat','skins','drops'].forEach(p=> fbDB.ref(`${base}/${p}`).off());
+      ['blocks','players','chat','skins','drops','mining'].forEach(p=> fbDB.ref(`${base}/${p}`).off());
+      fbDB.ref(`${base}/hits/${fbUID}`).off();
+      const myMine = fbDB.ref(`${base}/mining/${fbUID}`);
+      myMine.onDisconnect().cancel(); myMine.remove().catch(()=>{});
       const mySkin = fbDB.ref(`${base}/skins/${fbUID}`);
       mySkin.onDisconnect().cancel();
       mySkin.remove().catch(()=>{});
@@ -7580,6 +7639,127 @@ class Game{
     this.otherPlayers.delete(uid);
   }
 
+  /* ---------------- Player vs player + seeing others mine ---------------- */
+  // Ray test against other players' bodies (blocked by solid blocks in front of them).
+  raycastPlayer(maxDist=5){
+    if(!ONLINE_MODE || !this.otherPlayers.size) return null;
+    const {origin, dir} = this.getLookRay();
+    let best = null, bestT = maxDist;
+    for(const [uid, p] of this.otherPlayers){
+      for(const yo of [0.45, 1.0, 1.5]){            // legs, torso, head
+        const cx = p.current.x - origin.x, cy = p.current.y + yo - origin.y, cz = p.current.z - origin.z;
+        const t = cx*dir.x + cy*dir.y + cz*dir.z;
+        if(t < 0 || t > bestT) continue;
+        const px = dir.x*t - cx, py = dir.y*t - cy, pz = dir.z*t - cz;
+        if(Math.hypot(px, py, pz) < 0.5){ bestT = t; best = { uid, p, t }; }
+      }
+    }
+    if(best){
+      const blk = this.raycastBlock(maxDist + 1);
+      if(blk){
+        const bd = Math.hypot(blk.x+0.5-origin.x, blk.y+0.5-origin.y, blk.z+0.5-origin.z) - 0.5;
+        if(bd < best.t - 0.3) return null; // a wall is in the way
+      }
+    }
+    return best;
+  }
+  attackPlayer(hit){
+    this._swingOnce();
+    if(this._pvpCd > 0) return;
+    this._pvpCd = 0.55;
+    const dmg = Math.max(1, Math.ceil(this.meleeDamage() * 0.6));
+    let kx = hit.p.current.x - this.pos.x, kz = hit.p.current.z - this.pos.z;
+    const kl = Math.hypot(kx, kz) || 1; kx /= kl; kz /= kl;
+    hit.p.hitT = 0.25;
+    playBlockSound('stone');
+    this.damageHeldTool();
+    try{
+      fbDB.ref(`worlds/${WORLD_ID}/hits/${hit.uid}`).push({
+        from: fbUID, dmg, kx: Math.round(kx*100)/100, kz: Math.round(kz*100)/100, t: Date.now()
+      }).catch(err=>console.warn('Hit rejected — add the "hits" rules to your database.', err));
+    }catch(e){ console.warn('hit failed', e); }
+  }
+  _onHitReceived(snap){
+    const v = snap.val();
+    try{ snap.ref.remove(); }catch(e){}
+    if(!v || this.dead || !Number.isFinite(v.dmg)) return;
+    if(Date.now() - (v.t || 0) > 8000) return; // stale (e.g. sent while I was offline)
+    const dmg = Math.max(1, Math.min(8, v.dmg));
+    const before = this.health;
+    this.damage(dmg);
+    if(this.health < before){
+      const k = (this._kb = this._kb || { x:0, z:0 });
+      k.x += (Number.isFinite(v.kx) ? v.kx : 0) * 7; k.z += (Number.isFinite(v.kz) ? v.kz : 0) * 7;
+      if(!this.flying) this.vel.y = Math.max(this.vel.y, 4.5);
+      if(this.dead){
+        const who = this.otherPlayers.get(v.from);
+        this.showCenterMsg('Slain by ' + (who ? who.name : 'a player'), 1400);
+      }
+    }
+  }
+
+  // Tell the room what I am breaking (throttled), so others see the cracks.
+  _publishMining(m){
+    if(!ONLINE_MODE || !fbDB || !fbUID) return;
+    const now = performance.now();
+    const active = !!(m && m.need > 0.15);
+    const ref = fbDB.ref(`worlds/${WORLD_ID}/mining/${fbUID}`);
+    if(!active){
+      if(this._mineSent){ this._mineSent = null; ref.remove().catch(()=>{}); }
+      return;
+    }
+    const prog = Math.max(0, Math.min(1, m.t / m.need));
+    const key = m.x + ',' + m.y + ',' + m.z, stage = Math.round(prog*10);
+    const ms = this._mineSent;
+    if(ms && ms.key === key && ms.stage === stage && now - ms.at < 700) return;
+    if(ms && now - ms.at < 120 && ms.key === key) return;
+    if(!ms) ref.onDisconnect().remove();
+    this._mineSent = { key, stage, at: now };
+    ref.set({ x:m.x, y:m.y, z:m.z, p:Math.round(prog*100)/100, t:Date.now() }).catch(()=>{});
+  }
+  _onRemoteMining(uid, v){
+    if(uid === fbUID) return;
+    const rm = this._remoteMining || (this._remoteMining = {});
+    if(!v || !Number.isFinite(v.x) || !Number.isFinite(v.y) || !Number.isFinite(v.z)){
+      const old = rm[uid];
+      if(old){ this.scene.remove(old.mesh); old.mat.dispose(); old.mesh.geometry.dispose(); delete rm[uid]; }
+      const p = this.otherPlayers.get(uid); if(p) p.mining = false;
+      return;
+    }
+    let e = rm[uid];
+    if(!e){
+      const mat = new THREE.MeshBasicMaterial({ transparent:true, depthWrite:false, fog:false, alphaTest:0.02,
+        polygonOffset:true, polygonOffsetFactor:-2, polygonOffsetUnits:-2 });
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(1.004, 1.004, 1.004), mat);
+      mesh.renderOrder = 5; mesh.frustumCulled = false;
+      this.scene.add(mesh);
+      e = rm[uid] = { mesh, mat, fx:0 };
+    }
+    e.x = v.x; e.y = v.y; e.z = v.z; e.p = Math.max(0, Math.min(1, Number(v.p) || 0)); e.seen = performance.now();
+    const n = this._crackTex.length, stage = Math.max(0, Math.min(n-1, Math.floor(e.p * n)));
+    if(e.mat.map !== this._crackTex[stage]){ e.mat.map = this._crackTex[stage]; e.mat.needsUpdate = true; }
+    e.mesh.position.set(e.x + 0.5, e.y + 0.5, e.z + 0.5);
+    const p = this.otherPlayers.get(uid); if(p) p.mining = true;
+  }
+  _updateRemoteMining(delta){
+    const rm = this._remoteMining; if(!rm) return;
+    const now = performance.now();
+    for(const uid in rm){
+      const e = rm[uid];
+      if(now - e.seen > 2500){ this._onRemoteMining(uid, null); continue; } // went quiet
+      e.fx += delta;
+      if(e.fx > 0.25){
+        e.fx = 0;
+        const id = this.world.getBlock(e.x, e.y, e.z);
+        const d2 = (e.x+0.5-this.pos.x)**2 + (e.y-this.pos.y)**2 + (e.z+0.5-this.pos.z)**2;
+        if(id && d2 < 400){
+          this._burst(e.x+0.5, e.y+1.02, e.z+0.5, id, 2, 0.5, [0,1,0]);
+          if(d2 < 144) this._hitSound();
+        }
+      }
+    }
+  }
+
   animateOtherPlayers(delta){
     const DELAY = 110;                      // ms behind real time: enough to always have two samples to blend
     const now = performance.now(), rt = now - DELAY;
@@ -7621,6 +7801,18 @@ class Game{
       } else {
         p.parts.armL.rotation.x *= 0.8; p.parts.armR.rotation.x *= 0.8;
         p.parts.legL.rotation.x *= 0.8; p.parts.legR.rotation.x *= 0.8;
+      }
+      if(p.mining){
+        p.mineT = (p.mineT || 0) + delta*11;
+        p.parts.armR.rotation.x = -1.15 + Math.sin(p.mineT)*0.65;
+      }
+      if(p.hitT > 0 || p._tinted){
+        p.hitT = Math.max(0, (p.hitT || 0) - delta);
+        const on = p.hitT > 0;
+        if(on !== !!p._tinted){
+          p._tinted = on;
+          p.group.traverse(o=>{ if(o.isMesh && o.material && o.material.color) o.material.color.setHex(on ? 0xff6a6a : 0xffffff); });
+        }
       }
     }
   }
@@ -7803,6 +7995,11 @@ class Game{
       this._autosaveInterval = setInterval(()=>{
         if(!this.paused && !this.dead && !this._quit) this.saveWorld(false, true);
       }, 120000); // every 2 minutes
+    } else {
+      this._autosaveInterval = setInterval(()=>{ if(!this.dead && !this._quit) this.saveRoomState(); }, 15000);
+      const flush = ()=>{ if(!this._quit && !this.dead) this.saveRoomState(); };
+      window.addEventListener('pagehide', flush);
+      document.addEventListener('visibilitychange', ()=>{ if(document.hidden) flush(); });
     }
     const loop = ()=>{
       if(this._quit) return; // stop the render loop after Save & Quit
@@ -7857,6 +8054,8 @@ class Game{
         }
         this._updateClouds(delta);
         this.animateOtherPlayers(delta);
+        this._updateRemoteMining(delta);
+        if(this._pvpCd > 0) this._pvpCd -= delta;
         if(!this.paused) this.updateDayNight(delta);
         if(!this.paused && !this.dead) this.updateMobs(delta);
         if(!this.paused) this.updateFootsteps(delta);
@@ -8910,6 +9109,24 @@ async function launchGame(){
       }
     } else {
       await gameInstance.findSpawn(1000, spawnProgress);
+    }
+    // Rejoining a room: put the player back where they were, with their items.
+    if(ONLINE_MODE){
+      try{
+        const st = JSON.parse(localStorage.getItem('vf_room_' + WORLD_ID) || 'null');
+        if(st && st.pos && [st.pos.x, st.pos.y, st.pos.z].every(Number.isFinite)){
+          gameInstance.pos.set(st.pos.x, st.pos.y + 0.5, st.pos.z);
+          gameInstance.yaw = Number.isFinite(st.yaw) ? st.yaw : 0;
+          gameInstance.pitch = Number.isFinite(st.pitch) ? st.pitch : 0;
+          if(Array.isArray(st.hotbar) && st.hotbar.length === gameInstance.hotbar.length) gameInstance.hotbar = st.hotbar;
+          if(st.inventoryCounts) gameInstance.inventoryCounts = st.inventoryCounts;
+          if(st.toolDurability) gameInstance.toolDurability = st.toolDurability;
+          gameInstance.selectedBlock = Number.isFinite(st.selectedBlock) ? st.selectedBlock : gameInstance.selectedBlock;
+          const si = gameInstance.hotbar.indexOf(gameInstance.selectedBlock);
+          gameInstance.selectedSlot = si !== -1 ? si : 0;
+          if(Number.isFinite(st.health) && st.health > 0) gameInstance.health = Math.min(gameInstance.maxHealth, st.health);
+        }
+      }catch(e){ console.warn('room restore failed', e); }
     }
   }
 
