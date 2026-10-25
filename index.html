@@ -1056,6 +1056,11 @@
     <span class="closeX" id="closeSettings" role="button" aria-label="Close"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></span>
     <h2>Settings</h2>
     <div class="settingRow">
+      <label for="musicSlider">Music volume</label>
+      <input type="range" id="musicSlider" min="0" max="100" step="5" value="35">
+      <div class="settingVal" id="musicVal">35</div>
+    </div>
+    <div class="settingRow">
       <label for="renderDistSlider">Render distance</label>
       <input type="range" id="renderDistSlider" min="2" max="10" step="1" value="4">
       <div class="settingVal" id="renderDistVal">4</div>
@@ -1726,10 +1731,12 @@ const SHAPE = (function(){
   const doorBoxes = (f, open)=> [ rot(open ? [0,0,0,TH,1,1] : [0,0,1-TH,1,1,1], f) ];
   const lowerBase = BLOCKS[21];
   const upperBase = Object.assign({}, lowerBase, { tex:{all:'door_wood_top'} });
+  let doorTopId = 0; // first hidden upper-half id: every upper variant shares its art (and its 21_top.png)
   for(let f=0; f<4; f++) for(let o=0; o<2; o++){
     const meta = { facing:f, open:!!o, boxes:doorBoxes(f,o), solid:true, transparent:true, dropId:21 };
     ids.door['lower'+f+o] = (f===0 && o===0) ? 21 : hide(lowerBase, Object.assign({ doorHalf:'lower', texFrom:21 }, meta));
-    ids.door['upper'+f+o] = hide(upperBase, Object.assign({ doorHalf:'upper' }, meta));
+    ids.door['upper'+f+o] = hide(upperBase, Object.assign({ doorHalf:'upper' }, doorTopId ? { texFrom:doorTopId } : {}, meta));
+    if(!doorTopId) doorTopId = ids.door['upper'+f+o];
   }
   Object.assign(lowerBase, { doorHalf:'lower', facing:0, open:false, boxes:doorBoxes(0,false), dropId:21 });
   // stairs: base ids 22 (stone) + 23 (wood) = facing 0
@@ -1751,6 +1758,7 @@ const SHAPE = (function(){
   Object.assign(bedBase, { bedPart:'foot', facing:0, boxes:bedBoxes, dropId:150 });
   const FACE_OFF = [[0,-1],[1,0],[0,1],[-1,0]]; // [dx,dz] for facing 0..3 (matches facingOf)
   return {
+    doorTopId,
     bed:(part,f)=> ids.bed[part+f],
     bedOff:(f)=> FACE_OFF[f],
     door:(half,f,open)=> ids.door[half+f+(open?1:0)],
@@ -1811,6 +1819,8 @@ const HARDCODED_BLOCK_TEXTURES = {};
     }
     HARDCODED_BLOCK_TEXTURES[id] = entry;
   }
+  // upper half of the door is a hidden block, so give it its own file: assets/blocks/21_top.png
+  if(SHAPE.doorTopId) HARDCODED_BLOCK_TEXTURES[SHAPE.doorTopId] = { all: ASSET_DIR + '21_top.png' };
 })();
 function applyHardcodedBlockTextures(){
   for(const blockIdStr in HARDCODED_BLOCK_TEXTURES){
@@ -2519,8 +2529,13 @@ function playBlockSound(blockName){
    biome moisture, cave carving and tree placement, seeded per world.
 ------------------------------------------------------------------------- */
 const CHUNK_SIZE = 16;
-const WORLD_HEIGHT = 128;    // vertical chunks stacked: WORLD_HEIGHT/CHUNK_SIZE
-const CHUNKS_Y = WORLD_HEIGHT / CHUNK_SIZE; // 4
+const MIN_Y = -10;            // world floor (bedrock layer)
+const MAX_Y = 260;            // highest block that can be placed (build limit)
+const WORLD_HEIGHT = MAX_Y + 1; // blocks are valid for MIN_Y <= y < WORLD_HEIGHT
+const CY_MIN = Math.floor(MIN_Y / CHUNK_SIZE);   // -1: lowest chunk layer
+const CY_MAX = Math.floor(MAX_Y / CHUNK_SIZE);   // 16: highest chunk layer
+const CY_BASE_HI = 7;         // terrain tops out below y=128, so chunks above this are only streamed when the player is up high
+const CHUNKS_Y = CY_BASE_HI - CY_MIN + 1; // chunk layers always streamed
 const SEA_LEVEL = 30;
 let RENDER_DISTANCE = 4; // in chunks (radius) — mutable, adjustable in Settings
 
@@ -2658,7 +2673,7 @@ class World{
   }
 
   getBlock(wx,wy,wz){
-    if(wy<0||wy>=WORLD_HEIGHT) return 0;
+    if(wy<MIN_Y||wy>MAX_Y) return 0;
     const {cx,cy,cz,lx,ly,lz} = this.worldToChunk(wx,wy,wz);
     const c = this.getChunk(cx,cy,cz);
     if(!c) return 0; // ungenerated => treat as air until generated (edge chunks handled specially in mesher)
@@ -2666,7 +2681,7 @@ class World{
   }
 
   setBlock(wx,wy,wz,id, markDirty=true){
-    if(wy<0||wy>=WORLD_HEIGHT) return;
+    if(wy<MIN_Y||wy>MAX_Y) return;
     const {cx,cy,cz,lx,ly,lz} = this.worldToChunk(wx,wy,wz);
     const c = this.getChunk(cx,cy,cz,true);
     c.set(lx,ly,lz,id);
@@ -2869,7 +2884,7 @@ class World{
       const fade = t*t*(3-2*t); // smoothstep 0->1
       h += Math.floor(((continent-0.34)*260 + mountainNoise*40) * fade);
     }
-    return Math.max(3, Math.min(WORLD_HEIGHT-8, h));
+    return Math.max(3, Math.min(120, h));
   }
   // Used only to decide whether a column whose ground pokes slightly (<=3
   // blocks) above SEA_LEVEL should still be flooded, so a winding river/lake
@@ -3053,7 +3068,8 @@ class World{
     // same as the Gray Pillars around it) with a single decorative layer on
     // top at floorY(=1); Arch B's platform is a free-floating slab in the
     // void with true bedrock far below as the world floor beneath it.
-    if(wy === 0) return 17; // bedrock — unchanged at Arch A, and the world floor far under Arch B
+    if(wy < MIN_Y) return 0;
+    if(wy === MIN_Y) return 17; // bedrock — unchanged at Arch A, and the world floor far under Arch B
     if(wy === floorY){
       const edge = Math.sqrt(distSq);
       if(edge >= r-1) return 25; // obsidian rim
@@ -3113,8 +3129,8 @@ class World{
           for(let ly=0; ly<CHUNK_SIZE; ly++){
             const wy = cy*CHUNK_SIZE+ly;
             let id = 0;
-            if(wy===0) id = 17; // bedrock floor, same as everywhere else
-            else if(isPillar && wy < WORLD_HEIGHT-1) id = material; // pillar runs to the build limit
+            if(wy===MIN_Y) id = 17; // bedrock floor, same as everywhere else
+            else if(isPillar && wy > MIN_Y && wy < WORLD_HEIGHT-1) id = material; // pillar runs to the build limit
             chunk.set(lx,ly,lz,id);
           }
           continue; // skip the normal biome/height/cave/ore column below
@@ -3125,7 +3141,8 @@ class World{
           for(let ly=0; ly<CHUNK_SIZE; ly++){
             const wy = cy*CHUNK_SIZE+ly;
             let id = 0;
-            if(wy===0) id = 17;
+            if(wy < MIN_Y) id = 0;
+            else if(wy===MIN_Y) id = 17;
             else if(wy < FLAT_SURFACE_Y-4){
               id = 3;
               const oreRoll = hash3(wx,wy,wz,this.seed+55);
@@ -3145,13 +3162,15 @@ class World{
         for(let ly=0; ly<CHUNK_SIZE; ly++){
           const wy = cy*CHUNK_SIZE+ly;
           let id = 0;
-          if(wy===0){
+          if(wy < MIN_Y){
+            id = 0; // below the world floor
+          } else if(wy===MIN_Y){
             id = 17; // bedrock
           } else if(wy < surfaceY-4){
             id = 3; // stone
             // cave carving
             const cave = fbm2(wx*0.07, wy*0.07 + wz*0.03, this.seed+777, 3, 2.1, 0.5);
-            const isCave = cave > 0.63 && wy < surfaceY-6 && wy>2;
+            const isCave = cave > 0.63 && wy < surfaceY-6 && wy>MIN_Y+2;
             if(isCave){ id = 0; }
             // ore veins — boosted near cave walls so exposed ore is easy to
             // spot while exploring, but still findable (rarer) in solid rock
@@ -4664,7 +4683,7 @@ class Game{
   // very dense near the border), a cactus, or doesn't have 2 blocks of headroom.
   _safeStandY(x, z){
     const w = this.world;
-    for(let y=WORLD_HEIGHT-2; y>=1; y--){
+    for(let y=WORLD_HEIGHT-2; y>=MIN_Y+1; y--){
       const id = w.getBlock(x,y,z);
       if(id===0) continue;
       const def = BLOCKS[id];
@@ -4686,7 +4705,7 @@ class Game{
     const cx0 = Math.floor(tx/CHUNK_SIZE), cz0 = Math.floor(tz/CHUNK_SIZE);
     for(let dx=-1; dx<=1; dx++){
       for(let dz=-1; dz<=1; dz++){
-        for(let cy=0; cy<CHUNKS_Y; cy++){
+        for(let cy=CY_MIN; cy<=CY_BASE_HI; cy++){
           const ch = w.getChunk(cx0+dx, cy, cz0+dz, true);
           if(!ch.generated) w.generateChunk(ch);
         }
@@ -6271,6 +6290,7 @@ class Game{
     if(BLOCKS[hit.id].bedPart){ this._useBed(hit.x,hit.y,hit.z); return; } // bed: sleep / set spawn
     if(BLOCKS[hit.id].doorHalf){ this._toggleDoor(hit.x,hit.y,hit.z); this._swingOnce(); return; } // door: open/close
     const px = hit.x+hit.normal[0], py = hit.y+hit.normal[1], pz = hit.z+hit.normal[2];
+    if(py>MAX_Y || py<MIN_Y){ this.addChatLine('System', py>MAX_Y ? `Build limit reached (y ${MAX_Y}).` : `World floor reached (y ${MIN_Y}).`, false); return; }
     // don't place inside player
     const feet = this.pos.clone().floor();
     const headY = feet.y+1;
@@ -7460,7 +7480,7 @@ class Game{
     const MESH_BATCH = 1; // chunks per frame during meshing (most expensive step — yield every chunk)
 
     for(const [cx,cz] of columns){
-      for(let cy=0; cy<CHUNKS_Y; cy++){
+      for(let cy=CY_MIN; cy<=CY_BASE_HI; cy++){
         const chunk = this.world.getChunk(cx,cy,cz,true);
         if(!chunk.generated) this.world.generateChunk(chunk);
         done++;
@@ -7474,7 +7494,7 @@ class Game{
     // in and wrap the result. Chunks already meshed are just (re)attached.
     const toMesh = [];
     for(const [cx,cz] of columns){
-      for(let cy=0; cy<CHUNKS_Y; cy++){
+      for(let cy=CY_MIN; cy<=CY_BASE_HI; cy++){
         const chunk = this.world.getChunk(cx,cy,cz);
         if(!chunk || !chunk.generated) { done++; continue; }
         if(chunk.dirty || !chunk.mesh) toMesh.push(chunk);
@@ -7549,6 +7569,11 @@ class Game{
   // chunk border (or render distance changes), so it is computed once then and
   // cached — not rebuilt, re-sorted and re-keyed every frame. Chunks well
   // beyond render distance get their GPU geometry freed here too.
+  // Highest chunk layer to stream: normal terrain height, or higher when the player is up in the air.
+  _streamHiCy(){
+    const p = Math.floor(this.pos.y/CHUNK_SIZE);
+    return Math.max(CY_BASE_HI, Math.min(CY_MAX, p+3));
+  }
   _rebuildStreamCache(pcx, pcz){
     const rd = RENDER_DISTANCE;
     const columns = [];
@@ -7562,8 +7587,9 @@ class Game{
     columns.sort((a,b)=>a[2]-b[2]); // nearest columns first
     const chunks = [];
     const needed = new Set();
+    const hi = this._streamHiCy();
     for(const [cx,cz] of columns){
-      for(let cy=0; cy<CHUNKS_Y; cy++){
+      for(let cy=CY_MIN; cy<=hi; cy++){
         chunks.push(this.world.getChunk(cx,cy,cz,true));
         needed.add(chunkKey(cx,cy,cz));
       }
@@ -7578,7 +7604,7 @@ class Game{
       if(dx*dx+dz*dz > keep2) disposeChunkMesh(chunk);
       else if(chunk.mesh.parent) this.chunkGroup.remove(chunk.mesh);
     }
-    this._stream = { pcx, pcz, rd, chunks, needed, idle:false, seenVersion:-1 };
+    this._stream = { pcx, pcz, rd, hi, chunks, needed, idle:false, seenVersion:-1 };
     return this._stream;
   }
 
@@ -7587,7 +7613,7 @@ class Game{
     const pcx = Math.floor(this.pos.x/CHUNK_SIZE);
     const pcz = Math.floor(this.pos.z/CHUNK_SIZE);
     let st = this._stream;
-    if(!st || st.pcx!==pcx || st.pcz!==pcz || st.rd!==RENDER_DISTANCE) st = this._rebuildStreamCache(pcx, pcz);
+    if(!st || st.pcx!==pcx || st.pcz!==pcz || st.rd!==RENDER_DISTANCE || st.hi!==this._streamHiCy()) st = this._rebuildStreamCache(pcx, pcz);
 
     // Nothing to generate, mesh or attach and nothing edited since the last
     // full pass: skip the whole scan.
@@ -8294,7 +8320,7 @@ class Game{
           this._updateMiningFX(delta);
           // Falling out of the world hurts as normal — the void portal is only
           // triggered by walking into one of the two arches, not by falling.
-          if(GAME_MODE==='survival' && this.pos.y < -8){
+          if(GAME_MODE==='survival' && this.pos.y < MIN_Y-8){
             this.damage(1);
           }
           this.checkArchCrossing(delta);
@@ -10098,6 +10124,42 @@ window.addEventListener('DOMContentLoaded', ()=>{
   })();
   initSkinStudio();
 });
+</script>
+<script>
+/* ---------- Background music ----------
+   Browsers block autoplay until the player interacts, so playback starts on the
+   first tap / click / key press (e.g. the Play button) and then loops. */
+(function(){
+  const URL_MP3 = 'https://raw.githubusercontent.com/r2ftzu1ha2vy-glitch/VoxelForge/main/Untitled%20(1)-[AudioTrimmer.com].mp3';
+  const audio = new Audio(URL_MP3);
+  audio.loop = true; audio.preload = 'auto';
+  let vol = 35;
+  try{ const v = localStorage.getItem('vf_music_vol'); if(v!==null && !isNaN(+v)) vol = Math.max(0, Math.min(100, +v)); }catch(e){}
+  audio.volume = vol/100;
+  let started = false;
+  const tryPlay = ()=>{
+    if(started || vol===0) return;
+    const p = audio.play();
+    if(p && p.then) p.then(()=>{ started = true; remove(); }).catch(()=>{ /* wait for the next gesture */ });
+    else { started = true; remove(); }
+  };
+  const evs = ['pointerdown','touchend','click','keydown'];
+  const remove = ()=> evs.forEach(e=>document.removeEventListener(e, tryPlay, true));
+  evs.forEach(e=>document.addEventListener(e, tryPlay, true));
+  // pause when the tab is hidden, resume when it is back
+  document.addEventListener('visibilitychange', ()=>{
+    if(document.hidden) audio.pause(); else if(started && vol>0) audio.play().catch(()=>{});
+  });
+  const sl = document.getElementById('musicSlider'), val = document.getElementById('musicVal');
+  if(sl){
+    sl.value = vol; if(val) val.textContent = vol;
+    sl.addEventListener('input', ()=>{
+      vol = +sl.value; audio.volume = vol/100; if(val) val.textContent = vol;
+      try{ localStorage.setItem('vf_music_vol', String(vol)); }catch(e){}
+      if(vol===0) audio.pause(); else if(audio.paused) audio.play().then(()=>{ started = true; }).catch(()=>{});
+    });
+  }
+})();
 </script>
 </body>
 </html>
