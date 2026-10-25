@@ -4156,9 +4156,26 @@ class Game{
   // Try to find a spawn point that lands on grass, up to maxAttempts times.
   // Async + batched so the caller can show a loading screen and update it
   // with progress without freezing the frame.
-  async findSpawn(maxAttempts=1000, onProgress=null){
-    const originX = Math.floor((Math.random()-0.5)*2000);
-    const originZ = Math.floor((Math.random()-0.5)*2000);
+  // opts (multiplayer): {x,z} = use exactly this column (the room's shared spawn);
+  //                      {deterministic:true} = derive the search origin from the world seed,
+  //                      so every client searching the same seed lands on the SAME grass block.
+  async findSpawn(maxAttempts=1000, onProgress=null, opts=null){
+    if(opts && Number.isFinite(opts.x) && Number.isFinite(opts.z)){
+      const sx = Math.floor(opts.x), sz = Math.floor(opts.z);
+      this.pos.set(sx+0.5, this.world.heightAt(sx,sz)+2, sz+0.5);
+      this.respawnPos.copy(this.pos);
+      if(onProgress) onProgress(maxAttempts, maxAttempts, true);
+      return true;
+    }
+    let originX, originZ;
+    if(opts && opts.deterministic){
+      const rnd = mulberry32(((WORLD_SEED|0) ^ 0x9e3779b9) >>> 0);
+      originX = Math.floor((rnd()-0.5)*2000);
+      originZ = Math.floor((rnd()-0.5)*2000);
+    } else {
+      originX = Math.floor((Math.random()-0.5)*2000);
+      originZ = Math.floor((Math.random()-0.5)*2000);
+    }
     const BATCH = 25; // yield to the browser every BATCH attempts so the loading bar can repaint
 
     for(let attempt=1; attempt<=maxAttempts; attempt++){
@@ -4172,6 +4189,7 @@ class Game{
       if(this.world.isGrassSurface(x,z) && !this.world.isNearOrInTree(x,z)){
         const h = this.world.heightAt(x,z);
         this.pos.set(x+0.5, h+2, z+0.5);
+        this.respawnPos.copy(this.pos);
         if(onProgress) onProgress(attempt, maxAttempts, true);
         return true;
       }
@@ -4186,6 +4204,7 @@ class Game{
     // fallback: after 1000 failed tries, just use the origin column so the
     // player still spawns somewhere sensible
     this.pos.set(originX+0.5, this.world.heightAt(originX,originZ)+3, originZ+0.5);
+    this.respawnPos.copy(this.pos);
     return false;
   }
 
@@ -7216,6 +7235,14 @@ class Game{
       this._removeOtherPlayer(snap.key);
     });
 
+    // listen for custom skins (stored apart from the presence record so the
+    // large PNG is not re-sent with every position update)
+    this._remoteSkins = {};
+    const skinsRef = fbDB.ref(`worlds/${WORLD_ID}/skins`);
+    skinsRef.on('child_added',   snap=>this._onRemoteSkin(snap.key, snap.val()));
+    skinsRef.on('child_changed', snap=>this._onRemoteSkin(snap.key, snap.val()));
+    skinsRef.on('child_removed', snap=>this._onRemoteSkin(snap.key, null));
+
     // listen for chat
     fbDB.ref(`worlds/${WORLD_ID}/chat`).limitToLast(20).on('child_added', snap=>{
       const v = snap.val();
@@ -7254,6 +7281,7 @@ class Game{
         myRef.onDisconnect().remove();
         const writeFull = ()=> myRef.set(fullRecord()).catch(err=>onWriteFail(err, writeFull));
         writeFull();
+        this._publishMySkin();
       }
     });
     this._presenceInterval = setInterval(()=>{
@@ -7265,12 +7293,60 @@ class Game{
     }, 150);
   }
 
+  // Publish my custom skin (or clear it if I use a built-in palette skin).
+  _publishMySkin(){
+    if(!ONLINE_MODE || !fbDB || !fbUID) return;
+    const ref = fbDB.ref(`worlds/${WORLD_ID}/skins/${fbUID}`);
+    try{
+      ref.onDisconnect().remove();
+      if(USE_CUSTOM_SKIN && CUSTOM_SKIN_CANVAS){
+        const url = CUSTOM_SKIN_CANVAS.toDataURL('image/png');
+        if(url.length < 200000){
+          ref.set(url).catch(err=>console.warn('Skin sync rejected — add a "skins" rule to your database rules.', err));
+        }
+      } else {
+        ref.remove().catch(()=>{});
+      }
+    }catch(e){ console.warn('skin publish failed', e); }
+  }
+
+  // Another player's skin arrived / changed / was removed.
+  _onRemoteSkin(uid, url){
+    if(uid === fbUID) return;
+    if(!this._remoteSkins) this._remoteSkins = {};
+    if(typeof url !== 'string' || !url.startsWith('data:image/png;base64,')){
+      if(this._remoteSkins[uid]){ delete this._remoteSkins[uid]; this._rebuildOtherPlayer(uid); }
+      return;
+    }
+    const img = new Image();
+    img.onload = ()=>{
+      this._remoteSkins[uid] = canvasFromImage(img);
+      this._rebuildOtherPlayer(uid);
+    };
+    img.src = url;
+  }
+
+  _rebuildOtherPlayer(uid){
+    const p = this.otherPlayers.get(uid);
+    if(!p) return; // model not created yet — _addOtherPlayer will pick the skin up
+    const data = Object.assign({}, p.lastData || {}, {
+      x:p.current.x, y:p.current.y, z:p.current.z, yaw:p.yaw, pitch:p.pitch,
+      name:p.name, playerId:p.playerId, held:p.heldRaw, moving:p.moving, swimming:p.swimming
+    });
+    this._removeOtherPlayer(uid);
+    this._addOtherPlayer(uid, data);
+  }
+
   // Leave the room cleanly (called when quitting to the menu)
   _leaveMultiplayer(){
     if(!ONLINE_MODE || !fbDB) return;
     try{
       const base = `worlds/${WORLD_ID}`;
-      ['blocks','players','chat'].forEach(p=> fbDB.ref(`${base}/${p}`).off());
+      ['blocks','players','chat','skins'].forEach(p=> fbDB.ref(`${base}/${p}`).off());
+      const mySkin = fbDB.ref(`${base}/skins/${fbUID}`);
+      mySkin.onDisconnect().cancel();
+      mySkin.remove().catch(()=>{});
+      this._remoteSkins = {};
       if(this._connRef) this._connRef.off();
       const me = fbDB.ref(`${base}/players/${fbUID}`);
       me.onDisconnect().cancel();
@@ -7287,7 +7363,7 @@ class Game{
   _addOtherPlayer(uid, data){
     if(this.otherPlayers.has(uid)) return;
     const palette = data.palette || SKIN_PALETTES[0];
-    const built = buildPlayerModel(palette);
+    const built = buildPlayerModel(palette, (this._remoteSkins && this._remoteSkins[uid]) || null);
     this.scene.add(built.group);
 
     // name tag sprite
@@ -7313,7 +7389,7 @@ class Game{
       current: new THREE.Vector3(x0,y0,z0),
       yaw: Number.isFinite(data.yaw)?data.yaw:0, pitch: Number.isFinite(data.pitch)?data.pitch:0, moving:false, animT:0,
       name: data.name||'Player', playerId: data.playerId||null,
-      heldId: 0, heldObj: null,
+      heldId: 0, heldObj: null, lastData: data, heldRaw: data.held,
     });
     setModelHeld(this.otherPlayers.get(uid), data.held);
   }
@@ -7333,6 +7409,7 @@ class Game{
     p.moving = !!data.moving;
     p.swimming = !!data.swimming;
     p.name = data.name||p.name; p.playerId = data.playerId||p.playerId;
+    p.lastData = data; p.heldRaw = data.held;
     setModelHeld(p, data.held);
   }
   _removeOtherPlayer(uid){
@@ -7340,6 +7417,10 @@ class Game{
     if(!p) return;
     if(p.heldObj) disposeHeldObject(p.heldObj);
     this.scene.remove(p.group);
+    p.group.traverse(o=>{
+      if(o.geometry) o.geometry.dispose();
+      if(o.material){ if(o.material.map) o.material.map.dispose(); o.material.dispose(); }
+    });
     this.otherPlayers.delete(uid);
   }
 
@@ -8618,10 +8699,37 @@ async function launchGame(){
     PENDING_LOAD = null;
   } else {
     setLoad(0, 'Finding a grassy spawn…');
-    await gameInstance.findSpawn(1000, (attempt, max, found)=>{
+    const spawnProgress = (attempt, max, found)=>{
       const pct = Math.min(100, Math.round((attempt/max)*100*0.4));
       setLoad(pct, found ? 'Found a grassy spot!' : `Searching for grass… (${attempt}/${max})`);
-    });
+    };
+    if(ONLINE_MODE){
+      // Everyone in a room spawns on the exact same grass block. The first player
+      // publishes it to meta/spawn; later joiners just read it. If the database
+      // refuses the read/write, the seed-derived search still gives the same block.
+      const spawnRef = (typeof fbDB !== 'undefined' && fbDB) ? fbDB.ref(`worlds/${WORLD_ID}/meta/spawn`) : null;
+      let shared = null;
+      if(spawnRef){
+        try{ const snap = await spawnRef.get(); if(snap.exists()) shared = snap.val(); }catch(e){ console.warn('spawn read failed', e); }
+      }
+      if(shared && Number.isFinite(shared.x) && Number.isFinite(shared.z)){
+        await gameInstance.findSpawn(1000, spawnProgress, { x: shared.x, z: shared.z });
+      } else {
+        await gameInstance.findSpawn(1000, spawnProgress, { deterministic: true });
+        if(spawnRef){
+          try{
+            const mine = { x: Math.floor(gameInstance.pos.x), z: Math.floor(gameInstance.pos.z) };
+            const res = await spawnRef.transaction(cur => cur || mine);
+            const won = res && res.snapshot && res.snapshot.val();
+            if(won && (won.x !== mine.x || won.z !== mine.z)){
+              await gameInstance.findSpawn(1000, spawnProgress, { x: won.x, z: won.z }); // lost a race: use the winner's block
+            }
+          }catch(e){ console.warn('spawn publish failed', e); }
+        }
+      }
+    } else {
+      await gameInstance.findSpawn(1000, spawnProgress);
+    }
   }
 
   // Drop an invisible Test_Block ~10 blocks above the spawn column. It
