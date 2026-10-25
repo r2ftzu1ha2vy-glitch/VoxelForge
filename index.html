@@ -628,7 +628,7 @@
     .hotslot img{width:72%; height:72%;}
     .hotslot .cnt{font-size:10px;}
     #statBars{bottom:calc(var(--hs) + 16px + env(safe-area-inset-bottom,0px));}
-    .heart, .hunger{width:14px; height:14px;}
+    .heart, .hunger{width:16px; height:16px;}
 
     .joystick{
       width:var(--js); height:var(--js); top:auto;
@@ -2529,16 +2529,66 @@ const DEFAULT_BREAK_SOUNDS = {
   wood:  'assets/Sounds/Wood_Break.mp3',   // oak log (block "wood")
 };
 const PICKUP_SOUND_URL = 'assets/Sounds/Pickup.mp3';
-const _sfxCache = {};
+const _sfxGood = {};     // wanted url -> url variant that actually loads
+const _sfxReported = {}; // wanted url -> true once the player was told it is missing
+function sfxCandidates(url){
+  const out = [url];
+  const v1 = url.replace('/Sounds/', '/sounds/');
+  const v2 = url.toLowerCase();
+  if(v1 !== url) out.push(v1);
+  if(v2 !== url && v2 !== v1) out.push(v2);
+  return out;
+}
+function sfxReportMissing(url){
+  console.warn('Sound file could not be loaded:', url);
+  if(_sfxReported[url]) return;
+  _sfxReported[url] = true;
+  try{ if(typeof gameInstance !== 'undefined' && gameInstance) gameInstance.addChatLine('System', 'Sound file not found: ' + url + ' (check the folder/file name, it is case-sensitive)', false); }catch(e){}
+}
+// Plays a sound file. Tries case variants of the path, remembers the one that
+// works, and tells the player in chat if the file cannot be loaded at all.
 function playSfxUrl(url){
-  try{
-    let a = _sfxCache[url];
-    if(!a){ a = new Audio(url); a.preload = 'auto'; _sfxCache[url] = a; }
-    const inst = a.cloneNode();
-    inst.volume = Math.max(0, Math.min(1, (SETTINGS.volume ?? 70)/100));
-    inst.play().catch(()=>{});
-    return true;
-  }catch(e){ return false; }
+  const vol = Math.max(0, Math.min(1, (SETTINGS.volume ?? 70)/100));
+  const cands = sfxCandidates(url);
+  const attempt = (i)=>{
+    const u = _sfxGood[url] || cands[i];
+    if(!u){ sfxReportMissing(url); return; }
+    let done = false;
+    const next = ()=>{ if(done) return; done = true; if(_sfxGood[url]){ delete _sfxGood[url]; attempt(0); } else attempt(i+1); };
+    try{
+      const a = new Audio(u);
+      a.volume = vol;
+      a.addEventListener('error', next, { once:true });
+      const pr = a.play();
+      if(pr && pr.then){
+        pr.then(()=>{ _sfxGood[url] = u; }).catch((err)=>{
+          if(err && err.name === 'NotAllowedError') return; // browser wants a click first; not a missing file
+          next();
+        });
+      }
+    }catch(e){ next(); }
+  };
+  attempt(0);
+}
+// Checks every built-in sound file once shortly after the world loads, so a
+// wrong path shows up in chat right away instead of failing silently later.
+function warmSfx(){
+  const urls = Object.values(DEFAULT_BREAK_SOUNDS).concat([PICKUP_SOUND_URL]);
+  setTimeout(()=>{
+    urls.forEach(url=>{
+      const cands = sfxCandidates(url);
+      const probe = (i)=>{
+        if(!cands[i]){ sfxReportMissing(url); return; }
+        const a = new Audio();
+        a.preload = 'auto';
+        a.addEventListener('canplaythrough', ()=>{ _sfxGood[url] = cands[i]; }, { once:true });
+        a.addEventListener('error', ()=> probe(i+1), { once:true });
+        a.src = cands[i];
+        a.load();
+      };
+      probe(0);
+    });
+  }, 2500);
 }
 // A custom sound set in the sound table wins; otherwise the built-in break sound.
 function playBreakSound(blockName){
@@ -4221,7 +4271,7 @@ class Game{
     this.paused = false;
 
     // ---- health / damage ----
-    this.maxHealth = 10;             // 10 hearts, 1 point per half-heart notch (2 pts = 1 heart)
+    this.maxHealth = 20;             // 10 hearts, 1 point per half-heart notch (2 pts = 1 heart)
     this.health = this.maxHealth;
     this.invulnT = 0;                 // brief invulnerability window after taking damage
     this.dead = false;
@@ -6676,7 +6726,7 @@ class Game{
       localStorage.setItem('vf_room_' + WORLD_ID, JSON.stringify({
         pos:{ x:this.pos.x, y:this.pos.y, z:this.pos.z }, yaw:this.yaw, pitch:this.pitch,
         hotbar:this.hotbar, selectedBlock:this.selectedBlock, inventoryCounts:this.inventoryCounts,
-        toolDurability:this.toolDurability, health:this.health, savedAt:Date.now()
+        toolDurability:this.toolDurability, health:this.health, maxHealth:this.maxHealth, savedAt:Date.now()
       }));
       return true;
     }catch(e){ console.warn('room save failed', e); return false; }
@@ -8895,8 +8945,26 @@ function waitForAllIconsToLoad(){
 }
 
 // Small pixel-art heart icon for the HUD health row. state: 'full'|'half'|'empty'.
+const HEART_ICON_URLS = {
+  full:  'assets/hearts/heart_full.png',   // no damage taken
+  half:  'assets/hearts/heart_half.png',   // half a heart lost
+  empty: 'assets/hearts/heart_empty.png',  // heart gone
+};
+const HEART_IMG_OK = {};
+(function preloadHeartImages(){
+  for(const st in HEART_ICON_URLS){
+    const im = new Image();
+    im.onload = ()=>{
+      HEART_IMG_OK[st] = true;
+      if(typeof gameInstance !== 'undefined' && gameInstance && gameInstance.updateHealthUI) gameInstance.updateHealthUI();
+    };
+    im.onerror = ()=>{ HEART_IMG_OK[st] = false; };
+    im.src = HEART_ICON_URLS[st];
+  }
+})();
 const heartIconCache = {};
 function heartIconDataUrl(state){
+  if(HEART_IMG_OK[state]) return HEART_ICON_URLS[state];
   if(heartIconCache[state]) return heartIconCache[state];
   const c = makeCanvas(16);
   const ctx = c.getContext('2d');
@@ -9418,7 +9486,7 @@ async function launchGame(){
           gameInstance.selectedBlock = Number.isFinite(st.selectedBlock) ? st.selectedBlock : gameInstance.selectedBlock;
           const si = gameInstance.hotbar.indexOf(gameInstance.selectedBlock);
           gameInstance.selectedSlot = si !== -1 ? si : 0;
-          if(Number.isFinite(st.health) && st.health > 0) gameInstance.health = Math.min(gameInstance.maxHealth, st.health);
+          if(Number.isFinite(st.health) && st.health > 0){ const hp = st.maxHealth ? st.health : st.health*2; gameInstance.health = Math.min(gameInstance.maxHealth, hp); }
         }
       }catch(e){ console.warn('room restore failed', e); }
     }
@@ -9463,6 +9531,7 @@ async function launchGame(){
     gameInstance.initMultiplayer();
   }
   gameInstance.start();
+  warmSfx();
   gameInstance.canvas.focus();
 }
 
