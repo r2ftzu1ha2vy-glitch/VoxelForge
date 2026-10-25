@@ -5633,6 +5633,7 @@ class Game{
     const def = BLOCKS[m.id];
     this._burst(m.x+0.5, m.y+0.5, m.z+0.5, m.id, 16, 1.0);
     if(GAME_MODE !== 'creative') this._mineCooldown = 0.1;
+    if(!this._swingActive) this._swingOnce();
     this.world.setBlock(m.x,m.y,m.z,0);
     this.markChunkRebuildsAround(m.x,m.y,m.z);
     this.syncBlockChange(m.x,m.y,m.z,0);
@@ -5979,6 +5980,7 @@ class Game{
   }
 
   attackMob(hit){
+    this._swingOnce();
     const { mob, kind, list } = hit;
     const dmg = GAME_MODE==='creative' ? mob.health : this.meleeDamage();
     mob.health -= dmg;
@@ -6248,7 +6250,125 @@ class Game{
     else { this.camera.rotation.y = this.yaw + Math.PI; this.camera.rotation.x = -this.pitch; }
   }
 
-/* ---------------- Mining effects: crack overlay, target outline, chips, swing ---------------- */
+/* ---------------- First-person hand: real 3D block / item / arm ---------------- */
+  _initHand(){
+    this._handScene = new THREE.Scene();
+    this._handCam = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.02, 10);
+    this._handAmb = new THREE.AmbientLight(0xffffff, 0.8);
+    this._handSun = new THREE.DirectionalLight(0xffffff, 0.65);
+    this._handSun.position.set(-1, 2, 1.5);
+    this._handScene.add(this._handAmb, this._handSun);
+    this._handRoot = new THREE.Group();
+    this._handScene.add(this._handRoot);
+    const built = buildPlayerModel(PLAYER_PALETTE, activeSkinCanvas());
+    this._handArm = built.parts.armR; this._handArm.position.set(0, 0, 0);
+    this._handId = -1; this._equip = 1; this._swingOneT = 0; this._swingPh = 0; this._swingActive = false;
+    this._handPreset = null;
+    this._updateHeldItem();
+  }
+  _setHandModel(id){
+    const HP = {
+      block: { pos:[0.55, -0.45, -0.95], rot:[0.42, -0.78, 0],     scale:0.46 },
+      item:  { pos:[0.52, -0.42, -0.85], rot:[0.12, -0.5, 0.12],   scale:0.7  },
+      arm:   { pos:[0.58, -0.62, -0.5],  rot:[1.12, 0.28, -0.12],  scale:1.5  },
+    };
+    const root = this._handRoot;
+    while(root.children.length) root.remove(root.children[0]);
+    const tok = this._handTok = (this._handTok||0) + 1;
+    if(!id){ root.add(this._handArm); this._handPreset = HP.arm; return; }
+    if(BLOCKS[id] && !ITEMS[id]){
+      const def = BLOCKS[id];
+      const geo = new THREE.BoxGeometry(1, 1, 1);
+      const uv = geo.attributes.uv;
+      const faces = ['side','side','top','bottom','side','side']; // px, nx, py, ny, pz, nz
+      for(let f=0; f<6; f++){
+        const r = BlockAtlas.rect(faceMaterialKey(id, faces[f]));
+        for(let v=0; v<4; v++){
+          const i = f*4 + v;
+          uv.setXY(i, r[0] + uv.getX(i)*(r[2]-r[0]), r[1] + uv.getY(i)*(r[3]-r[1]));
+        }
+      }
+      uv.needsUpdate = true;
+      const mat = new THREE.MeshLambertMaterial({ map: BlockAtlas.texture, transparent: !!def.transparent, alphaTest: def.transparent ? 0.3 : 0 });
+      root.add(new THREE.Mesh(geo, mat));
+      this._handPreset = HP.block;
+      return;
+    }
+    // tools / items: the flat icon pushed out into a chunky pixel model
+    this._handPreset = HP.item;
+    const img = new Image();
+    img.onload = ()=>{
+      if(tok !== this._handTok) return;
+      const W = img.width, H = img.height, S = Math.max(W, H);
+      let d = null;
+      try{
+        const c = document.createElement('canvas'); c.width = W; c.height = H;
+        const x = c.getContext('2d', { willReadFrequently:true });
+        x.drawImage(img, 0, 0);
+        d = x.getImageData(0, 0, W, H).data;
+      }catch(e){ d = null; } // image from another origin / disk: can't read pixels
+      if(!d){
+        const tex = new THREE.Texture(img); tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.NearestFilter;
+        tex.generateMipmaps = false; tex.needsUpdate = true;
+        root.add(new THREE.Mesh(new THREE.PlaneGeometry(W/S, H/S),
+          new THREE.MeshBasicMaterial({ map:tex, transparent:true, alphaTest:0.3, side:THREE.DoubleSide })));
+        return;
+      }
+      let n = 0; for(let i=3; i<d.length; i+=4) if(d[i] > 60) n++;
+      if(!n) return;
+      const inst = new THREE.InstancedMesh(new THREE.BoxGeometry(1/S, 1/S, 2.5/S), new THREE.MeshLambertMaterial(), n);
+      const m4 = new THREE.Matrix4(), col = new THREE.Color();
+      let k = 0;
+      for(let py=0; py<H; py++) for(let px=0; px<W; px++){
+        const i = (py*W + px)*4;
+        if(d[i+3] <= 60) continue;
+        m4.setPosition((px+0.5-W/2)/S, (H/2-(py+0.5))/S, 0);
+        inst.setMatrixAt(k, m4);
+        col.setRGB(d[i]/255, d[i+1]/255, d[i+2]/255);
+        inst.setColorAt(k, col);
+        k++;
+      }
+      inst.instanceMatrix.needsUpdate = true;
+      if(inst.instanceColor) inst.instanceColor.needsUpdate = true;
+      root.add(inst);
+    };
+    img.src = iconDataUrl(id);
+  }
+  _updateHand(delta){
+    const root = this._handRoot; if(!root || !this._handPreset) return;
+    const P = this._handPreset;
+    const aspect = innerWidth / innerHeight;
+    const k = Math.min(1, aspect/1.3);                       // narrower screens: smaller hand, tucked in
+    const halfW = Math.tan(0.5236) * Math.abs(P.pos[2]) * aspect;
+    const baseX = Math.max(0.1, Math.min(P.pos[0], halfW*0.72));
+    this._equip = Math.min(1, this._equip + delta*4.5);
+    const eq = 1 - Math.pow(1 - this._equip, 3);
+    let sw = 0;
+    if(this._swingOneT > 0){
+      this._swingOneT = Math.max(0, this._swingOneT - delta);
+      sw = Math.sin((1 - this._swingOneT/0.3) * Math.PI);
+    } else if(this._swingActive){
+      this._swingPh += delta/0.4; sw = Math.sin((this._swingPh % 1) * Math.PI);
+    } else this._swingPh = 0;
+    const speed = Math.hypot(this.vel.x, this.vel.z);
+    const bob = (this.onGround || this.inWater) ? Math.min(1, speed/4.3) : 0;
+    const bx = Math.cos(this.animT*0.5)*0.012*bob, by = Math.abs(Math.sin(this.animT*0.5))*0.018*bob;
+    root.scale.setScalar(P.scale * k);
+    root.position.set(baseX + bx - sw*0.1, P.pos[1] + by - (1-eq)*0.7 - sw*0.04, P.pos[2] - sw*0.2);
+    root.rotation.set(P.rot[0] - sw*1.05, P.rot[1] + sw*0.3, P.rot[2] - sw*0.15);
+    const day = this._dayFactor === undefined ? 1 : this._dayFactor;
+    this._handAmb.intensity = 0.45 + 0.4*day;
+    this._handSun.intensity = 0.25 + 0.45*day;
+  }
+  _renderHand(){
+    if(this.viewMode || this.dead || !this._handRoot) return;
+    const a = innerWidth/innerHeight;
+    if(this._handAsp !== a){ this._handAsp = a; this._handCam.aspect = a; this._handCam.updateProjectionMatrix(); }
+    const r = this.renderer;
+    r.autoClear = false; r.clearDepth(); r.render(this._handScene, this._handCam); r.autoClear = true;
+  }
+
+  /* ---------------- Mining effects: crack overlay, target outline, chips, swing ---------------- */
   _buildMiningFX(){
     this._crackMat = new THREE.MeshBasicMaterial({
       transparent:true, depthWrite:false, fog:false, alphaTest:0.02,
@@ -6265,6 +6385,7 @@ class Game{
     this._bursts = [];
     this._fxTick = 0; this._swingEl = document.getElementById('heldItem');
     this._refreshCrackTextures();
+    this._initHand();
   }
   _refreshCrackTextures(){
     if(this._crackTex) this._crackTex.forEach(t=>t.dispose());
@@ -6339,17 +6460,14 @@ class Game{
     }catch(e){}
   }
   _updateHeldItem(){
-    const el = document.getElementById('heldItem'); if(!el) return;
-    const id = this.selectedBlock;
-    if(!id || (this.viewMode||0) !== 0){ el.style.display = 'none'; return; }
-    const url = iconDataUrl(id);
-    if(el.dataset.id !== String(id)){ el.src = url; el.dataset.id = String(id); }
-    el.style.display = 'block';
+    const el = document.getElementById('heldItem'); if(el) el.style.display = 'none'; // old flat image retired
+    if(!this._handRoot) return;
+    const id = this.selectedBlock || 0;
+    if(this._handId === id) return;
+    this._handId = id; this._equip = 0;
+    this._setHandModel(id);
   }
-  _swingOnce(){
-    const el = this._swingEl || document.getElementById('heldItem'); if(!el || el.style.display === 'none') return;
-    el.classList.remove('swing1'); void el.offsetWidth; el.classList.add('swing1');
-  }
+  _swingOnce(){ this._swingOneT = 0.3; }
   _updateMiningFX(delta){
     // outline of the block under the crosshair (every other frame is plenty)
     this._fxTick++;
@@ -6368,7 +6486,8 @@ class Game{
       this._crackMesh.position.set(m.x+0.5, m.y+0.5, m.z+0.5); this._crackMesh.visible = true;
     } else this._crackMesh.visible = false;
     // swinging tool while breaking
-    if(this._swingEl) this._swingEl.classList.toggle('swing', !!(m && m.need > 0.15));
+    this._swingActive = !!(m && m.need > 0.15);
+    this._updateHand(delta);
     // chips
     for(let i=this._bursts.length-1; i>=0; i--){
       const b = this._bursts[i];
@@ -7155,7 +7274,7 @@ class Game{
         this.updateDebugPanel();
         if(this._frameCount%20===0) this.updatePlayerListUI();
 
-        if(!this._contextLost) this.renderer.render(this.scene, this.camera);
+        if(!this._contextLost){ this.renderer.render(this.scene, this.camera); this._renderHand(); }
       }catch(err){
         console.error('Frame error (recovered, rendering continues):', err);
       }
@@ -7629,7 +7748,32 @@ function prefetchIconUrlToDataUrl(cacheKey, url){
 // pre-fetch. Safe to call before the menu shows, alongside
 // applyHardcodedBlockTextures()/warmAllBlockTextures() — this is the 2D-icon
 // counterpart to those two, which only warm the 3D block materials.
+// Item textures: drop PNGs in an "items" folder next to this file, named by item id
+// (100.png = stick, 101.png = wood_pickaxe ...). The item's name works too (stick.png).
+// Anything missing keeps the built-in icon.
+const ITEM_TEXTURE_DIR = 'items/';
+function prefetchItemTexture(id){
+  const tryLoad = (url)=> new Promise((resolve)=>{
+    const img = new Image();
+    img.onload = ()=>{
+      iconCache[id] = url; // works even if the canvas below is tainted (e.g. opened from disk)
+      try{
+        const c = document.createElement('canvas');
+        c.width = img.naturalWidth || 16; c.height = img.naturalHeight || 16;
+        c.getContext('2d').drawImage(img, 0, 0);
+        iconCache[id] = c.toDataURL();
+      }catch(e){}
+      resolve(true);
+    };
+    img.onerror = ()=> resolve(false);
+    img.src = url;
+  });
+  const p = tryLoad(ITEM_TEXTURE_DIR + id + '.png').then(ok=> ok ? true : tryLoad(ITEM_TEXTURE_DIR + ITEMS[id].name + '.png'));
+  PENDING_ICON_LOADS.push(p);
+  return p;
+}
 function warmAllIcons(){
+  for(const idStr in ITEMS) prefetchItemTexture(+idStr);
   for(const blockIdStr in BLOCKS){
     const b = BLOCKS[blockIdStr];
     if(b.name==='air') continue;
