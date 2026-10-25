@@ -4669,8 +4669,25 @@ class Game{
     }
 
     // ---- menu buttons ----
-    document.getElementById('invBtnMobile').addEventListener('touchstart', (e)=>{ e.preventDefault(); this.toggleInventory(); });
-    document.getElementById('craftBtnMobile').addEventListener('touchstart', (e)=>{ e.preventDefault(); this.toggleCraftingPanel(); });
+    // Bound to touchstart, pointerup AND click, de-duplicated: some phones/browsers
+    // never deliver one of them (or swallow it after preventDefault), which left
+    // these buttons dead. Whichever fires first runs; the rest within 400ms are ignored.
+    const bindTap = (el, fn)=>{
+      if(!el) return;
+      let last = 0;
+      const run = (e)=>{
+        if(e && e.cancelable) e.preventDefault();
+        const now = performance.now();
+        if(now - last < 400) return;
+        last = now;
+        try{ fn(); }catch(err){ console.error('mobile button failed', err); }
+      };
+      el.addEventListener('touchstart', run, {passive:false});
+      el.addEventListener('pointerup', run);
+      el.addEventListener('click', run);
+    };
+    bindTap(document.getElementById('invBtnMobile'), ()=>this.toggleInventory());
+    bindTap(document.getElementById('craftBtnMobile'), ()=>this.toggleCraftingPanel());
     // chat opens on touchend: phones only raise the keyboard from the end of a tap
     document.getElementById('chatBtnMobile').addEventListener('touchend', (e)=>{ e.preventDefault(); this.openChat(); }, {passive:false});
 
@@ -7120,20 +7137,38 @@ class Game{
       swimming: !!this.inWater,
       held: sanitizeHeldId(this.selectedBlock),
     });
-    const fullRecord = ()=> Object.assign({
+    // If the database rules don't allow the optional "held" field, the whole write
+    // is rejected and multiplayer dies. Detect that once, drop the field, carry on.
+    const stripHeld = (rec)=>{ if(this._noHeldSync) delete rec.held; return rec; };
+    const onWriteFail = (err, retry)=>{
+      const denied = err && /permission|denied|validat/i.test(String(err.code||'') + ' ' + String(err.message||''));
+      if(denied && !this._noHeldSync){
+        console.warn('Presence write rejected; retrying without "held" (add it to your rules to sync held items).', err);
+        this._noHeldSync = true; this._lastPres = null;
+        retry();
+      } else if(denied){
+        console.warn('Presence write rejected by database rules:', err);
+      }
+    };
+    const fullRecord = ()=> stripHeld(Object.assign({
       name: PLAYER_NAME.slice(0,16), playerId: PLAYER_ID, palette: PLAYER_PALETTE, t: Date.now()
-    }, motion());
+    }, motion()));
     // (re)create the record whenever we (re)connect, so a dropped connection that
     // removed it via onDisconnect never leaves us invisible
     this._connRef = fbDB.ref('.info/connected');
     this._connRef.on('value', s=>{
-      if(s.val() === true){ myRef.onDisconnect().remove(); myRef.set(fullRecord()).catch(()=>{}); }
+      if(s.val() === true){
+        myRef.onDisconnect().remove();
+        const writeFull = ()=> myRef.set(fullRecord()).catch(err=>onWriteFail(err, writeFull));
+        writeFull();
+      }
     });
     this._presenceInterval = setInterval(()=>{
       const m = motion(), key = JSON.stringify(m), now = Date.now();
       if(key === this._lastPres && now - (this._lastPresT||0) < 2000) return; // nothing changed
       this._lastPres = key; this._lastPresT = now;
-      myRef.update(Object.assign(m, { t: now })).catch(()=>{});
+      const send = ()=> myRef.update(stripHeld(Object.assign(motion(), { t: Date.now() }))).catch(err=>onWriteFail(err, ()=> myRef.set(fullRecord()).catch(()=>{})));
+      send();
     }, 150);
   }
 
@@ -7932,7 +7967,7 @@ function prefetchIconUrlToDataUrl(cacheKey, url){
 // Item textures: drop PNGs in an "items" folder next to this file, named by item id
 // (100.png = stick, 101.png = wood_pickaxe ...). The item's name works too (stick.png).
 // Anything missing keeps the built-in icon.
-const ITEM_TEXTURE_DIRS = ['assets/items/', 'items/']; // assets/items/ is the shipped location; items/ kept for drop-in compatibility
+const ITEM_TEXTURE_DIRS = ['assets/items/']; // shipped location
 function prefetchItemTexture(id){
   const tryLoad = (url)=> new Promise((resolve)=>{
     const img = new Image();
