@@ -1422,10 +1422,20 @@ const TexturePainters = {
     paintNoise(ctx, '#6f6f74', seed, {variance:12});
     ctx.fillStyle='#1a1a1a'; ctx.fillRect(4,5,8,7);
   },
-  door_wood(ctx, seed){
+  door_wood(ctx, seed){ // lower half: planks, two recessed panels, handle
     paintNoise(ctx, '#9c7a44', seed, {variance:10});
-    ctx.strokeStyle='rgba(0,0,0,0.35)'; ctx.lineWidth=1;
-    ctx.strokeRect(2,2,TEX_SIZE-4,6); ctx.strokeRect(2,9,TEX_SIZE-4,6);
+    ctx.fillStyle='#5a3f22'; ctx.fillRect(0,0,TEX_SIZE,1); ctx.fillRect(0,0,1,TEX_SIZE); ctx.fillRect(TEX_SIZE-1,0,1,TEX_SIZE); ctx.fillRect(0,TEX_SIZE-1,TEX_SIZE,1);
+    ctx.strokeStyle='rgba(0,0,0,0.4)'; ctx.lineWidth=1;
+    ctx.strokeRect(3.5,2.5,TEX_SIZE-7,5); ctx.strokeRect(3.5,9.5,TEX_SIZE-7,5);
+    ctx.fillStyle='#d8d8d8'; ctx.fillRect(TEX_SIZE-5,1,2,2);
+  },
+  door_wood_top(ctx, seed){ // upper half: window row over a panel
+    paintNoise(ctx, '#9c7a44', seed, {variance:10});
+    ctx.fillStyle='#5a3f22'; ctx.fillRect(0,0,TEX_SIZE,1); ctx.fillRect(0,0,1,TEX_SIZE); ctx.fillRect(TEX_SIZE-1,0,1,TEX_SIZE);
+    ctx.fillStyle='#6b88a8';
+    for(let i=0;i<3;i++) ctx.fillRect(3+i*4,3,3,4);
+    ctx.strokeStyle='rgba(0,0,0,0.4)'; ctx.lineWidth=1;
+    ctx.strokeRect(3.5,9.5,TEX_SIZE-7,6);
   },
   stairs_stone(ctx, seed){ TexturePainters.stone(ctx, seed); },
   stairs_wood(ctx, seed){ TexturePainters.planks(ctx, seed); },
@@ -1668,6 +1678,8 @@ function oreDropFor(blockId){
   // neither needs smelting), but iron_ore/gold_ore now drop the RAW ore item
   // instead of a finished ingot: turning raw ore into an ingot is the furnace's job.
   const map = { 3:4, 13:116, 14:117, 15:118, 16:115 }; // stone drops cobblestone
+  const sv = BLOCKS[blockId];
+  if(sv && sv.dropId) return sv.dropId; // rotated door/stair variants drop the plain item
   return map[blockId] || null;
 }
 
@@ -1678,6 +1690,46 @@ for(const id in BLOCKS){
   if(b.transparent === undefined) b.transparent = false;
   if(b.solid === undefined) b.solid = (b.name!=='air');
 }
+
+/* ---- shaped blocks: doors (2 tall, open/close) + stairs, 4 facings each ----
+   Orientation lives in hidden block ids 63..83 (non-enumerable, so every
+   existing BLOCKS loop ignores them). Facing 0=-z 1=+x 2=+z 3=-x = the way the
+   player looked when placing. Boxes are cell-local [x0,y0,z0,x1,y1,z1]. */
+const SHAPE = (function(){
+  const rot = (b,f)=>{ let [x0,y0,z0,x1,y1,z1] = b;
+    for(let i=0;i<f;i++){ const a=1-z1, c=1-z0, d=x0, e=x1; x0=a; x1=c; z0=d; z1=e; }
+    return [x0,y0,z0,x1,y1,z1]; };
+  const TH = 3/16, ids = { door:{}, stairs:{} };
+  let next = 63;
+  const hide = (base, over)=>{
+    const id = next++;
+    const d = Object.assign({}, base, over, { id, solid:true, transparent:true, dropId:over.dropId });
+    Object.defineProperty(BLOCKS, id, { value:d, enumerable:false, writable:true, configurable:true });
+    return id;
+  };
+  // doors: base id 21 = lower, closed, facing 0
+  const doorBoxes = (f, open)=> [ rot(open ? [0,0,0,TH,1,1] : [0,0,1-TH,1,1,1], f) ];
+  const lowerBase = BLOCKS[21];
+  const upperBase = Object.assign({}, lowerBase, { tex:{all:'door_wood_top'} });
+  for(let f=0; f<4; f++) for(let o=0; o<2; o++){
+    const meta = { facing:f, open:!!o, boxes:doorBoxes(f,o), solid:true, transparent:true, dropId:21 };
+    ids.door['lower'+f+o] = (f===0 && o===0) ? 21 : hide(lowerBase, Object.assign({ doorHalf:'lower', texFrom:21 }, meta));
+    ids.door['upper'+f+o] = hide(upperBase, Object.assign({ doorHalf:'upper' }, meta));
+  }
+  Object.assign(lowerBase, { doorHalf:'lower', facing:0, open:false, boxes:doorBoxes(0,false), dropId:21 });
+  // stairs: base ids 22 (stone) + 23 (wood) = facing 0
+  [22,23].forEach(baseId=>{
+    const base = BLOCKS[baseId];
+    const sb = f=> [ rot([0,0,0,1,0.5,1],f), rot([0,0.5,0,1,1,0.5],f) ];
+    base.transparent = true; base.boxes = sb(0); base.facing = 0; base.dropId = baseId;
+    for(let f=0; f<4; f++) ids.stairs[baseId+'_'+f] = f===0 ? baseId : hide(base, { facing:f, boxes:sb(f), texFrom:baseId, dropId:baseId });
+  });
+  return {
+    door:(half,f,open)=> ids.door[half+f+(open?1:0)],
+    stairs:(baseId,f)=> ids.stairs[baseId+'_'+f],
+    facingOf:(dir)=> Math.abs(dir.x)>Math.abs(dir.z) ? (dir.x>0?1:3) : (dir.z>0?2:0),
+  };
+})();
 
 function hashStr(s){
   let h=0; for(let i=0;i<s.length;i++){ h = (h*31 + s.charCodeAt(i))|0; }
@@ -1764,7 +1816,8 @@ const PENDING_TEXTURE_LOADS = [];
 // (see faceMaterialKey) so setting a custom water/lava image applies to
 // every flow-level variant, not just the still/source block id.
 function faceSlotKey(blockId, face){
-  const b = BLOCKS[blockId];
+  let b = BLOCKS[blockId];
+  if(b && b.texFrom){ blockId = b.texFrom; b = BLOCKS[blockId]; } // shaped variants share their base block's art
   if(b && b.liquid && b.tex && b.tex.all) return 'paint_'+b.tex.all;
   return blockId+'_'+face;
 }
@@ -1833,7 +1886,7 @@ function alphaForPaint(paintName){
 // front (the mesher tables sent to the worker reference these slots).
 function allBlockMaterialKeys(){
   const keys = new Set();
-  for(const idStr in BLOCKS){
+  for(const idStr of Object.getOwnPropertyNames(BLOCKS)){
     const id = +idStr, b = BLOCKS[idStr];
     if(b.name === 'air') continue;
     for(const f of MESH_FACE_KEYS) keys.add(faceMaterialKey(id, f));
@@ -1975,7 +2028,8 @@ const ChunkMaterials = (function(){
 ------------------------------------------------------------------------- */
 function buildMesherTables(){
   let maxId = 0;
-  for(const idStr in BLOCKS) maxId = Math.max(maxId, +idStr);
+  const allIds = Object.getOwnPropertyNames(BLOCKS); // includes the hidden shaped variants
+  for(const idStr of allIds) maxId = Math.max(maxId, +idStr);
   const N = maxId + 1;
   const familyId = (def)=> (def.liquidFamily || 'water') === 'water' ? 1 : ((def.liquidFamily) === 'lava' ? 2 : 3);
   const T = {
@@ -1983,7 +2037,7 @@ function buildMesherTables(){
     lightRadius: TORCH_LIGHT_RADIUS,
     exists: new Uint8Array(N), transparent: new Uint8Array(N), liquid: new Uint8Array(N),
     family: new Uint8Array(N), isSource: new Uint8Array(N), invisible: new Uint8Array(N),
-    flow: new Float32Array(N),
+    flow: new Float32Array(N), boxes: new Array(N).fill(null),
     faceRect: new Float32Array(N*3*4), faceLayer: new Uint8Array(N*3), faceAlpha: new Float32Array(N*3),
     faces: FACE_DEFS.map(fd => ({
       nx: fd.normal[0], ny: fd.normal[1], nz: fd.normal[2],
@@ -1991,9 +2045,10 @@ function buildMesherTables(){
       corners: [].concat(...fd.corners),
     })),
   };
-  for(const idStr in BLOCKS){
+  for(const idStr of allIds){
     const id = +idStr, def = BLOCKS[idStr];
     T.exists[id] = 1;
+    T.boxes[id] = def.boxes || null;
     T.transparent[id] = def.transparent ? 1 : 0;
     T.liquid[id] = def.liquid ? 1 : 0;
     T.family[id] = def.liquid ? familyId(def) : 0;
@@ -2022,7 +2077,7 @@ function vfMeshChunk(job, T){
   const L = lights ? Math.floor(lights.length/3) : 0;
   const LR = T.lightRadius, LR2 = LR*LR;
   const trans = T.transparent, liq = T.liquid, fam = T.family, flow = T.flow, isSrc = T.isSource, inv = T.invisible;
-  const fr = T.faceRect, fl = T.faceLayer, fa = T.faceAlpha, faces = T.faces;
+  const fr = T.faceRect, fl = T.faceLayer, fa = T.faceAlpha, faces = T.faces, boxes = T.boxes;
 
   const pos = [[],[],[]], nor = [[],[],[]], uvs = [[],[],[]], col = [[],[],[]], idx = [[],[],[]];
   const vc = [0,0,0];
@@ -2066,6 +2121,39 @@ function vfMeshChunk(job, T){
       for(let x=0;x<S;x++){
         const id = blocks[(y*S+z)*S+x];
         if(id === 0 || inv[id]) continue;
+
+        const shape = boxes[id];
+        if(shape){
+          for(let bi=0; bi<shape.length; bi++){
+            const q = shape[bi];
+            for(let fi=0; fi<6; fi++){
+              const fd = faces[fi];
+              const edge = fd.nx===1 ? q[3]>=1 : fd.nx===-1 ? q[0]<=0 : fd.ny===1 ? q[4]>=1 : fd.ny===-1 ? q[1]<=0 : fd.nz===1 ? q[5]>=1 : q[2]<=0;
+              if(edge){ const nb = blockAt(x+fd.nx, y+fd.ny, z+fd.nz); if(nb !== 0 && !trans[nb]) continue; }
+              const o = id*3 + fd.kind, li = fl[o];
+              const P = pos[li], N = nor[li], U = uvs[li], C = col[li], I = idx[li];
+              const start = vc[li];
+              const u0 = fr[o*4], v0 = fr[o*4+1], u1 = fr[o*4+2], v1 = fr[o*4+3];
+              const cn = fd.corners;
+              let ua = 0, va = 0;
+              for(let a=0;a<3;a++){ if(cn[9+a] !== cn[a]) ua = a; if(cn[3+a] !== cn[a]) va = a; }
+              for(let c=0;c<4;c++){
+                const lx = cn[c*3] ? q[3] : q[0], ly = cn[c*3+1] ? q[4] : q[1], lz = cn[c*3+2] ? q[5] : q[2];
+                const lp = [lx, ly, lz];
+                const vx = x+lx, vy = y+ly, vz = z+lz;
+                P.push(vx, vy, vz);
+                N.push(fd.nx, fd.ny, fd.nz);
+                U.push(u0 + (u1-u0)*Math.abs(lp[ua]-cn[ua]), v0 + (v1-v0)*Math.abs(lp[va]-cn[va]));
+                if(L){ const lit = torchLit(vx,vy,vz,fd.nx,fd.ny,fd.nz); C.push(1 + 4.2*lit, 1 + 2.8*lit, 1 + 1.1*lit); }
+                else C.push(1,1,1);
+                if(li === 2) C.push(fa[o]);
+              }
+              I.push(start,start+1,start+2, start,start+2,start+3);
+              vc[li] += 4;
+            }
+          }
+          continue;
+        }
 
         let h = 1;
         if(liq[id]){
@@ -5797,6 +5885,15 @@ class Game{
   }
 
   updateHotbarUI(){
+    // survival: a stack that hit 0 leaves the hotbar (and your hand) instead of showing "0"
+    if(GAME_MODE!=='creative'){
+      this.hotbar.forEach((hid,i)=>{
+        if(hid!==0 && (this.inventoryCounts[hid]||0)<=0){
+          this.hotbar[i] = 0;
+          if(this.selectedSlot===i || this.selectedBlock===hid) this.selectedBlock = 0;
+        }
+      });
+    }
     this._updateHeldItem();
     const bar = document.getElementById('hotbar');
     bar.innerHTML='';
@@ -6001,6 +6098,15 @@ class Game{
     this.world.setBlock(m.x,m.y,m.z,0);
     this.markChunkRebuildsAround(m.x,m.y,m.z);
     this.syncBlockChange(m.x,m.y,m.z,0);
+    if(def && def.doorHalf){ // a door is two blocks: take the other half too (no second drop)
+      const oy = def.doorHalf==='lower' ? m.y+1 : m.y-1;
+      const ob = BLOCKS[this.world.getBlock(m.x,oy,m.z)];
+      if(ob && ob.doorHalf && ob.doorHalf!==def.doorHalf){
+        this.world.setBlock(m.x,oy,m.z,0);
+        this.markChunkRebuildsAround(m.x,oy,m.z);
+        this.syncBlockChange(m.x,oy,m.z,0);
+      }
+    }
     if(m.id===41) this.removeTorchLight(m.x,m.y,m.z);
 
     // determine if the held tool actually qualifies to harvest a drop
@@ -6038,11 +6144,16 @@ class Game{
   // empty, auto-select the new item so it can be placed/used immediately
   // instead of silently sitting in the bar while the empty-hand slot stays selected.
   addToHotbar(id){
+    // Existing stack: just count up. New item: first empty slot that is NOT the
+    // empty slot you are holding, so pickups never pop into your hand by themselves.
     if(!this.hotbar.includes(id)){
-      const emptyIdx = this.hotbar.indexOf(0);
-      if(emptyIdx !== -1) this.hotbar[emptyIdx] = id;
+      let emptyIdx = this.hotbar.findIndex((v,i)=> v===0 && !(this.selectedBlock===0 && i===this.selectedSlot));
+      if(emptyIdx === -1) emptyIdx = this.hotbar.indexOf(0); // bar is full otherwise: use the held slot
+      if(emptyIdx !== -1){
+        this.hotbar[emptyIdx] = id;
+        if(emptyIdx === this.selectedSlot) this.selectedBlock = id;
+      }
     }
-    if(this.selectedBlock === 0) this.selectedBlock = id;
     this.updateHotbarUI();
   }
   // Some ore blocks drop a refined item instead of the block itself.
@@ -6062,11 +6173,40 @@ class Game{
     }
   }
 
+  _setShaped(x,y,z,id){
+    this.world.setBlock(x,y,z,id);
+    this.markChunkRebuildsAround(x,y,z);
+    this.syncBlockChange(x,y,z,id);
+  }
+  // 0 = not a shaped item, 1 = placed, -1 = refused (no room)
+  _placeShaped(x,y,z,heldId){
+    if(heldId!==21 && heldId!==22 && heldId!==23) return 0;
+    const f = SHAPE.facingOf(this.getLookRay().dir);
+    if(heldId===21){
+      const above = this.world.getBlock(x,y+1,z);
+      if(above!==0 && !BLOCKS[above].liquid) return -1;
+      const feet = this.pos.clone().floor();
+      if(x===feet.x && z===feet.z && (y+1===feet.y || y+1===feet.y+1)) return -1;
+      this._setShaped(x,y,z, SHAPE.door('lower',f,false));
+      this._setShaped(x,y+1,z, SHAPE.door('upper',f,false));
+    } else this._setShaped(x,y,z, SHAPE.stairs(heldId,f));
+    return 1;
+  }
+  _toggleDoor(x,y,z){
+    const b = BLOCKS[this.world.getBlock(x,y,z)];
+    const oy = b.doorHalf==='lower' ? y+1 : y-1;
+    const o = BLOCKS[this.world.getBlock(x,oy,z)];
+    const open = !b.open;
+    this._setShaped(x,y,z, SHAPE.door(b.doorHalf,b.facing,open));
+    if(o && o.doorHalf && o.doorHalf!==b.doorHalf) this._setShaped(x,oy,z, SHAPE.door(o.doorHalf,o.facing,open));
+  }
+
   placeBlock(){
     const hit = this.raycastBlock(6);
     if(!hit) return;
     if(hit.id===18){ this.toggleCraftingPanel(true); return; } // crafting_table: interact instead of place
     if(hit.id===19){ this.toggleFurnacePanel(hit.x,hit.y,hit.z); return; } // furnace: interact instead of place
+    if(BLOCKS[hit.id].doorHalf){ this._toggleDoor(hit.x,hit.y,hit.z); this._swingOnce(); return; } // door: open/close
     const px = hit.x+hit.normal[0], py = hit.y+hit.normal[1], pz = hit.z+hit.normal[2];
     // don't place inside player
     const feet = this.pos.clone().floor();
@@ -6078,9 +6218,13 @@ class Game{
     if(GAME_MODE!=='creative'){
       if((this.inventoryCounts[heldId]||0)<=0) return;
     }
-    this.world.setBlock(px,py,pz,heldId);
-    this.markChunkRebuildsAround(px,py,pz);
-    this.syncBlockChange(px,py,pz,heldId);
+    const shaped = this._placeShaped(px,py,pz,heldId);
+    if(shaped<0) return;
+    if(shaped===0){
+      this.world.setBlock(px,py,pz,heldId);
+      this.markChunkRebuildsAround(px,py,pz);
+      this.syncBlockChange(px,py,pz,heldId);
+    }
     if(heldId===41) this.addTorchLight(px,py,pz);
     if(GAME_MODE!=='creative' && this.inventoryCounts[heldId] < 90){
       this.inventoryCounts[heldId]--;
@@ -6510,8 +6654,33 @@ class Game{
 
   /* ---------------- Physics & Movement ---------------- */
   isSolidAt(x,y,z){
-    const id = this.world.getBlock(Math.floor(x),Math.floor(y),Math.floor(z));
-    return id!==0 && BLOCKS[id].solid;
+    const bx = Math.floor(x), by = Math.floor(y), bz = Math.floor(z);
+    const id = this.world.getBlock(bx,by,bz);
+    if(id===0) return false;
+    const b = BLOCKS[id];
+    if(!b.solid) return false;
+    if(!b.boxes) return true;
+    const fx = x-bx, fy = y-by, fz = z-bz;
+    return b.boxes.some(q=> fx>=q[0] && fx<=q[3] && fy>=q[1] && fy<=q[4] && fz>=q[2] && fz<=q[5]);
+  }
+
+  // Box-accurate AABB test (doors/stairs only fill part of their cell).
+  _aabbBlocked(minX,maxX,minY,maxY,minZ,maxZ){
+    for(let bx=Math.floor(minX); bx<=Math.floor(maxX); bx++){
+      for(let bz=Math.floor(minZ); bz<=Math.floor(maxZ); bz++){
+        for(let by=Math.floor(minY); by<=Math.floor(maxY-0.001); by++){
+          const id = this.world.getBlock(bx,by,bz);
+          if(id===0) continue;
+          const b = BLOCKS[id];
+          if(!b.solid) continue;
+          if(!b.boxes) return true;
+          for(const q of b.boxes){
+            if(maxX>bx+q[0] && minX<bx+q[3] && maxY>by+q[1] && minY<by+q[4] && maxZ>bz+q[2] && minZ<bz+q[5]) return true;
+          }
+        }
+      }
+    }
+    return false;
   }
 
   collideAndMove(delta){
@@ -6526,19 +6695,18 @@ class Game{
       const minX = newP.x-w, maxX=newP.x+w;
       const minZ = newP.z-w, maxZ=newP.z+w;
       const minY = newP.y, maxY=newP.y+this.height;
-      let blocked=false;
-      for(let bx=Math.floor(minX); bx<=Math.floor(maxX); bx++){
-        for(let bz=Math.floor(minZ); bz<=Math.floor(maxZ); bz++){
-          for(let by=Math.floor(minY); by<=Math.floor(maxY-0.001); by++){
-            if(this.isSolidAt(bx,by,bz)){ blocked=true; break; }
-          }
-          if(blocked) break;
-        }
-        if(blocked) break;
-      }
+      const blocked = this._aabbBlocked(minX,maxX,minY,maxY,minZ,maxZ);
       if(!blocked){ this.pos[axis]=newP[axis]; }
       else {
         if(axis==='y') this.vel.y=0;
+        else if(this.vel.y<=0 && this._aabbBlocked(p.x-w,p.x+w,p.y,p.y+this.height,p.z-w,p.z+w)===false){
+          // stair step: a half-block lip is climbed automatically, a full block still needs a jump
+          const sy = p.y + 0.5001;
+          if(!this._aabbBlocked(minX,maxX,sy,sy+this.height,minZ,maxZ) &&
+             (this.isSolidAt(p.x,p.y-0.05,p.z) || this.onGround)){
+            this.pos[axis]=newP[axis]; this.pos.y = sy;
+          }
+        }
       }
     };
     tryMove('x', this.vel.x*delta);
@@ -7905,8 +8073,34 @@ class Game{
   die(){
     if(this.dead) return;
     this.dead = true;
+    this._dropEverything();
     this.showCenterMsg('You died', 1400);
     setTimeout(()=>{ this.respawn(); }, 1400);
+  }
+
+  // Survival death: everything you carry spills out where you fell.
+  _dropEverything(){
+    if(GAME_MODE!=='survival') return;
+    try{ this.returnCraftGridToInventory(); this.returnCraftGrid2ToInventory(); this._depositCursor(false); }catch(e){}
+    const at = this.pos;
+    Object.keys(this.inventoryCounts).map(Number).forEach(id=>{
+      const n = this.inventoryCounts[id] || 0, def = ALL_DEFS[id];
+      if(n<=0 || !def) return;
+      const dur = def.durability !== undefined
+        ? (this.toolDurability[id] === undefined ? def.durability : this.toolDurability[id]) : undefined;
+      const a = Math.random()*Math.PI*2, sp = 1.5 + Math.random()*2.5;
+      this._spawnDrop(id, n, dur, {
+        pos: new THREE.Vector3(at.x, at.y+0.8, at.z),
+        vel: new THREE.Vector3(Math.cos(a)*sp, 4+Math.random()*2, Math.sin(a)*sp),
+        delay: 3, magnet: false
+      });
+    });
+    this.hotbar = [0,0,0,0,0,0,0,0,0];
+    this.inventoryCounts = {};
+    this.toolDurability = {};
+    this.selectedBlock = 0;
+    this.updateHotbarUI();
+    this._refreshAll();
   }
 
   respawn(){
@@ -7916,14 +8110,6 @@ class Game{
     this.pos.copy(this.respawnPos);
     this.pos.y += 3;
     this.updateHealthUI();
-    // In survival, dying drops the player back with an empty inventory —
-    // classic hardcore-lite feel; comment this out if you'd rather keep items.
-    if(GAME_MODE==='survival'){
-      this.hotbar = [0,0,0,0,0,0,0,0,0];
-      this.inventoryCounts = {};
-      this.selectedBlock = 0;
-      this.updateHotbarUI();
-    }
   }
 
   /* ---------------- Arch portals ---------------- */
