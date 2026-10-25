@@ -750,6 +750,33 @@
   .durBar{position:absolute; left:10%; right:10%; bottom:3px; height:4px; background:#000; border-radius:2px; overflow:hidden; pointer-events:none;}
   .durBar i{display:block; height:100%; border-radius:2px;}
   .hotslot, .invSlot, .invSlot2, .craftSlot, .craftOutSlot{position:relative;}
+
+  /* ---------- mobile button art (assets/mobile/*.png); each class is added only if its image loaded ---------- */
+  #crouchBtn{display:none;}
+  @media (pointer:coarse){
+    #crouchBtn{
+      display:flex; width:calc(var(--js)*.5); height:calc(var(--js)*.5); font-size:calc(var(--js)*.2);
+      right:calc(30px + var(--js)*.62 + env(safe-area-inset-right,0px));
+      bottom:calc(var(--hs) + 34px + env(safe-area-inset-bottom,0px));
+    }
+  }
+  #crouchBtn.on{filter:brightness(.7);}
+  body.sk-base #mobileControls .joystick{
+    background:url(assets/mobile/joystick_base.png) center/100% 100% no-repeat; border:none; border-radius:0; image-rendering:pixelated;
+  }
+  body.sk-stick #mobileControls .joystick .stick{
+    background:url(assets/mobile/joystick_stick.png) center/100% 100% no-repeat; border-radius:0; image-rendering:pixelated;
+  }
+  body.sk-jump #mobileControls #jumpBtn{
+    background:url(assets/mobile/jump.png) center/100% 100% no-repeat; border:none; border-radius:0; image-rendering:pixelated; font-size:0;
+  }
+  body.sk-jump #mobileControls #jumpBtn .ico{display:none;}
+  body.sk-btn #mobileControls .mbtnSmall, body.sk-btn #mobileControls #pauseBtnMobile, body.sk-btn #mobileControls #settingsBtnMobile,
+  body.sk-btn #mobileControls #descendBtn, body.sk-btn #mobileControls #crouchBtn{
+    background:url(assets/mobile/button.png) center/100% 100% no-repeat; border:none; border-radius:0; image-rendering:pixelated; color:#3b3b3b;
+  }
+  body.sk-btn #mobileControls .mbtnSmall:active, body.sk-btn #mobileControls #descendBtn:active, body.sk-btn #mobileControls #crouchBtn:active,
+  body.sk-jump #mobileControls #jumpBtn:active{filter:brightness(.75);}
 </style>
 </head>
 <body>
@@ -1106,6 +1133,7 @@
 <div id="mobileControls">
   <div class="joystick" id="moveJoystick"><div class="stick" id="moveStick"></div></div>
   <div class="mbtn" id="jumpBtn" aria-label="Jump / swim up"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20V5M6 11l6-6 6 6"/></svg></div>
+  <div class="mbtn" id="crouchBtn" aria-label="Crouch"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 8h14M8 13l4 4 4-4"/></svg></div>
   <div class="mbtn" id="descendBtn" aria-label="Fly down / dive"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v15M6 13l6 6 6-6"/></svg></div>
   <div class="mBar mBarLeft">
     <div class="mbtnSmall" id="pauseBtnMobile" aria-label="Menu"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5v14M15 5v14"/></svg></div>
@@ -2544,6 +2572,7 @@ function sfxCandidates(url){
 function sfxReportMissing(url){
   console.warn('Sound file could not be loaded:', url);
   if(_sfxReported[url]) return;
+  if(typeof gameInstance === 'undefined' || !gameInstance) return;
   _sfxReported[url] = true;
   try{ if(typeof gameInstance !== 'undefined' && gameInstance) gameInstance.addChatLine('System', 'Sound file not found: ' + url + ' (check the folder/file name, it is case-sensitive)', false); }catch(e){}
 }
@@ -2572,25 +2601,38 @@ function playSfxUrl(url){
   };
   attempt(0);
 }
-// Checks every built-in sound file once shortly after the world loads, so a
-// wrong path shows up in chat right away instead of failing silently later.
-function warmSfx(){
-  const urls = Object.values(DEFAULT_BREAK_SOUNDS).concat([PICKUP_SOUND_URL, DOOR_OPEN_SOUND_URL, DOOR_CLOSE_SOUND_URL]);
-  setTimeout(()=>{
-    urls.forEach(url=>{
-      const cands = sfxCandidates(url);
+const PENDING_SFX_LOADS = [];
+const _sfxHold = []; // keeps preloaded audio elements alive so the browser does not drop them
+function allSfxUrls(){
+  return Object.values(DEFAULT_BREAK_SOUNDS).concat([PICKUP_SOUND_URL, DOOR_OPEN_SOUND_URL, DOOR_CLOSE_SOUND_URL]);
+}
+// Downloads every built-in sound while the menu boots, so the first break / pickup /
+// door has no delay. Remembers which path variant works (see sfxCandidates).
+function preloadAllSfx(){
+  allSfxUrls().forEach(url=>{
+    const cands = sfxCandidates(url);
+    PENDING_SFX_LOADS.push(new Promise(resolve=>{
       const probe = (i)=>{
-        if(!cands[i]){ sfxReportMissing(url); return; }
+        if(!cands[i]){ resolve(); return; }
         const a = new Audio();
+        let done = false;
         a.preload = 'auto';
-        a.addEventListener('canplaythrough', ()=>{ _sfxGood[url] = cands[i]; }, { once:true });
-        a.addEventListener('error', ()=> probe(i+1), { once:true });
+        a.addEventListener('canplaythrough', ()=>{ if(done) return; done = true; _sfxGood[url] = cands[i]; _sfxHold.push(a); resolve(); }, { once:true });
+        a.addEventListener('error', ()=>{ if(done) return; done = true; probe(i+1); }, { once:true });
         a.src = cands[i];
         a.load();
       };
       probe(0);
-    });
-  }, 2500);
+    }));
+  });
+}
+// Never blocks boot for long: some phones refuse to preload audio until the first tap.
+function waitForAllSfxToLoad(){
+  return Promise.race([Promise.all(PENDING_SFX_LOADS), new Promise(r=>setTimeout(r, 2500))]);
+}
+// Once in the world, tell the player in chat about any sound that never loaded.
+function warmSfx(){
+  setTimeout(()=>{ allSfxUrls().forEach(url=>{ if(!_sfxGood[url]) sfxReportMissing(url); }); }, 2500);
 }
 // Blocks whose break sound LOOPS while you hold the mouse on them (stops when the block breaks).
 // Add e.g. grass:true here to loop the grass sound too.
@@ -4216,6 +4258,7 @@ class Game{
     this.flying = false;
     this.eyeHeight = 1.62;
     this.width = 0.6; this.height = 1.8;
+    this.crouching = false; this.crouchHeld = false; // crouch: hold Z on keyboard, toggle button on mobile
     this._footstepDist = 0; // distance accumulated since last step sound
 
     this.selectedBlock = 1;
@@ -4995,6 +5038,16 @@ class Game{
       const descEnd = ()=>{ KEY['ControlLeft'] = false; };
       desc.addEventListener('touchend', descEnd);
       desc.addEventListener('touchcancel', descEnd);
+    }
+
+    // ---- crouch (tap to toggle) ----
+    const crBtn = document.getElementById('crouchBtn');
+    if(crBtn){
+      crBtn.addEventListener('touchstart', (e)=>{
+        e.preventDefault();
+        this.crouchHeld = !this.crouchHeld;
+        crBtn.classList.toggle('on', this.crouchHeld);
+      }, {passive:false});
     }
 
     // ---- menu buttons ----
@@ -6888,7 +6941,11 @@ class Game{
       const minZ = newP.z-w, maxZ=newP.z+w;
       const minY = newP.y, maxY=newP.y+this.height;
       const blocked = this._aabbBlocked(minX,maxX,minY,maxY,minZ,maxZ);
-      if(!blocked){ this.pos[axis]=newP[axis]; }
+      if(!blocked){
+        // crouching on the ground: refuse a step that would leave nothing underfoot (edge safety)
+        if(axis!=='y' && this.crouching && this.onGround && !this._aabbBlocked(minX,maxX,newP.y-0.6,newP.y-0.01,minZ,maxZ)) return;
+        this.pos[axis]=newP[axis];
+      }
       else {
         if(axis==='y') this.vel.y=0;
         else if(this.vel.y<=0 && this._aabbBlocked(p.x-w,p.x+w,p.y,p.y+this.height,p.z-w,p.z+w)===false){
@@ -6931,9 +6988,23 @@ class Game{
     this.headUnderwater = this._isWaterAt(px, py+this.eyeHeight, pz);
     const inW = this.inWater;
 
+    // ---- crouch: slower, shorter, and you cannot walk off edges ----
+    const wantCrouch = !!(this.crouchHeld || KEY['KeyZ']) && !this.flying && !inW;
+    if(wantCrouch !== this.crouching){
+      if(wantCrouch){ this.crouching = true; this.height = 1.5; }
+      else {
+        const cw = this.width/2;
+        // only stand up if there is room above
+        if(!this._aabbBlocked(px-cw, px+cw, py, py+1.8, pz-cw, pz+cw)){ this.crouching = false; this.height = 1.8; }
+      }
+    }
+    const eyeTarget = this.crouching ? 1.27 : 1.62;
+    this.eyeHeight += (eyeTarget - this.eyeHeight) * Math.min(1, delta*14);
+
     let speed = this.flying?9:4.3;
     if(inW) speed *= 0.62;
-    const sprint = (KEY['ShiftLeft'] || this.mobileSprint) ? (inW?1.3:1.4) : 1;
+    if(this.crouching) speed *= 0.35;
+    const sprint = (!this.crouching && (KEY['ShiftLeft'] || this.mobileSprint)) ? (inW?1.3:1.4) : 1;
     let mx=0, mz=0;
     if(KEY['KeyW']) mz -= 1;
     if(KEY['KeyS']) mz += 1;
@@ -7323,6 +7394,14 @@ class Game{
     g.rotation.y = this.yaw;
     g.rotation.x += ((swimming ? -1.25 : 0) - g.rotation.x) * Math.min(1, delta*8);
     g.position.set(this.pos.x, this.pos.y + (-g.rotation.x)*0.35, this.pos.z);
+    {
+      const kc = this._crouchPose = (this._crouchPose||0) + ((this.crouching?1:0) - (this._crouchPose||0)) * Math.min(1, delta*12);
+      const u = 1.8/32;
+      P.body.rotation.x = 0.45*kc;
+      P.head.position.set(0, 24*u - 2.5*u*kc, -1.5*u*kc);
+      P.armL.position.set(-6*u, 24*u - 2*u*kc, -1.5*u*kc);
+      P.armR.position.set( 6*u, 24*u - 2*u*kc, -1.5*u*kc);
+    }
     P.head.rotation.x = Math.max(-1.2, Math.min(1.2, this.pitch)) - g.rotation.x*0.8;
     if(speed > 0.4){
       this._selfSwing += delta*(swimming?6:9);
@@ -9919,6 +9998,13 @@ window.addEventListener('DOMContentLoaded', ()=>{
   // so icons are already decoded data URLs by the time the menu/any panel
   // can render them, not just the in-world block faces.
   warmAllIcons();
+  preloadAllSfx();
+  // mobile button art: a skin class is added only when its image really loads, so a missing file keeps the old look
+  Object.entries({ 'sk-base':'assets/mobile/joystick_base.png', 'sk-stick':'assets/mobile/joystick_stick.png', 'sk-jump':'assets/mobile/jump.png', 'sk-btn':'assets/mobile/button.png' }).forEach(([cls,url])=>{
+    const im = new Image();
+    im.onload = ()=> document.body.classList.add(cls);
+    im.src = url;
+  });
 
   startLoadingTips();
   setLoad(15,'Painting blocks…');
@@ -9933,6 +10019,7 @@ window.addEventListener('DOMContentLoaded', ()=>{
         // block forever if a host is slow/unreachable (each promise always
         // resolves via onerror), so it won't hang the boot sequence.
         await waitForAllIconsToLoad();
+        await waitForAllSfxToLoad();
         setLoad(100,'Ready!');
         setTimeout(()=>{
           stopLoadingTips();
