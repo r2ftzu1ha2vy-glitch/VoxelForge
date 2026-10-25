@@ -7352,7 +7352,7 @@ class Game{
       this._lastPres = key; this._lastPresT = now;
       const send = ()=> myRef.update(stripHeld(Object.assign(motion(), { t: Date.now() }))).catch(err=>onWriteFail(err, ()=> myRef.set(fullRecord()).catch(()=>{})));
       send();
-    }, 150);
+    }, 80);
   }
 
   // Publish my custom skin (or clear it if I use a built-in palette skin).
@@ -7450,6 +7450,8 @@ class Game{
       target: new THREE.Vector3(x0,y0,z0),
       current: new THREE.Vector3(x0,y0,z0),
       yaw: Number.isFinite(data.yaw)?data.yaw:0, pitch: Number.isFinite(data.pitch)?data.pitch:0, moving:false, animT:0,
+      ryaw: Number.isFinite(data.yaw)?data.yaw:0, rpitch: Number.isFinite(data.pitch)?data.pitch:0, spd:0,
+      buf: [{ t: performance.now(), x:x0, y:y0, z:z0, yaw: Number.isFinite(data.yaw)?data.yaw:0, pitch: Number.isFinite(data.pitch)?data.pitch:0 }],
       name: data.name||'Player', playerId: data.playerId||null,
       heldId: 0, heldObj: null, lastData: data, heldRaw: data.held,
     });
@@ -7468,7 +7470,18 @@ class Game{
     p.target.set(x, y, z);
     p.yaw = Number.isFinite(data.yaw) ? data.yaw : p.yaw;
     p.pitch = Number.isFinite(data.pitch) ? data.pitch : p.pitch;
-    p.moving = !!data.moving;
+    // Keep a short history of timestamped samples (by arrival time) so the model can
+    // be drawn slightly in the past and glide between real positions.
+    {
+      const now = performance.now(), b = p.buf || (p.buf = []);
+      const last = b[b.length-1];
+      if(last && now - last.t > 300){
+        b.push({ t: now - 1, x:last.x, y:last.y, z:last.z, yaw:last.yaw, pitch:last.pitch }); // hold, so a restart doesn't snap
+      }
+      b.push({ t: now, x, y, z, yaw: p.yaw, pitch: p.pitch });
+      while(b.length > 24) b.shift();
+    }
+    if(!p.buf) p.moving = !!data.moving; // otherwise movement is derived from the interpolated path
     p.swimming = !!data.swimming;
     p.name = data.name||p.name; p.playerId = data.playerId||p.playerId;
     p.lastData = data; p.heldRaw = data.held;
@@ -7487,13 +7500,38 @@ class Game{
   }
 
   animateOtherPlayers(delta){
+    const DELAY = 110;                      // ms behind real time: enough to always have two samples to blend
+    const now = performance.now(), rt = now - DELAY;
+    const lerpAngle = (a, b, f)=>{ let d = (b - a) % (Math.PI*2); if(d > Math.PI) d -= Math.PI*2; if(d < -Math.PI) d += Math.PI*2; return a + d*f; };
     for(const p of this.otherPlayers.values()){
-      p.current.lerp(p.target, Math.min(1, delta*10));
+      const buf = p.buf;
+      if(buf && buf.length){
+        while(buf.length > 2 && buf[1].t <= rt) buf.shift();
+        const a = buf[0], c = buf[1];
+        let x, y, z, yaw, pitch;
+        if(!c || rt >= c.t){ const l = buf[buf.length-1]; x=l.x; y=l.y; z=l.z; yaw=l.yaw; pitch=l.pitch; }
+        else if(rt <= a.t){ x=a.x; y=a.y; z=a.z; yaw=a.yaw; pitch=a.pitch; }
+        else {
+          const f = (rt - a.t) / Math.max(1, c.t - a.t);
+          x = a.x + (c.x-a.x)*f; y = a.y + (c.y-a.y)*f; z = a.z + (c.z-a.z)*f;
+          yaw = lerpAngle(a.yaw, c.yaw, f); pitch = a.pitch + (c.pitch-a.pitch)*f;
+        }
+        const dx = x - p.current.x, dz = z - p.current.z;
+        if(dx*dx + dz*dz + (y-p.current.y)*(y-p.current.y) > 400) p.current.set(x,y,z); // teleport/respawn: snap
+        else p.current.set(x,y,z);
+        const spd = Math.hypot(dx, dz) / Math.max(0.001, delta);
+        p.spd += (spd - p.spd) * Math.min(1, delta*12);
+        p.moving = p.spd > 0.6;
+        p.ryaw = yaw; p.rpitch = pitch;
+      } else {
+        p.current.lerp(p.target, Math.min(1, delta*10));
+        p.ryaw = p.yaw; p.rpitch = p.pitch;
+      }
       p.group.position.copy(p.current);
-      p.group.rotation.y = p.yaw;
+      p.group.rotation.y = p.ryaw;
       p.group.rotation.x += ((p.swimming ? -1.25 : 0) - p.group.rotation.x) * Math.min(1, delta*8);
       p.group.position.y += (-p.group.rotation.x)*0.35;
-      p.parts.head.rotation.x = Math.max(-1.2, Math.min(1.2, p.pitch)) - p.group.rotation.x*0.8;
+      p.parts.head.rotation.x = Math.max(-1.2, Math.min(1.2, p.rpitch)) - p.group.rotation.x*0.8;
       if(p.moving){
         p.animT += delta*8;
         const swing = Math.sin(p.animT)*0.6;
