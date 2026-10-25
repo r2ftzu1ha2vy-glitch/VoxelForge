@@ -679,6 +679,32 @@
     :root{--js:clamp(92px, 30vmin, 120px);}
     .menu-card{padding:12px 16px;}
   }
+
+  /* ---------- mining ---------- */
+  #heldItem{
+    position:absolute; right:7%; bottom:9%; width:96px; height:96px; image-rendering:pixelated;
+    transform-origin:85% 90%; transform:rotate(-8deg); pointer-events:none; display:none;
+    filter:drop-shadow(3px 3px 0 #0008);
+  }
+  #heldItem.swing{animation:vfSwing .4s ease-in-out infinite;}
+  #heldItem.swing1{animation:vfSwing .3s ease-in-out 1;}
+  @keyframes vfSwing{
+    0%{transform:rotate(-8deg) translate(0,0);}
+    45%{transform:rotate(-58deg) translate(-26px,-32px);}
+    100%{transform:rotate(-8deg) translate(0,0);}
+  }
+  .mineBarOuter{width:70px; height:7px; border:1px solid #0008;}
+  #miningPanel{position:fixed; inset:0; z-index:57; display:none; align-items:center; justify-content:center; background:#00000070;}
+  .crackPrev{display:flex; flex-wrap:wrap; gap:4px; margin:8px 0; min-height:40px;}
+  .crackPrev canvas{width:40px; height:40px; image-rendering:pixelated; border:1px solid #000; border-radius:3px;
+    background:repeating-conic-gradient(#2a3042 0% 25%, #222838 0% 50%) 50% / 12px 12px;}
+  .mineSec{background:#0e111a99; border-radius:6px; padding:10px; margin-bottom:10px;}
+  .mineSec h3{margin:0 0 6px; font-size:12px; color:var(--vf-orange); letter-spacing:1px;}
+  .mineSec .menu-row{align-items:center;}
+  .mineSec input[type=number]{width:70px; margin:0;}
+  @media (pointer:coarse){
+    #heldItem{width:62px; height:62px; right:calc(var(--js)*.62 + 46px); bottom:calc(var(--hs) + 38px);}
+  }
 </style>
 </head>
 <body>
@@ -746,6 +772,7 @@
 
 <div id="hud">
   <div id="crosshair"></div>
+  <img id="heldItem" alt="">
   <div class="mineBarOuter" id="mineBarOuter"><div class="mineBarInner" id="mineBarInner"></div></div>
   <div id="statBars">
     <div class="barRow" id="hungerRow"></div>
@@ -930,6 +957,43 @@
   </div>
 </div>
 
+<div id="miningPanel">
+  <div class="panel-box" style="width:470px;">
+    <span class="closeX" id="closeMining" role="button" aria-label="Close"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></span>
+    <h2>Mining Images</h2>
+    <div class="craftHint" style="text-align:left; margin:0 0 10px;">
+      Use transparent PNGs. Cracks appear on the block you are breaking, stage by stage as the progress bar fills.
+    </div>
+    <div class="mineSec">
+      <h3>CRACK FRAMES</h3>
+      <div class="craftHint" style="text-align:left; margin:0 0 8px;">
+        Import one strip (frames side by side, or stacked) or several images at once (sorted by file name).
+        First frame = barely cracked, last = about to break. Any frame count from 1 to 32.
+      </div>
+      <div class="menu-row">
+        <button class="vf-btn" id="crackImport" style="margin:0;">Import</button>
+        <input type="number" id="crackFrames" class="vf-input" min="1" max="32" placeholder="auto">
+        <button class="vf-btn" id="crackTemplate" style="margin:0;">Get default strip</button>
+        <button class="vf-btn" id="crackReset" style="margin:0;">Reset</button>
+      </div>
+      <input type="file" id="crackFile" accept="image/*" multiple style="display:none">
+      <div class="crackPrev" id="crackPreview"></div>
+    </div>
+    <div class="mineSec">
+      <h3>BREAK PARTICLE</h3>
+      <div class="craftHint" style="text-align:left; margin:0 0 8px;">
+        One small image used for the chips that fly off. It is tinted with the block's colour, so a white or grey shape works for every block.
+      </div>
+      <div class="menu-row">
+        <button class="vf-btn" id="partImport" style="margin:0;">Import</button>
+        <button class="vf-btn" id="partReset" style="margin:0;">Reset</button>
+      </div>
+      <input type="file" id="partFile" accept="image/*" style="display:none">
+      <div class="crackPrev" id="partPreview"></div>
+    </div>
+  </div>
+</div>
+
 <div id="pausePanel">
   <div class="panel-box">
     <h2>Game Paused</h2>
@@ -983,6 +1047,7 @@
       <input type="range" id="touchSensSlider" min="4" max="30" step="1" value="14">
       <div class="settingVal" id="touchSensVal">14</div>
     </div>
+    <button class="vf-btn" id="openMiningBtn" style="margin-top:4px;"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20l1-4L16.5 4.5a2 2 0 0 1 3 3L8 19z"/></svg>Mining images (cracks, particles)</button>
     <div style="font-size:11px; color:#8892ab; margin-top:6px;">Higher render distance and graphics quality look better but run slower — lower them if the game feels choppy.</div>
   </div>
 </div>
@@ -3300,6 +3365,101 @@ function buildPlayerModel(palette, skinCanvas){
   }catch(e){}
 })();
 
+/* ---- Mining images: crack frames + break particle (defaults are procedural; users can import their own) ---- */
+let CRACK_CANVASES = null;     // user frames (array of canvases) or null for defaults
+let PARTICLE_CANVAS = null;    // user particle image or null
+let _defaultCracks = null;
+function defaultCrackFrames(){
+  if(_defaultCracks) return _defaultCracks;
+  // built-in frames: your 10 crack images (8x8 RGBA each), least to most cracked
+  try{
+    const bin = atob("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/AAAAAAAAAP8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/wAAAAAAAAD/AAAA/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/wAAAP8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/AAAAAAAAAP8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/wAAAP8AAAAAAAAA/wAAAP8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP8AAAD/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP8AAAD/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/wAAAAAAAAAAAAAAAAAAAP8AAAAAAAAAAAAAAP8AAAD/AAAAAAAAAP8AAAD/AAAAAAAAAAAAAAD/AAAAAAAAAAAAAAD/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP8AAAD/AAAA/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/AAAA/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/wAAAP8AAAAAAAAAAAAAAAAAAAD/AAAAAAAAAAAAAAD/AAAA/wAAAAAAAAD/AAAA/wAAAAAAAAAAAAAA/wAAAAAAAAAAAAAA/wAAAAAAAAAAAAAAAAAAAAAAAAD/AAAA/wAAAAAAAAD/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/AAAA/wAAAP8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP8AAAAAAAAAAAAAAAAAAAAAAAAA/wAAAAAAAAAAAAAA/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/wAAAP8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP8AAAD/AAAAAAAAAAAAAAAAAAAA/wAAAAAAAAAAAAAA/wAAAP8AAAAAAAAA/wAAAP8AAAAAAAAAAAAAAP8AAAAAAAAAAAAAAP8AAAAAAAAAAAAAAAAAAAAAAAAA/wAAAP8AAAAAAAAA/wAAAAAAAAD/AAAAAAAAAAAAAAAAAAAA/wAAAP8AAAD/AAAA/wAAAAAAAAAAAAAAAAAAAP8AAAD/AAAAAAAAAP8AAAD/AAAA/wAAAAAAAAAAAAAA/wAAAAAAAAAAAAAAAAAAAP8AAAAAAAAA/wAAAP8AAAAAAAAA/wAAAP8AAAD/AAAAAAAAAP8AAAAAAAAAAAAAAP8AAAD/AAAA/wAAAAAAAAAAAAAAAAAAAP8AAAAAAAAAAAAAAP8AAAD/AAAAAAAAAP8AAAD/AAAAAAAAAAAAAAD/AAAAAAAAAAAAAAD/AAAAAAAAAAAAAAAAAAAA/wAAAP8AAAD/AAAAAAAAAP8AAAAAAAAA/wAAAP8AAAAAAAAAAAAAAP8AAAD/AAAA/wAAAP8AAAAAAAAAAAAAAAAAAAD/AAAA/wAAAAAAAAD/AAAA/wAAAP8AAAAAAAAAAAAAAP8AAAAAAAAA/wAAAAAAAAD/AAAA/wAAAP8AAAD/AAAAAAAAAP8AAAD/AAAA/wAAAAAAAAD/AAAA/wAAAAAAAAD/AAAA/wAAAP8AAAAAAAAAAAAAAAAAAAD/AAAA/wAAAAAAAAD/AAAA/wAAAAAAAAD/AAAA/wAAAAAAAAAAAAAA/wAAAAAAAAAAAAAA/wAAAAAAAAD/AAAAAAAAAP8AAAD/AAAA/wAAAAAAAAD/AAAAAAAAAP8AAAD/AAAA/wAAAAAAAAD/AAAA/wAAAP8AAAD/AAAAAAAAAP8AAAAAAAAA/wAAAP8AAAAAAAAA/wAAAP8AAAD/AAAAAA=="), frames = [];
+    for(let k=0; k<10; k++){
+      const c = makeCanvas(8), x = c.getContext('2d'), id = x.createImageData(8, 8);
+      for(let i=0; i<256; i++) id.data[i] = bin.charCodeAt(k*256 + i);
+      x.putImageData(id, 0, 0); frames.push(c);
+    }
+    _defaultCracks = frames; return frames;
+  }catch(e){}
+  const N = 10, S = 16, rnd = mulberry32(777);
+  const branches = [];
+  for(let b=0; b<7; b++){
+    let x = 8 + (rnd()-0.5)*3, y = 8 + (rnd()-0.5)*3, a = rnd()*Math.PI*2;
+    const pts = [];
+    for(let s=0; s<10; s++){ a += (rnd()-0.5)*1.1; x += Math.cos(a)*0.95; y += Math.sin(a)*0.95; pts.push([Math.round(x), Math.round(y)]); }
+    branches.push(pts);
+  }
+  const order = [];
+  for(let s=0; s<10; s++) branches.forEach(p=> order.push(p[s]));
+  _defaultCracks = [];
+  for(let k=0; k<N; k++){
+    const c = makeCanvas(S), x = c.getContext('2d');
+    const upto = Math.ceil(order.length*(k+1)/N);
+    for(let i=0; i<upto; i++){
+      const p = order[i];
+      x.fillStyle = 'rgba(0,0,0,0.62)'; x.fillRect(p[0], p[1], 1, 1);
+      if(i%3===0){ x.fillStyle = 'rgba(0,0,0,0.3)'; x.fillRect(p[0]+1, p[1], 1, 1); }
+    }
+    _defaultCracks.push(c);
+  }
+  return _defaultCracks;
+}
+function framesFromImages(imgs, nHint){
+  const frames = [];
+  const mk = (img, sx, sy, sw, sh, fs)=>{
+    const c = makeCanvas(fs), x = c.getContext('2d'); x.imageSmoothingEnabled = false;
+    x.drawImage(img, sx, sy, sw, sh, 0, 0, fs, fs); frames.push(c);
+  };
+  if(imgs.length > 1){
+    const fs = Math.min(64, Math.max(imgs[0].width, imgs[0].height));
+    imgs.slice(0, 32).forEach(im=> mk(im, 0, 0, im.width, im.height, fs));
+  } else {
+    const im = imgs[0], w = im.width, h = im.height;
+    const horiz = nHint ? (w >= h) : (w >= h);
+    let n = nHint || Math.max(1, Math.round(horiz ? w/h : h/w));
+    n = Math.max(1, Math.min(32, n));
+    const fw = horiz ? w/n : w, fh = horiz ? h : h/n;
+    const fs = Math.min(64, Math.max(1, Math.round(Math.max(fw, fh))));
+    for(let i=0; i<n; i++) mk(im, horiz ? i*fw : 0, horiz ? 0 : i*fh, fw, fh, fs);
+  }
+  return frames;
+}
+function framesToStrip(frames){
+  const fs = frames[0].width, c = document.createElement('canvas');
+  c.width = fs*frames.length; c.height = fs;
+  const x = c.getContext('2d');
+  frames.forEach((f,i)=> x.drawImage(f, i*fs, 0));
+  return c;
+}
+function applyMiningImagesToGame(){
+  if(typeof gameInstance !== 'undefined' && gameInstance && gameInstance._refreshCrackTextures){
+    gameInstance._refreshCrackTextures(); gameInstance._partTex = null;
+  }
+}
+(function loadStoredMiningImages(){
+  try{
+    const j = JSON.parse(localStorage.getItem('vf_crack') || 'null');
+    if(j && j.data && j.n){
+      const img = new Image();
+      img.onload = ()=>{
+        const fs = img.height, fr = [];
+        for(let i=0; i<j.n; i++){
+          const c = makeCanvas(fs), x = c.getContext('2d'); x.imageSmoothingEnabled = false;
+          x.drawImage(img, i*fs, 0, fs, fs, 0, 0, fs, fs); fr.push(c);
+        }
+        CRACK_CANVASES = fr; applyMiningImagesToGame();
+      };
+      img.src = j.data;
+    }
+    const p = localStorage.getItem('vf_particle');
+    if(p){
+      const im = new Image();
+      im.onload = ()=>{ const c = makeCanvas(Math.min(32, im.width)); c.getContext('2d').drawImage(im,0,0,c.width,c.height); PARTICLE_CANVAS = c; applyMiningImagesToGame(); };
+      im.src = p;
+    }
+  }catch(e){}
+})();
+
 /* -------------------------------------------------------------------------
    6. GAME ENGINE
 ------------------------------------------------------------------------- */
@@ -3684,6 +3844,7 @@ class Game{
     this.inWater = false; this.headUnderwater = false;
     this.drops = [];
     this._initSelfModel();
+    this._buildMiningFX();
     this.applyGraphicsSettings();
 
     window.__game = this;
@@ -5312,6 +5473,7 @@ class Game{
   }
 
   updateHotbarUI(){
+    this._updateHeldItem();
     const bar = document.getElementById('hotbar');
     bar.innerHTML='';
     this.hotbar.forEach((id,idx)=>{
@@ -5423,6 +5585,7 @@ class Game{
   }
   updateMining(delta){
     if(!this.mineHeld) return;
+    if(this._mineCooldown > 0){ this._mineCooldown -= delta; return; } // brief pause between blocks
     const mobHit = this.raycastMob(5);
     if(mobHit){ this.attackMob(mobHit); return; }
     const hit = this.raycastBlock(6);
@@ -5441,6 +5604,13 @@ class Game{
     }
     this.mining.t += delta;
     const need = this.miningTimeFor(this.mining.id);
+    this.mining.need = need;
+    this._mineFxT = (this._mineFxT||0) + delta;
+    if(need > 0.15 && this._mineFxT > 0.2){
+      this._mineFxT = 0;
+      this._hitSound();
+      this._burst(hit.x+0.5+hit.normal[0]*0.5, hit.y+0.5+hit.normal[1]*0.5, hit.z+0.5+hit.normal[2]*0.5, hit.id, 2, 0.5, hit.normal);
+    }
     const bar = document.getElementById('mineBarOuter');
     const inner = document.getElementById('mineBarInner');
     if(bar && inner){
@@ -5461,6 +5631,8 @@ class Game{
     const bar = document.getElementById('mineBarOuter');
     if(bar) bar.style.opacity = '0';
     const def = BLOCKS[m.id];
+    this._burst(m.x+0.5, m.y+0.5, m.z+0.5, m.id, 16, 1.0);
+    if(GAME_MODE !== 'creative') this._mineCooldown = 0.1;
     this.world.setBlock(m.x,m.y,m.z,0);
     this.markChunkRebuildsAround(m.x,m.y,m.z);
     this.syncBlockChange(m.x,m.y,m.z,0);
@@ -5476,8 +5648,18 @@ class Game{
     }
     if(GAME_MODE==='creative' || canHarvest){
       const dropId = oreDropFor(m.id) || m.id;
-      this.inventoryCounts[dropId] = (this.inventoryCounts[dropId]||0)+1;
-      this.addToHotbar(dropId);
+      if(GAME_MODE === 'creative'){
+        this.inventoryCounts[dropId] = (this.inventoryCounts[dropId]||0)+1;
+        this.addToHotbar(dropId);
+      } else {
+        // survival: the block pops out as an item and flies to you when you are close
+        const a = Math.random()*Math.PI*2;
+        this._spawnDrop(dropId, 1, undefined, {
+          pos: new THREE.Vector3(m.x+0.5, m.y+0.4, m.z+0.5),
+          vel: new THREE.Vector3(Math.cos(a)*1.2, 3.2, Math.sin(a)*1.2),
+          delay: 0.45, magnet: true
+        });
+      }
     }
     this.damageHeldTool();
     playBlockSound(def.name);
@@ -5547,6 +5729,7 @@ class Game{
       }
     }
     this.updateHotbarUI();
+    this._swingOnce();
     playBlockSound(BLOCKS[heldId].name);
   }
 
@@ -6065,6 +6248,142 @@ class Game{
     else { this.camera.rotation.y = this.yaw + Math.PI; this.camera.rotation.x = -this.pitch; }
   }
 
+/* ---------------- Mining effects: crack overlay, target outline, chips, swing ---------------- */
+  _buildMiningFX(){
+    this._crackMat = new THREE.MeshBasicMaterial({
+      transparent:true, depthWrite:false, fog:false, alphaTest:0.02,
+      polygonOffset:true, polygonOffsetFactor:-2, polygonOffsetUnits:-2
+    });
+    this._crackMesh = new THREE.Mesh(new THREE.BoxGeometry(1.004, 1.004, 1.004), this._crackMat);
+    this._crackMesh.visible = false; this._crackMesh.renderOrder = 5; this._crackMesh.frustumCulled = false;
+    this.scene.add(this._crackMesh);
+    this._outline = new THREE.LineSegments(
+      new THREE.EdgesGeometry(new THREE.BoxGeometry(1.012, 1.012, 1.012)),
+      new THREE.LineBasicMaterial({ color:0x000000, transparent:true, opacity:0.65, fog:false }));
+    this._outline.visible = false; this._outline.renderOrder = 6;
+    this.scene.add(this._outline);
+    this._bursts = [];
+    this._fxTick = 0; this._swingEl = document.getElementById('heldItem');
+    this._refreshCrackTextures();
+  }
+  _refreshCrackTextures(){
+    if(this._crackTex) this._crackTex.forEach(t=>t.dispose());
+    const src = CRACK_CANVASES || defaultCrackFrames();
+    this._crackTex = src.map(c=>{
+      const t = new THREE.CanvasTexture(c);
+      t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestFilter; t.generateMipmaps = false; t.needsUpdate = true;
+      return t;
+    });
+    this._crackMat.map = this._crackTex[0]; this._crackMat.needsUpdate = true;
+  }
+  _blockColor(id){
+    if(!this._bcCache) this._bcCache = new Map();
+    let c = this._bcCache.get(id);
+    if(c) return c;
+    c = new THREE.Color(0x8a8a8a); this._bcCache.set(id, c);
+    const img = new Image();
+    img.onload = ()=>{
+      try{
+        const cv = makeCanvas(8), x = cv.getContext('2d'); x.drawImage(img, 0, 0, 8, 8);
+        const d = x.getImageData(0,0,8,8).data; let r=0,g=0,b=0,n=0;
+        for(let i=0;i<d.length;i+=4){ if(d[i+3] > 128){ r+=d[i]; g+=d[i+1]; b+=d[i+2]; n++; } }
+        if(n) c.setRGB(r/n/255, g/n/255, b/n/255);
+      }catch(e){}
+    };
+    img.src = iconDataUrl(id);
+    return c;
+  }
+  // a puff of little chips; n = count, speed scales how hard they fly
+  _burst(x, y, z, id, n, speed, normal){
+    if(this._bursts.length > 30) this._killBurst(0);
+    const pos = new Float32Array(n*3), vel = [];
+    for(let i=0;i<n;i++){
+      const jx = (Math.random()-0.5)*(normal && normal[0] ? 0.1 : 0.8);
+      const jy = (Math.random()-0.5)*(normal && normal[1] ? 0.1 : 0.8);
+      const jz = (Math.random()-0.5)*(normal && normal[2] ? 0.1 : 0.8);
+      pos[i*3] = x+jx; pos[i*3+1] = y+jy; pos[i*3+2] = z+jz;
+      const v = new THREE.Vector3((Math.random()-0.5)*3, Math.random()*3.2+0.6, (Math.random()-0.5)*3).multiplyScalar(speed);
+      if(normal) v.add(new THREE.Vector3(normal[0], normal[1], normal[2]).multiplyScalar(1.4*speed));
+      vel.push(v);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    if(PARTICLE_CANVAS && !this._partTex){
+      this._partTex = new THREE.CanvasTexture(PARTICLE_CANVAS);
+      this._partTex.magFilter = THREE.NearestFilter; this._partTex.minFilter = THREE.NearestFilter; this._partTex.generateMipmaps = false;
+    }
+    const m = new THREE.PointsMaterial({
+      color: this._blockColor(id).clone().multiplyScalar(0.9), size: PARTICLE_CANVAS ? 0.2 : 0.13, sizeAttenuation:true,
+      map: PARTICLE_CANVAS ? this._partTex : null, transparent:true, alphaTest:0.05, depthWrite:false
+    });
+    const pts = new THREE.Points(g, m); pts.frustumCulled = false;
+    this.scene.add(pts);
+    this._bursts.push({ pts, g, m, vel, age:0, life:0.75 });
+  }
+  _killBurst(i){
+    const b = this._bursts[i]; if(!b) return;
+    this.scene.remove(b.pts); b.g.dispose(); b.m.dispose();
+    this._bursts.splice(i, 1);
+  }
+  _hitSound(){
+    try{
+      if(!this._actx) this._actx = new (window.AudioContext||window.webkitAudioContext)();
+      const ctx = this._actx;
+      if(ctx.state === 'suspended') ctx.resume().catch(()=>{});
+      const vol = Math.max(0, Math.min(1, (SETTINGS.volume ?? 70)/100)) * 0.11;
+      const o = ctx.createOscillator(), g = ctx.createGain(), t = ctx.currentTime;
+      o.type = 'square';
+      o.frequency.setValueAtTime(150 + Math.random()*50, t); o.frequency.exponentialRampToValueAtTime(60, t+0.07);
+      g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t+0.09);
+      o.connect(g); g.connect(ctx.destination); o.start(t); o.stop(t+0.1);
+    }catch(e){}
+  }
+  _updateHeldItem(){
+    const el = document.getElementById('heldItem'); if(!el) return;
+    const id = this.selectedBlock;
+    if(!id || (this.viewMode||0) !== 0){ el.style.display = 'none'; return; }
+    const url = iconDataUrl(id);
+    if(el.dataset.id !== String(id)){ el.src = url; el.dataset.id = String(id); }
+    el.style.display = 'block';
+  }
+  _swingOnce(){
+    const el = this._swingEl || document.getElementById('heldItem'); if(!el || el.style.display === 'none') return;
+    el.classList.remove('swing1'); void el.offsetWidth; el.classList.add('swing1');
+  }
+  _updateMiningFX(delta){
+    // outline of the block under the crosshair (every other frame is plenty)
+    this._fxTick++;
+    if(this._fxTick % 2 === 0 && !this.paused && !this.dead){
+      const hit = this.raycastBlock(6);
+      if(hit && !BLOCKS[hit.id].unbreakable){
+        this._outline.position.set(hit.x+0.5, hit.y+0.5, hit.z+0.5); this._outline.visible = true;
+      } else this._outline.visible = false;
+    }
+    // crack stages follow mining progress
+    const m = this.mining;
+    if(m && m.need > 0.15){
+      const n = this._crackTex.length;
+      const stage = Math.max(0, Math.min(n-1, Math.floor((m.t/m.need)*n)));
+      if(this._crackMat.map !== this._crackTex[stage]){ this._crackMat.map = this._crackTex[stage]; this._crackMat.needsUpdate = true; }
+      this._crackMesh.position.set(m.x+0.5, m.y+0.5, m.z+0.5); this._crackMesh.visible = true;
+    } else this._crackMesh.visible = false;
+    // swinging tool while breaking
+    if(this._swingEl) this._swingEl.classList.toggle('swing', !!(m && m.need > 0.15));
+    // chips
+    for(let i=this._bursts.length-1; i>=0; i--){
+      const b = this._bursts[i];
+      b.age += delta;
+      if(b.age >= b.life){ this._killBurst(i); continue; }
+      const p = b.g.attributes.position.array;
+      for(let k=0;k<b.vel.length;k++){
+        const v = b.vel[k]; v.y -= 13*delta;
+        p[k*3] += v.x*delta; p[k*3+1] += v.y*delta; p[k*3+2] += v.z*delta;
+      }
+      b.g.attributes.position.needsUpdate = true;
+      b.m.opacity = Math.min(1, (b.life-b.age)/0.3);
+    }
+  }
+
   /* ---------------- Swimming helpers / FX ---------------- */
   _isWaterAt(x,y,z){
     const id = this.world.getBlock(Math.floor(x), Math.floor(y), Math.floor(z));
@@ -6108,6 +6427,7 @@ class Game{
   cycleView(){
     this.viewMode = (this.viewMode + 1) % 3;
     this.selfModel.group.visible = this.viewMode !== 0;
+    this._updateHeldItem();
     this.showCenterMsg(['First person','Behind you','In front of you'][this.viewMode], 900);
   }
   _updateSelfModel(delta){
@@ -6147,18 +6467,25 @@ class Game{
     this._dropMats.set(id, m);
     return m;
   }
-  _spawnDrop(id, count, dur){
+  _spawnDrop(id, count, dur, opts){
     if(!id || count <= 0) return;
     if(this.drops.length >= 150) this._removeDrop(0);
     const sp = new THREE.Sprite(this._dropSpriteMat(id));
     sp.scale.set(0.45, 0.45, 1);
     this.scene.add(sp);
-    const { dir } = this.getLookRay();
-    const eye = this.pos.clone(); eye.y += this.eyeHeight - 0.25;
-    let start = eye.clone().addScaledVector(dir, 0.5);
-    if(this.isSolidAt(start.x, start.y, start.z)) start = eye.clone();
-    const vel = dir.clone().multiplyScalar(5.5); vel.y += 2.2;
-    const d = { id, count, dur, sprite:sp, pos:start, vel, age:0, delay:1.6, grounded:false };
+    let start, vel, delay = 1.6, magnet = false;
+    if(opts && opts.pos){
+      start = opts.pos.clone(); vel = opts.vel ? opts.vel.clone() : new THREE.Vector3();
+      if(opts.delay !== undefined) delay = opts.delay;
+      magnet = !!opts.magnet;
+    } else {
+      const { dir } = this.getLookRay();
+      const eye = this.pos.clone(); eye.y += this.eyeHeight - 0.25;
+      start = eye.clone().addScaledVector(dir, 0.5);
+      if(this.isSolidAt(start.x, start.y, start.z)) start = eye.clone();
+      vel = dir.clone().multiplyScalar(5.5); vel.y += 2.2;
+    }
+    const d = { id, count, dur, sprite:sp, pos:start, vel, age:0, delay, magnet, grounded:false };
     sp.position.copy(start);
     this.drops.push(d);
   }
@@ -6197,6 +6524,10 @@ class Game{
         d.vel.y += (1.2 - d.vel.y)*Math.min(1, 3*delta);
         const f = Math.max(0, 1-3*delta); d.vel.x *= f; d.vel.z *= f;
       } else d.vel.y -= 20*delta;
+      if(d.magnet && !this.dead && d.age >= d.delay && dist2 < 9){
+        const inv = 1/Math.max(0.3, Math.sqrt(dist2));
+        d.vel.x -= dx*inv*28*delta; d.vel.z -= dz*inv*28*delta; d.vel.y -= dy*inv*28*delta - 18*delta;
+      }
       if(d.vel.y < -30) d.vel.y = -30;
       const nx = d.pos.x + d.vel.x*delta;
       if(this.isSolidAt(nx, d.pos.y, d.pos.z)) d.vel.x *= -0.3; else d.pos.x = nx;
@@ -6799,6 +7130,7 @@ class Game{
           // once webglcontextrestored fires (see renderer setup above).
           if(!this._contextLost) this.updateChunkStreaming();
           this.updateMining(delta);
+          this._updateMiningFX(delta);
           // Falling out of the world hurts as normal — the void portal is only
           // triggered by walking into one of the two arches, not by falling.
           if(GAME_MODE==='survival' && this.pos.y < -8){
@@ -8458,6 +8790,52 @@ window.addEventListener('DOMContentLoaded', ()=>{
     SETTINGS.touchSens = v;
     saveSettingsToStorage();
   });
+
+  // ---------- Mining images panel ----------
+  (function initMiningImagesUI(){
+    const $ = id => document.getElementById(id);
+    const panel = $('miningPanel');
+    const loadImgs = (files)=> Promise.all([...files].sort((a,b)=> a.name.localeCompare(b.name, undefined, {numeric:true})).map(f=> new Promise(res=>{
+      const url = URL.createObjectURL(f), im = new Image();
+      im.onload = ()=>{ res(im); }; im.onerror = ()=> res(null); im.src = url;
+    }))).then(a=> a.filter(Boolean));
+    const showPrev = ()=>{
+      const row = $('crackPreview'); row.innerHTML = '';
+      (CRACK_CANVASES || defaultCrackFrames()).forEach(c=>{ const k = document.createElement('canvas'); k.width = c.width; k.height = c.height; k.getContext('2d').drawImage(c,0,0); row.appendChild(k); });
+      const pr = $('partPreview'); pr.innerHTML = '';
+      if(PARTICLE_CANVAS){ const k = document.createElement('canvas'); k.width = PARTICLE_CANVAS.width; k.height = PARTICLE_CANVAS.height; k.getContext('2d').drawImage(PARTICLE_CANVAS,0,0); pr.appendChild(k); }
+      else pr.innerHTML = '<span style="font-size:11px;color:#8892ab;">Default square chips</span>';
+    };
+    $('openMiningBtn').onclick = ()=>{ showPrev(); panel.style.display = 'flex'; };
+    $('closeMining').onclick = ()=>{ panel.style.display = 'none'; };
+    $('crackImport').onclick = ()=> $('crackFile').click();
+    $('crackFile').onchange = async (e)=>{
+      const imgs = await loadImgs(e.target.files); e.target.value = '';
+      if(!imgs.length) return;
+      const hint = parseInt($('crackFrames').value) || 0;
+      CRACK_CANVASES = framesFromImages(imgs, hint);
+      try{ localStorage.setItem('vf_crack', JSON.stringify({ n:CRACK_CANVASES.length, data:framesToStrip(CRACK_CANVASES).toDataURL('image/png') })); }catch(err){}
+      applyMiningImagesToGame(); showPrev();
+    };
+    $('crackReset').onclick = ()=>{ CRACK_CANVASES = null; try{ localStorage.removeItem('vf_crack'); }catch(e){} applyMiningImagesToGame(); showPrev(); };
+    $('crackTemplate').onclick = ()=>{
+      framesToStrip(defaultCrackFrames()).toBlob(b=>{
+        if(!b) return; const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'crack-strip-10-frames.png';
+        document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href), 1500);
+      }, 'image/png');
+    };
+    $('partImport').onclick = ()=> $('partFile').click();
+    $('partFile').onchange = async (e)=>{
+      const imgs = await loadImgs(e.target.files); e.target.value = '';
+      if(!imgs.length) return;
+      const im = imgs[0], s = Math.min(32, Math.max(im.width, im.height));
+      const c = makeCanvas(s), x = c.getContext('2d'); x.imageSmoothingEnabled = false; x.drawImage(im, 0, 0, s, s);
+      PARTICLE_CANVAS = c;
+      try{ localStorage.setItem('vf_particle', c.toDataURL('image/png')); }catch(err){}
+      applyMiningImagesToGame(); showPrev();
+    };
+    $('partReset').onclick = ()=>{ PARTICLE_CANVAS = null; try{ localStorage.removeItem('vf_particle'); }catch(e){} applyMiningImagesToGame(); showPrev(); };
+  })();
   initSkinStudio();
 });
 </script>
