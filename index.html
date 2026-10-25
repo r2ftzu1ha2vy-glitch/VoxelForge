@@ -515,11 +515,176 @@
     .hotslot img{width:28px; height:28px;}
     #hotbar{bottom:8px; gap:3px; padding:3px;}
   }
+
+  /* =====================================================================
+     v2 additions: svg icons, mobile layout, chat, skin studio, drops
+     ===================================================================== */
+  .ico{width:1em; height:1em; fill:none; stroke:currentColor; stroke-width:2.2; stroke-linecap:round; stroke-linejoin:round; vertical-align:-.15em; flex:none;}
+  .vf-btn .ico{margin-right:6px;}
+  .vf-btn:disabled{opacity:.45; cursor:not-allowed; filter:grayscale(.4);}
+  .craftArrow .ico, .furnaceArrow .ico{width:1.1em; height:1.1em;}
+  .recipeBookBtn .ico{width:20px; height:20px;}
+  .recipeEntry .recipeArrow .ico{width:1em; height:1em;}
+
+  .panel-box{position:relative; max-height:calc(100vh - 16px); max-height:calc(100dvh - 16px); overflow-y:auto; -webkit-overflow-scrolling:touch;}
+  .panel-box h2{padding-right:38px;}
+  .closeX{
+    display:flex; align-items:center; justify-content:center; width:34px; height:34px;
+    top:8px; right:8px; font-size:20px; border-radius:6px; z-index:3; cursor:pointer;
+  }
+  .closeX:hover{background:#ffffff14;}
+  .settingRow label{flex:0 1 auto; min-width:0;}
+  .dropRow{display:flex; gap:8px; margin-top:8px;}
+  .dropRow .vf-btn{margin-top:0; padding:8px; font-size:12px;}
+
+  .menu-card{max-height:calc(100vh - 16px); max-height:calc(100dvh - 16px); overflow-y:auto; -webkit-overflow-scrolling:touch;}
+  @media (max-height:560px){
+    .menu-card{padding:14px 18px 16px; width:min(430px,94vw);}
+    .menu-card h1{font-size:24px;}
+    .menu-card .subtitle{margin-bottom:10px;}
+    .vf-btn{padding:9px;}
+    .vf-input{padding:8px 10px; margin-bottom:8px;}
+    .skin-select{margin:6px 0 10px;}
+  }
+  .skin-swatch{flex:none;}
+  .skin-swatch.custom{background-size:cover; image-rendering:pixelated;}
+
+  /* underwater tint */
+  #waterOverlay{position:fixed; inset:0; z-index:14; pointer-events:none; opacity:0; transition:opacity .15s;
+    background:radial-gradient(ellipse at center, #2a6fb855 0%, #1b4f9a99 100%);}
+
+  /* dropped items sit in the 3D scene; nothing to style, but keep cursor stack above panels */
+
+  /* ---------- chat ---------- */
+  #chatBox{justify-content:flex-end; overflow:hidden; max-height:230px;}
+  .chatMsg{line-height:1.35;}
+  .chatMsg .t{opacity:.5; font-size:10px; margin-right:5px; font-family:monospace;}
+  .chatMsg.sys{color:#c9d2e8; border-left:3px solid var(--vf-orange); background:#00000085;}
+  .chatMsg.act{font-style:italic; color:#e6d9ff;}
+  .chatMsg.mention{background:#e0742a66;}
+  .chatMsg.fading{opacity:0; transition:opacity .7s;}
+  #chatBox .chatMsg.faded{display:none;}
+  #chatBox.open{
+    pointer-events:auto; overflow-y:auto; justify-content:flex-start; max-height:min(42vh,320px);
+    background:#00000050; padding:4px; border-radius:6px; touch-action:pan-y; -webkit-overflow-scrolling:touch;
+  }
+  #chatBox.open .chatMsg.faded{display:block;}
+  #chatBox.open .chatMsg.fading{opacity:1;}
+  .chatRow{display:flex; gap:6px;}
+  #chatInput{flex:1; min-width:0;}
+  .chatIconBtn{
+    display:none; width:40px; flex:none; background:#000000cc; border:2px solid var(--vf-orange); border-radius:4px;
+    color:#fff; font-size:18px; align-items:center; justify-content:center; padding:0; cursor:pointer;
+  }
+  #chatCmdSuggest{position:absolute; bottom:100%; left:0; right:0; margin:0 0 4px;}
+  #chatCmdSuggest .cmdRow{padding:8px 10px;}
+
+  /* ---------- skin studio ---------- */
+  #skinPanel{position:fixed; inset:0; z-index:56; display:none; align-items:center; justify-content:center; background:#00000070;}
+  .skinBox{width:620px;}
+  .skinTop{display:flex; gap:12px; justify-content:center; flex-wrap:wrap; align-items:flex-start;}
+  .skinPrevWrap{display:flex; gap:6px; background:#0e111a; border:2px solid var(--vf-line); border-radius:4px; padding:6px;}
+  .skinPrevWrap canvas{width:60px; height:120px; image-rendering:pixelated;}
+  .skinMain{flex:1 1 300px; min-width:0;}
+  .partRow, .toolRow, .swRow{display:flex; flex-wrap:wrap; gap:5px; margin:8px 0; align-items:center;}
+  .partBtn, .toolBtn{
+    padding:6px 9px; font-size:11px; border-radius:4px; border:1px solid #000; background:#333a4d; color:#fff; cursor:pointer;
+    min-height:30px;
+  }
+  .partBtn.active, .toolBtn.active{background:var(--vf-orange); color:#000; font-weight:700;}
+  #skinColor{width:40px; height:32px; padding:0; border:2px solid #000; border-radius:4px; background:none;}
+  .swRow .sw{width:22px; height:22px; border:2px solid #000; border-radius:3px; cursor:pointer;}
+  #skinEditCanvas{
+    display:block; width:100%; max-width:420px; margin:0 auto; image-rendering:pixelated; touch-action:none;
+    border:2px solid var(--vf-line); border-radius:4px; cursor:crosshair;
+    background:repeating-conic-gradient(#2a3042 0% 25%, #222838 0% 50%) 50% / 16px 16px;
+  }
+  #skinApply{margin-top:10px;}
+
+  /* ---------- mobile layout ---------- */
+  @media (pointer:coarse){
+    :root{
+      --hs:min(44px, calc((100vw - 28px) / 9 - 4px));
+      --mb:clamp(38px, 10.5vmin, 50px);
+      --js:clamp(100px, 27vmin, 138px);
+    }
+    .mbtn, .mbtnSmall, .joystick{touch-action:none; -webkit-user-select:none; user-select:none;}
+    .mbtn:active, .mbtnSmall:active{background:#ffffff55;}
+
+    #hotbar{bottom:calc(6px + env(safe-area-inset-bottom,0px)); gap:3px; padding:3px; max-width:calc(100vw - 8px);}
+    .hotslot{width:var(--hs); height:var(--hs); border-width:2px;}
+    .hotslot img{width:72%; height:72%;}
+    .hotslot .cnt{font-size:10px;}
+    #statBars{bottom:calc(var(--hs) + 16px + env(safe-area-inset-bottom,0px));}
+    .heart, .hunger{width:14px; height:14px;}
+
+    .joystick{
+      width:var(--js); height:var(--js); top:auto;
+      left:calc(16px + env(safe-area-inset-left,0px));
+      bottom:calc(var(--hs) + 30px + env(safe-area-inset-bottom,0px));
+    }
+    .joystick .stick{width:42%; height:42%; left:29%; top:29%;}
+    #jumpBtn{
+      width:calc(var(--js)*.62); height:calc(var(--js)*.62); font-size:calc(var(--js)*.22);
+      right:calc(18px + env(safe-area-inset-right,0px));
+      bottom:calc(var(--hs) + 34px + env(safe-area-inset-bottom,0px));
+    }
+    #descendBtn{
+      width:calc(var(--js)*.46); height:calc(var(--js)*.46); font-size:calc(var(--js)*.18);
+      right:calc(26px + env(safe-area-inset-right,0px));
+      bottom:calc(var(--hs) + 46px + var(--js)*.62 + env(safe-area-inset-bottom,0px));
+    }
+
+    .mBar{position:fixed; top:calc(8px + env(safe-area-inset-top,0px)); display:flex; gap:6px; pointer-events:none; z-index:16;}
+    .mBarLeft{left:calc(8px + env(safe-area-inset-left,0px));}
+    .mBarRight{right:calc(8px + env(safe-area-inset-right,0px));}
+    #mobileControls .mbtnSmall, #mobileControls #pauseBtnMobile, #mobileControls #settingsBtnMobile{
+      position:static; display:flex; width:var(--mb); height:var(--mb); border-radius:10px;
+      font-size:calc(var(--mb)*.5); background:#0e111aaa; border:2px solid #ffffff55; color:#fff; pointer-events:auto;
+    }
+
+    #debugPanel{display:none;}
+    #dayNightIndicator{top:calc(var(--mb) + 14px + env(safe-area-inset-top,0px)); font-size:11px; padding:4px 10px;}
+    #saveToast{top:calc(var(--mb) + 48px + env(safe-area-inset-top,0px));}
+    #playerListPanel{
+      top:calc(var(--mb) + 14px + env(safe-area-inset-top,0px)); right:calc(8px + env(safe-area-inset-right,0px));
+      font-size:10px; min-width:0; max-width:34vw; padding:4px 8px;
+    }
+    #myUidRow{display:none;}
+    #centerMsg{font-size:17px; max-width:86vw;}
+
+    body.mobile-ui #chatBox{
+      top:calc(var(--mb) + 48px + env(safe-area-inset-top,0px)); bottom:auto;
+      left:calc(8px + env(safe-area-inset-left,0px)); width:min(58vw,320px); max-height:112px; font-size:12px;
+    }
+    body.mobile-ui #chatBox.open{max-height:min(34vh,220px); top:calc(64px + env(safe-area-inset-top,0px));}
+    body.mobile-ui #chatInputWrap{
+      position:fixed; top:calc(8px + env(safe-area-inset-top,0px)); bottom:auto; z-index:60;
+      left:calc(8px + env(safe-area-inset-left,0px)); right:calc(8px + env(safe-area-inset-right,0px)); width:auto; max-width:none;
+    }
+    body.mobile-ui #chatInput{font-size:16px; padding:10px;}
+    body.mobile-ui .chatIconBtn{display:flex;}
+    body.mobile-ui #chatCmdSuggest{bottom:auto; top:100%; margin:4px 0 0;}
+    body.chatting .joystick, body.chatting .mbtn, body.chatting .mBar, body.chatting #hotbar, body.chatting #statBars,
+    body.chatting #dayNightIndicator, body.chatting #playerListPanel{display:none !important;}
+
+    .closeX{width:42px; height:42px; top:6px; right:6px;}
+    .invSlot, .craftSlot, .craftOutSlot, .invSlot2{min-width:0;}
+    .skinBox{padding:12px;}
+    .partBtn, .toolBtn{min-height:36px; padding:7px 10px; font-size:12px;}
+    #skinPanel .skinPrevWrap{order:2;}
+    .recipeEntry .recipeName{width:64px;}
+  }
+  @media (pointer:coarse) and (orientation:landscape) and (max-height:430px){
+    :root{--js:clamp(92px, 30vmin, 120px);}
+    .menu-card{padding:12px 16px;}
+  }
 </style>
 </head>
 <body>
 
 <div id="vfTooltip"></div>
+<div id="waterOverlay"></div>
 <div id="cursorStack"></div>
 
 <div id="loadingScreen">
@@ -538,6 +703,7 @@
     <input id="nameInput" class="vf-input" placeholder="Your name" maxlength="16">
     <div class="uidNote" id="uidNote"></div>
     <div class="skin-select" id="skinSelect"></div>
+    <button class="vf-btn" id="openSkinStudio" style="margin:0 0 12px;"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20l1-4L16.5 4.5a2 2 0 0 1 3 3L8 19z"/></svg>Skin Studio</button>
 
     <div class="modeRow" id="modeRow">
       <div class="modeBtn selected" data-mode="survival">SURVIVAL</div>
@@ -555,18 +721,18 @@
     <div style="font-size:10px; color:#6b7590; margin-top:-8px; margin-bottom:12px;">Used for Create Room &amp; Play Offline — joined rooms use the host's world</div>
 
     <div class="menu-row">
-      <button class="vf-btn primary" id="createRoomBtn">Create Room</button>
+      <button class="vf-btn primary" id="createRoomBtn" style="opacity:0.5; cursor:not-allowed; filter:grayscale(60%);" title="Multiplayer is unavailable for now">Create Room</button>
     </div>
     <div class="menu-row" style="margin-top:8px;">
-      <input id="roomCodeInput" class="vf-input" style="margin-bottom:0; text-transform:uppercase; letter-spacing:3px; text-align:center;" placeholder="CODE" maxlength="4">
-      <button class="vf-btn primary" id="joinRoomBtn" style="width:auto; flex:none; padding-left:16px; padding-right:16px;">Join Room</button>
+      <input id="roomCodeInput" class="vf-input" style="margin-bottom:0; text-transform:uppercase; letter-spacing:3px; text-align:center; opacity:0.5; cursor:not-allowed;" placeholder="CODE" maxlength="4" disabled>
+      <button class="vf-btn primary" id="joinRoomBtn" style="width:auto; flex:none; padding-left:16px; padding-right:16px; opacity:0.5; cursor:not-allowed; filter:grayscale(60%);" title="Multiplayer is unavailable for now">Join Room</button>
     </div>
     <div class="menu-row" style="margin-top:8px;">
       <button class="vf-btn green" id="soloBtn">Play Offline (Solo)</button>
     </div>
     <div class="menu-row" style="margin-top:8px; display:none;" id="loadWorldRow">
       <button class="vf-btn" id="loadWorldBtn">Load Saved World</button>
-      <button class="vf-btn" id="savedWorldsBtn" style="flex:none; width:auto; padding-left:14px; padding-right:14px;">📁</button>
+      <button class="vf-btn" id="savedWorldsBtn" aria-label="Saved worlds" style="flex:none; width:auto; padding-left:14px; padding-right:14px;"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></button>
     </div>
     <div class="menu-row" style="margin-top:8px;">
       <button class="vf-btn" id="menuSettingsBtn">Settings</button>
@@ -594,19 +760,30 @@
   <div id="centerMsg"></div>
 </div>
 
-<div id="chatInputWrap"><div id="chatCmdSuggest"></div><input id="chatInput" placeholder="Press Enter to chat, Esc to cancel" maxlength="120"></div>
+<div id="chatInputWrap">
+  <div class="chatRow">
+    <input id="chatInput" placeholder="Type a message or /help" maxlength="120" enterkeyhint="send" autocomplete="off" autocapitalize="sentences">
+    <button id="chatSendBtn" class="chatIconBtn" aria-label="Send"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12L20 4l-5 16-3-7z"/></svg></button>
+    <button id="chatCloseBtn" class="chatIconBtn" aria-label="Close chat"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  </div>
+  <div id="chatCmdSuggest"></div>
+</div>
 
 <div id="inventoryPanel">
   <div class="panel-box">
-    <span class="closeX" id="closeInv">✕</span>
+    <span class="closeX" id="closeInv" role="button" aria-label="Close"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></span>
     <h2>Inventory</h2>
     <div class="invGrid" id="invGrid"></div>
     <div style="font-size:11px; color:#8892ab;" id="invHint">Click a block to select it into your hotbar.</div>
+    <div class="dropRow">
+      <button class="vf-btn" id="dropHeldBtn" disabled><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v11M7 10l5 5 5-5M5 20h14"/></svg>Drop held stack</button>
+      <button class="vf-btn" id="dropHeld1Btn" disabled><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v11M7 10l5 5 5-5M5 20h14"/></svg>Drop 1</button>
+    </div>
     <div class="invCraftSection" id="invCraftSection">
-      <h3>QUICK CRAFT <span class="recipeBookBtn" id="openRecipeBookBtn2" title="Recipe Book">📖</span></h3>
+      <h3>QUICK CRAFT <span class="recipeBookBtn" id="openRecipeBookBtn2" title="Recipe Book"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5a2 2 0 0 1 2-2h13v14H6a2 2 0 0 0-2 2a2 2 0 0 0 2 2h13"/></svg></span></h3>
       <div class="craftWrap">
         <div class="craftGrid2" id="craftGrid2"></div>
-        <div class="craftArrow">➜</div>
+        <div class="craftArrow"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h15M13 6l6 6-6 6"/></svg></div>
         <div class="craftOutSlot" id="craftOutSlot2"></div>
       </div>
       <div class="craftHint" id="craftHint2">Click items above to add them here. A crafting table unlocks every recipe.</div>
@@ -616,11 +793,11 @@
 
 <div id="craftingPanel">
   <div class="panel-box" style="width:480px;">
-    <span class="closeX" id="closeCraft">✕</span>
-    <h2 id="craftTitle">Crafting <span class="recipeBookBtn" id="openRecipeBookBtn" title="Recipe Book">📖</span></h2>
+    <span class="closeX" id="closeCraft" role="button" aria-label="Close"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></span>
+    <h2 id="craftTitle">Crafting <span class="recipeBookBtn" id="openRecipeBookBtn" title="Recipe Book"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5a2 2 0 0 1 2-2h13v14H6a2 2 0 0 0-2 2a2 2 0 0 0 2 2h13"/></svg></span></h2>
     <div class="craftWrap">
       <div class="craftGrid3" id="craftGrid3"></div>
-      <div class="craftArrow">➜</div>
+      <div class="craftArrow"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h15M13 6l6 6-6 6"/></svg></div>
       <div class="craftOutSlot" id="craftOutSlot"></div>
     </div>
     <div class="craftHint" id="craftHint">Arrange items to match a recipe. Click the output to craft.</div>
@@ -630,7 +807,7 @@
 
 <div id="furnacePanel">
   <div class="panel-box" style="width:420px;">
-    <span class="closeX" id="closeFurnace">✕</span>
+    <span class="closeX" id="closeFurnace" role="button" aria-label="Close"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></span>
     <h2>Furnace</h2>
     <div class="furnaceWrap">
       <div class="furnaceCol">
@@ -639,7 +816,7 @@
       </div>
       <div class="furnaceMid">
         <div class="furnaceFireOuter"><div class="furnaceFireInner" id="furnaceFireBar"></div></div>
-        <div class="furnaceArrow">➜</div>
+        <div class="furnaceArrow"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h15M13 6l6 6-6 6"/></svg></div>
       </div>
       <div class="craftOutSlot furnaceSlot" id="furnaceOutSlot"></div>
     </div>
@@ -655,7 +832,7 @@
 
 <div id="recipeBookPanel">
   <div class="panel-box" style="width:480px;">
-    <span class="closeX" id="closeRecipeBook">✕</span>
+    <span class="closeX" id="closeRecipeBook" role="button" aria-label="Close"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></span>
     <h2>Recipe Book</h2>
     <input id="recipeSearchInput" class="vf-input" placeholder="Search recipes (e.g. pickaxe, torch, planks)…" style="margin-bottom:6px;">
     <div class="craftHint" style="text-align:left; margin:0 0 8px;">Click a recipe to fill the crafting grid from your inventory. Shift-click fills as many sets as you can afford. Highlighted = you have the ingredients.</div>
@@ -665,7 +842,7 @@
 
 <div id="texturePanel">
   <div class="panel-box" style="width:560px;">
-    <span class="closeX" id="closeTex">✕</span>
+    <span class="closeX" id="closeTex" role="button" aria-label="Close"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></span>
     <h2>Custom Textures</h2>
     <div class="tabRow" id="texTabRow">
       <div class="tabBtn active" data-tab="faces">Block Faces</div>
@@ -688,7 +865,7 @@
 
 <div id="savedWorldsPanel">
   <div class="panel-box" style="width:440px;">
-    <span class="closeX" id="closeSavedWorlds">✕</span>
+    <span class="closeX" id="closeSavedWorlds" role="button" aria-label="Close"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></span>
     <h2>Saved Worlds</h2>
     <div style="font-size:11px; color:#8892ab; margin-bottom:10px;">Offline worlds saved on this device.</div>
     <div id="savedWorldsList" style="display:flex; flex-direction:column; gap:6px; max-height:340px; overflow-y:auto;"></div>
@@ -697,7 +874,7 @@
 
 <div id="friendsPanel">
   <div class="panel-box" style="width:400px;">
-    <span class="closeX" id="closeFriends">✕</span>
+    <span class="closeX" id="closeFriends" role="button" aria-label="Close"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></span>
     <h2>Friends</h2>
     <div class="uidNote" id="friendsUidNote" style="margin-bottom:12px;"></div>
     <div class="menu-row">
@@ -710,6 +887,46 @@
     <div id="addFriendStatus" style="font-size:11px; color:#8892ab; min-height:14px; margin-top:6px;"></div>
     <div style="font-size:11px; color:#8892ab; margin:12px 0 6px;">Your friends</div>
     <div id="friendsList" style="display:flex; flex-direction:column; gap:6px; max-height:220px; overflow-y:auto;"></div>
+  </div>
+</div>
+
+<div id="skinPanel">
+  <div class="panel-box skinBox">
+    <span class="closeX" id="closeSkin" role="button" aria-label="Close"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></span>
+    <h2>Skin Studio</h2>
+    <div class="skinTop">
+      <div class="skinPrevWrap">
+        <canvas id="skinPrevFront" width="80" height="160"></canvas>
+        <canvas id="skinPrevBack" width="80" height="160"></canvas>
+      </div>
+      <div class="skinMain">
+        <div class="partRow" id="skinParts"></div>
+        <canvas id="skinEditCanvas"></canvas>
+      </div>
+    </div>
+    <div class="toolRow" id="skinTools">
+      <button class="toolBtn active" data-tool="pen">Pen</button>
+      <button class="toolBtn" data-tool="eraser">Eraser</button>
+      <button class="toolBtn" data-tool="fill">Fill</button>
+      <button class="toolBtn" data-tool="pick">Pick</button>
+      <input type="color" id="skinColor" value="#e0742a" aria-label="Color">
+      <button class="toolBtn" id="skinUndo">Undo</button>
+    </div>
+    <div class="swRow" id="skinSwatches"></div>
+    <div class="toolRow">
+      <button class="toolBtn" id="skinImport">Import PNG</button>
+      <button class="toolBtn" id="skinExport">Export PNG</button>
+      <button class="toolBtn" id="skinGuide">Tile-map guide</button>
+      <button class="toolBtn" id="skinClearPart">Clear part</button>
+      <button class="toolBtn" id="skinReset">Reset</button>
+    </div>
+    <input type="file" id="skinFile" accept="image/png,image/*" style="display:none">
+    <button class="vf-btn green" id="skinApply">Use this skin</button>
+    <div class="craftHint" style="text-align:left;">
+      The sheet is a 64&times;64 tile map in the standard block-game skin layout, so any skin editor or downloaded skin PNG works here.
+      Pick a body part above to zoom in; the outlines mark each face. The "layer" parts (hair/hat, jacket, sleeves, pants) are drawn on top and can be see-through.
+      Press V in game (or the eye button on mobile) to see yourself.
+    </div>
   </div>
 </div>
 
@@ -726,7 +943,7 @@
 
 <div id="settingsPanel">
   <div class="panel-box">
-    <span class="closeX" id="closeSettings">✕</span>
+    <span class="closeX" id="closeSettings" role="button" aria-label="Close"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></span>
     <h2>Settings</h2>
     <div class="settingRow">
       <label for="renderDistSlider">Render distance</label>
@@ -761,19 +978,30 @@
       <input type="range" id="mouseSensSlider" min="1" max="20" step="1" value="10">
       <div class="settingVal" id="mouseSensVal">10</div>
     </div>
+    <div class="settingRow">
+      <label for="touchSensSlider">Touch look speed</label>
+      <input type="range" id="touchSensSlider" min="4" max="30" step="1" value="14">
+      <div class="settingVal" id="touchSensVal">14</div>
+    </div>
     <div style="font-size:11px; color:#8892ab; margin-top:6px;">Higher render distance and graphics quality look better but run slower — lower them if the game feels choppy.</div>
   </div>
 </div>
 
 <div id="mobileControls">
   <div class="joystick" id="moveJoystick"><div class="stick" id="moveStick"></div></div>
-  <div class="mbtn" id="jumpBtn">⬆</div>
-  <div class="mbtn" id="descendBtn">⬇</div>
-  <div class="mbtnSmall" id="invBtnMobile">INV</div>
-  <div class="mbtnSmall" id="craftBtnMobile">CRAFT</div>
-  <div class="mbtnSmall" id="chatBtnMobile">CHAT</div>
-  <div class="mbtnSmall" id="pauseBtnMobile">MENU</div>
-  <div class="mbtnSmall" id="settingsBtnMobile">⚙</div>
+  <div class="mbtn" id="jumpBtn" aria-label="Jump / swim up"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20V5M6 11l6-6 6 6"/></svg></div>
+  <div class="mbtn" id="descendBtn" aria-label="Fly down / dive"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v15M6 13l6 6 6-6"/></svg></div>
+  <div class="mBar mBarLeft">
+    <div class="mbtnSmall" id="pauseBtnMobile" aria-label="Menu"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5v14M15 5v14"/></svg></div>
+    <div class="mbtnSmall" id="settingsBtnMobile" aria-label="Settings"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></svg></div>
+  </div>
+  <div class="mBar mBarRight">
+    <div class="mbtnSmall" id="viewBtnMobile" aria-label="Camera view"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></div>
+    <div class="mbtnSmall" id="dropBtnMobile" aria-label="Drop item (hold for whole stack)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v11M7 10l5 5 5-5M5 20h14"/></svg></div>
+    <div class="mbtnSmall" id="chatBtnMobile" aria-label="Chat"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H9.5L4 20.5z"/></svg></div>
+    <div class="mbtnSmall" id="craftBtnMobile" aria-label="Crafting"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M10 4v16"/></svg></div>
+    <div class="mbtnSmall" id="invBtnMobile" aria-label="Inventory"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="8" width="14" height="13" rx="3"/><path d="M9 8V6a3 3 0 0 1 6 0v2M9 14h6"/></svg></div>
+  </div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -794,6 +1022,18 @@
    Replace with your own Firebase project config to enable real multiplayer.
    The game runs fully offline ("Play Offline (Solo)") without this.
 ------------------------------------------------------------------------- */
+/* ---- inline SVG icon set (replaces every emoji / symbol glyph) ---- */
+const ICON_SVG = {"close": "<path d=\"M6 6l12 12M18 6L6 18\"/>", "folder": "<path d=\"M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z\"/>", "book": "<path d=\"M4 19V5a2 2 0 0 1 2-2h13v14H6a2 2 0 0 0-2 2a2 2 0 0 0 2 2h13\"/>", "arrow": "<path d=\"M4 12h15M13 6l6 6-6 6\"/>", "up": "<path d=\"M12 20V5M6 11l6-6 6 6\"/>", "down": "<path d=\"M12 4v15M6 13l6 6 6-6\"/>", "gear": "<circle cx=\"12\" cy=\"12\" r=\"3.2\"/><path d=\"M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1\"/>", "check": "<path d=\"M5 12.5l4.5 4.5L19 7\"/>", "warn": "<path d=\"M12 3.5l10 17.5H2z\"/><path d=\"M12 10v5M12 18v.4\"/>", "bag": "<rect x=\"5\" y=\"8\" width=\"14\" height=\"13\" rx=\"3\"/><path d=\"M9 8V6a3 3 0 0 1 6 0v2M9 14h6\"/>", "craft": "<rect x=\"3\" y=\"4\" width=\"18\" height=\"16\" rx=\"2\"/><path d=\"M3 10h18M10 4v16\"/>", "chat": "<path d=\"M4 5h16v11H9.5L4 20.5z\"/>", "pause": "<path d=\"M9 5v14M15 5v14\"/>", "drop": "<path d=\"M12 3v11M7 10l5 5 5-5M5 20h14\"/>", "eye": "<path d=\"M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z\"/><circle cx=\"12\" cy=\"12\" r=\"3\"/>", "send": "<path d=\"M4 12L20 4l-5 16-3-7z\"/>", "pencil": "<path d=\"M4 20l1-4L16.5 4.5a2 2 0 0 1 3 3L8 19z\"/>"};
+function ic(name, cls){
+  const p = ICON_SVG[name]; if(!p) return '';
+  return '<svg class="ico' + (cls ? ' ' + cls : '') + '" viewBox="0 0 24 24" aria-hidden="true">' + p + '</svg>';
+}
+// escapes text, then swaps {{icon}} tokens for inline svg
+function iconText(str){
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/\{\{(\w+)\}\}/g, (m, n)=> ic(n));
+}
+
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyAui6yV-qBaFJYczxcaMWCoeGxy-JhLsxg",
   authDomain: "voxelforge-8d6b9.firebaseapp.com",
@@ -817,6 +1057,7 @@ const DEFAULT_SETTINGS = {
   fov: 75,
   volume: 70,
   mouseSens: 10, // 1-20, mapped to an actual sensitivity multiplier
+  touchSens: 14, // 4-30, finger-look speed on phones/tablets
 };
 
 // Per-tier graphics profile, looked up wherever a system needs to scale
@@ -835,10 +1076,13 @@ function currentGraphicsProfile(){
   return GRAPHICS_PROFILES[SETTINGS.graphics] || GRAPHICS_PROFILES.medium;
 }
 function loadSettings(){
-  try{
-    const saved = JSON.parse(localStorage.getItem('vf_settings')||'{}');
-    return Object.assign({}, DEFAULT_SETTINGS, saved);
-  }catch(e){ return Object.assign({}, DEFAULT_SETTINGS); }
+  const coarse = !!(window.matchMedia && window.matchMedia('(pointer:coarse)').matches);
+  let saved = null;
+  try{ saved = JSON.parse(localStorage.getItem('vf_settings')||'null'); }catch(e){ saved = null; }
+  const base = Object.assign({}, DEFAULT_SETTINGS);
+  // First run on a phone/tablet: start on lighter settings so it runs smoothly out of the box.
+  if(!saved && coarse){ base.graphics = 'low'; base.renderDistance = 3; base.fov = 70; }
+  return Object.assign(base, saved || {});
 }
 let SETTINGS = loadSettings();
 function saveSettingsToStorage(){
@@ -848,11 +1092,9 @@ function saveSettingsToStorage(){
 function initFirebase(){
   try{
     if(FIREBASE_CONFIG.apiKey === "REPLACE_ME") return false;
-    if(!fbApp){
-      fbApp = firebase.apps.length ? firebase.app() : firebase.initializeApp(FIREBASE_CONFIG);
-      fbDB = firebase.database();
-      fbAuth = firebase.auth();
-    }
+    fbApp = firebase.initializeApp(FIREBASE_CONFIG);
+    fbDB = firebase.database();
+    fbAuth = firebase.auth();
     return true;
   }catch(e){
     console.warn("Firebase init failed", e);
@@ -1187,8 +1429,8 @@ const BLOCKS = {
   21: { name:'door_wood',  tex:{all:'door_wood'}, transparent:true, hardness:1.0, tool:'axe' },
   22: { name:'stairs_stone', tex:{all:'stairs_stone'}, hardness:1.5, tool:'pickaxe' },
   23: { name:'stairs_wood',  tex:{all:'stairs_wood'}, hardness:1.0, tool:'axe' },
-  24: { name:'clay',       tex:{all:'clay'}, hardness:0.8, tool:'shovel' },
-  25: { name:'obsidian',   tex:{all:'obsidian'}, hardness:6.0, tool:'pickaxe', minTier:2 },
+  24: { name:'clay',       tex:{all:'sand'}, hardness:0.8, tool:'shovel' },
+  25: { name:'obsidian',   tex:{all:'bedrock'}, hardness:6.0, tool:'pickaxe', minTier:2 },
   26: { name:'gravel',     tex:{all:'gravel'}, hardness:0.6, tool:'shovel' },
   27: { name:'sandstone',  tex:{all:'sandstone'}, hardness:1.25, tool:'pickaxe' },
   28: { name:'mossy_cobblestone', tex:{all:'mossy_cobblestone'}, hardness:1.75, tool:'pickaxe' },
@@ -2839,6 +3081,31 @@ const FACE_NEIGHBOR = { px:[1,0,0], nx:[-1,0,0], py:[0,1,0], ny:[0,-1,0], pz:[0,
    from boxes, textured with a procedurally generated "skin" canvas
    (face, hair, shirt, pants, shoes) so every player can look distinct.
 ------------------------------------------------------------------------- */
+// ---- Standard 64x64 skin sheet layout ------------------------------------
+// Every body part is a box w x h x d (in skin pixels) whose six faces are laid
+// out as an unfolded strip starting at its uv origin. "ov" is the second,
+// slightly larger layer drawn on top (hair/hat, jacket, sleeves, pants).
+const LIMB_DEFS = {
+  head: { w:8, h:8,  d:8, uv:[0,0],   ov:[32,0]  },
+  body: { w:8, h:12, d:4, uv:[16,16], ov:[16,32] },
+  armR: { w:4, h:12, d:4, uv:[40,16], ov:[40,32] },
+  armL: { w:4, h:12, d:4, uv:[32,48], ov:[48,48] },
+  legR: { w:4, h:12, d:4, uv:[0,16],  ov:[0,32]  },
+  legL: { w:4, h:12, d:4, uv:[16,48], ov:[0,48]  },
+};
+const FACE_NAMES = ['top','bottom','right','front','left','back'];
+function faceRects(def, o){
+  const w = def.w, h = def.h, d = def.d, u = o[0], v = o[1];
+  return {
+    top:    [u+d,       v,   w, d],
+    bottom: [u+d+w,     v,   w, d],
+    right:  [u,         v+d, d, h],
+    front:  [u+d,       v+d, w, h],
+    left:   [u+d+w,     v+d, d, h],
+    back:   [u+d+w+d,   v+d, w, h],
+  };
+}
+
 const SKIN_PALETTES = [
   { skin:'#e8b98e', hair:'#3b2a1e', shirt:'#3e7bd1', pants:'#2c3550', shoe:'#20242e' },
   { skin:'#c98a5e', hair:'#1a1a1a', shirt:'#d1493e', pants:'#33302e', shoe:'#111214' },
@@ -2848,93 +3115,190 @@ const SKIN_PALETTES = [
   { skin:'#d69a6b', hair:'#e8e8e8', shirt:'#2fb7c9', pants:'#333c50', shoe:'#20232a' },
 ];
 
-// Build a single 64x64 skin-sheet canvas texture given a palette.
-function buildSkinTexture(palette){
+// A custom skin the player painted / imported in Skin Studio (64x64 canvas).
+let CUSTOM_SKIN_CANVAS = null;
+let USE_CUSTOM_SKIN = false;
+function activeSkinCanvas(){
+  return (USE_CUSTOM_SKIN && CUSTOM_SKIN_CANVAS) ? CUSTOM_SKIN_CANVAS : drawDefaultSkin(PLAYER_PALETTE);
+}
+
+function cloneCanvas(src){
+  const c = document.createElement('canvas'); c.width = src.width; c.height = src.height;
+  c.getContext('2d').drawImage(src, 0, 0);
+  return c;
+}
+
+// Built-in skin, drawn straight into the standard layout.
+function drawDefaultSkin(p){
+  p = p || SKIN_PALETTES[0];
   const c = makeCanvas(64);
-  const ctx = c.getContext('2d');
-  ctx.imageSmoothingEnabled = false;
-  // regions of the sheet map to cube faces later via UV rects (we keep it simple:
-  // whole-part solid colors with small detail, one shared sheet per player)
-  // Head area (0,0 - 32,32): face with eyes+mouth on the "front" quadrant
-  ctx.fillStyle = palette.hair; ctx.fillRect(0,0,32,8);
-  ctx.fillStyle = palette.skin; ctx.fillRect(0,8,32,24);
-  // face details in the second 8x8 cell (front)
-  ctx.fillStyle = palette.skin; ctx.fillRect(8,8,16,16);
-  ctx.fillStyle = '#222'; ctx.fillRect(11,14,3,3); ctx.fillRect(18,14,3,3); // eyes
-  ctx.fillStyle = shade(palette.skin,-30); ctx.fillRect(12,20,8,2); // mouth
+  const x = c.getContext('2d', { willReadFrequently:true });
+  x.imageSmoothingEnabled = false;
+  const R = k => faceRects(LIMB_DEFS[k], LIMB_DEFS[k].uv);
+  const fillR = (r, col) => { x.fillStyle = col; x.fillRect(r[0], r[1], r[2], r[3]); };
+  const sub = (r, ox, oy, w, h, col) => { x.fillStyle = col; x.fillRect(r[0]+ox, r[1]+oy, w, h); };
 
-  // Body (32,0 - 64,20): shirt
-  ctx.fillStyle = palette.shirt; ctx.fillRect(32,0,32,20);
-  ctx.fillStyle = shade(palette.shirt,-25); ctx.fillRect(32,0,32,4);
+  // head
+  const hd = R('head');
+  FACE_NAMES.forEach(f => fillR(hd[f], p.skin));
+  fillR(hd.top, p.hair);
+  sub(hd.front, 0, 0, 8, 2, p.hair); sub(hd.front, 0, 2, 1, 2, p.hair); sub(hd.front, 7, 2, 1, 2, p.hair);
+  sub(hd.right, 0, 0, 8, 2, p.hair); sub(hd.right, 0, 2, 3, 4, p.hair);
+  sub(hd.left,  0, 0, 8, 2, p.hair); sub(hd.left,  5, 2, 3, 4, p.hair);
+  sub(hd.back,  0, 0, 8, 6, p.hair);
+  sub(hd.front, 1, 3, 2, 1, shade(p.hair, 10)); sub(hd.front, 5, 3, 2, 1, shade(p.hair, 10));      // brows
+  sub(hd.front, 1, 4, 2, 1, '#f3f3f3'); sub(hd.front, 5, 4, 2, 1, '#f3f3f3');                       // eye whites
+  sub(hd.front, 2, 4, 1, 1, '#2b3a67'); sub(hd.front, 5, 4, 1, 1, '#2b3a67');                       // pupils
+  sub(hd.front, 3, 5, 2, 1, shade(p.skin, -16));                                                    // nose
+  sub(hd.front, 2, 6, 4, 1, shade(p.skin, -42));                                                    // mouth
 
-  // Arms (0,32 - 32,48): skin + sleeve
-  ctx.fillStyle = palette.skin; ctx.fillRect(0,32,32,16);
-  ctx.fillStyle = palette.shirt; ctx.fillRect(0,32,32,6);
+  // body
+  const b = R('body');
+  FACE_NAMES.forEach(f => fillR(b[f], p.shirt));
+  fillR(b.bottom, shade(p.shirt, -30));
+  sub(b.front, 3, 0, 2, 1, p.skin);
+  sub(b.front, 0, 10, 8, 2, shade(p.shirt, -16)); sub(b.back, 0, 10, 8, 2, shade(p.shirt, -16));
 
-  // Legs (32,32 - 64,64): pants + shoes
-  ctx.fillStyle = palette.pants; ctx.fillRect(32,32,32,26);
-  ctx.fillStyle = palette.shoe; ctx.fillRect(32,54,32,10);
+  // arms (sleeve on top 4px, skin below)
+  ['armR','armL'].forEach(k => {
+    const a = R(k);
+    FACE_NAMES.forEach(f => fillR(a[f], p.skin));
+    fillR(a.top, p.shirt);
+    ['right','front','left','back'].forEach(f => sub(a[f], 0, 0, 4, 4, p.shirt));
+    ['right','front','left','back'].forEach(f => sub(a[f], 0, 3, 4, 1, shade(p.shirt, -20)));
+  });
 
-  // subtle noise for texture richness
-  const rnd = mulberry32(hashStr(palette.skin+palette.shirt));
-  const imgData = ctx.getImageData(0,0,64,64);
-  for(let i=0;i<imgData.data.length;i+=4){
-    const n = Math.floor((rnd()-0.5)*10);
-    imgData.data[i]+=n; imgData.data[i+1]+=n; imgData.data[i+2]+=n;
+  // legs (pants, shoes on bottom 3px)
+  ['legR','legL'].forEach(k => {
+    const l = R(k);
+    FACE_NAMES.forEach(f => fillR(l[f], p.pants));
+    fillR(l.bottom, p.shoe);
+    ['right','front','left','back'].forEach(f => sub(l[f], 0, 9, 4, 3, p.shoe));
+  });
+
+  // gentle noise so flat colors don't look plastic
+  const rnd = mulberry32(hashStr(p.skin + p.shirt + p.pants));
+  const img = x.getImageData(0, 0, 64, 64);
+  for(let i=0; i<img.data.length; i+=4){
+    if(img.data[i+3] === 0) continue;
+    const n = Math.floor((rnd()-0.5)*9);
+    img.data[i] = Math.max(0, Math.min(255, img.data[i]+n));
+    img.data[i+1] = Math.max(0, Math.min(255, img.data[i+1]+n));
+    img.data[i+2] = Math.max(0, Math.min(255, img.data[i+2]+n));
   }
-  ctx.putImageData(imgData,0,0);
-
-  return canvasToTexture(c);
+  x.putImageData(img, 0, 0);
+  return c;
 }
 
-// Build the blocky player mesh (head, body, 2 arms, 2 legs) as a THREE.Group.
+// Old-format 64x32 skins have no separate left arm/leg: mirror the right ones.
+function mirrorFaceTo(ctx, srcCanvas, s, d){
+  ctx.save();
+  ctx.translate(d[0] + s[2], d[1]); ctx.scale(-1, 1);
+  ctx.drawImage(srcCanvas, s[0], s[1], s[2], s[3], 0, 0, s[2], s[3]);
+  ctx.restore();
+}
+function mirrorLimb(ctx, srcCanvas, def, srcUV, dstUV){
+  const s = faceRects(def, srcUV), d = faceRects(def, dstUV);
+  ['top','bottom','front','back'].forEach(f => mirrorFaceTo(ctx, srcCanvas, s[f], d[f]));
+  mirrorFaceTo(ctx, srcCanvas, s.right, d.left);
+  mirrorFaceTo(ctx, srcCanvas, s.left, d.right);
+}
+// Any image -> 64x64 skin canvas (handles legacy 2:1 sheets and bigger HD sheets).
+function canvasFromImage(img){
+  const c = makeCanvas(64);
+  const x = c.getContext('2d', { willReadFrequently:true });
+  x.imageSmoothingEnabled = false;
+  const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+  if(w === h*2){
+    x.drawImage(img, 0, 0, w, h, 0, 0, 64, 32);
+    const copy = cloneCanvas(c);
+    mirrorLimb(x, copy, LIMB_DEFS.armR, LIMB_DEFS.armR.uv, LIMB_DEFS.armL.uv);
+    mirrorLimb(x, copy, LIMB_DEFS.legR, LIMB_DEFS.legR.uv, LIMB_DEFS.legL.uv);
+  } else {
+    x.drawImage(img, 0, 0, w, h, 0, 0, 64, 64);
+  }
+  return c;
+}
+
+// A box whose six faces each sample their own rectangle of the skin sheet.
+// UVs come from vertex position + face normal, so the layout is exact.
+// The character faces -z (matches the camera at yaw 0); its right side is +x.
+function skinBox(w, h, d, rects, grow){
+  const W = w + grow*2, H = h + grow*2, D = d + grow*2;
+  const g = new THREE.BoxGeometry(W, H, D);
+  const pos = g.attributes.position, nor = g.attributes.normal, uv = g.attributes.uv;
+  for(let i=0; i<pos.count; i++){
+    const nx = pos.getX(i)/W, ny = pos.getY(i)/H, nz = pos.getZ(i)/D;
+    const ax = nor.getX(i), ay = nor.getY(i), az = nor.getZ(i);
+    let face, s, t;
+    if(az < -0.5){ face = 'front';  s = 0.5 - nx; t = 0.5 - ny; }
+    else if(az > 0.5){ face = 'back';   s = 0.5 + nx; t = 0.5 - ny; }
+    else if(ax > 0.5){ face = 'right';  s = 0.5 - nz; t = 0.5 - ny; }
+    else if(ax < -0.5){ face = 'left';  s = 0.5 + nz; t = 0.5 - ny; }
+    else if(ay > 0.5){ face = 'top';    s = 0.5 - nx; t = 0.5 - nz; }
+    else { face = 'bottom'; s = 0.5 - nx; t = 0.5 + nz; }
+    s = 0.004 + s*0.992; t = 0.004 + t*0.992; // stay just inside the face so neighbours never bleed in
+    const r = rects[face];
+    uv.setXY(i, (r[0] + s*r[2]) / 64, 1 - (r[1] + t*r[3]) / 64);
+  }
+  uv.needsUpdate = true;
+  return g;
+}
+
+// Build the blocky player (head, body, 2 arms, 2 legs + outer layers).
 // Returns {group, parts:{head,body,armL,armR,legL,legR}} for animation.
-function buildPlayerModel(palette){
-  const skinTex = buildSkinTexture(palette);
-  skinTex.magFilter = THREE.NearestFilter; skinTex.minFilter = THREE.NearestFilter;
-  const mat = new THREE.MeshLambertMaterial({ map: skinTex });
+function buildPlayerModel(palette, skinCanvas){
+  const canvas = skinCanvas || drawDefaultSkin(palette || SKIN_PALETTES[0]);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.NearestFilter;
+  tex.generateMipmaps = false; tex.needsUpdate = true;
+  const matBase = new THREE.MeshLambertMaterial({ map: tex });
+  const matLayer = new THREE.MeshLambertMaterial({ map: tex, transparent:true, alphaTest:0.4 });
 
+  const P = 1.8/32; // blocks per skin pixel -> 1.8 blocks tall
   const group = new THREE.Group();
+  group.rotation.order = 'YXZ';
+  const parts = {};
 
-  function box(w,h,d, materialArg){
-    const geo = new THREE.BoxGeometry(w,h,d);
-    return new THREE.Mesh(geo, materialArg || mat);
+  function limb(name, pivot, offset){
+    const def = LIMB_DEFS[name];
+    const w = def.w*P, h = def.h*P, d = def.d*P;
+    const base = skinBox(w, h, d, faceRects(def, def.uv), 0);
+    base.translate(offset[0], offset[1], offset[2]);
+    const mesh = new THREE.Mesh(base, matBase);
+    mesh.position.set(pivot[0], pivot[1], pivot[2]);
+    const lay = skinBox(w, h, d, faceRects(def, def.ov), P*0.5);
+    lay.translate(offset[0], offset[1], offset[2]);
+    mesh.add(new THREE.Mesh(lay, matLayer));
+    mesh.name = name;
+    group.add(mesh);
+    parts[name] = mesh;
   }
+  const legTop = 12*P, shoulder = 24*P;
+  limb('legR',  [ 2*P, legTop, 0], [0, -6*P, 0]);
+  limb('legL',  [-2*P, legTop, 0], [0, -6*P, 0]);
+  limb('body',  [0, legTop + 6*P, 0], [0, 0, 0]);
+  limb('armR',  [ 6*P, shoulder, 0], [0, -6*P, 0]);
+  limb('armL',  [-6*P, shoulder, 0], [0, -6*P, 0]);
+  limb('head',  [0, shoulder, 0], [0, 4*P, 0]);
 
-  // Proportions (in blocks): head 0.5, body 0.5w x 0.75h x 0.25d, limbs 0.25 x 0.75
-  const head = box(0.5,0.5,0.5);
-  head.position.set(0, 1.55, 0);
-  head.name='head';
-
-  const body = box(0.5,0.75,0.28);
-  body.position.set(0, 1.025, 0);
-  body.name='body';
-
-  const armL = box(0.22,0.72,0.22);
-  armL.position.set(-0.36, 1.02, 0);
-  armL.geometry.translate(0,-0.36,0);
-  armL.position.y = 1.38;
-  armL.name='armL';
-
-  const armR = box(0.22,0.72,0.22);
-  armR.position.set(0.36, 1.02, 0);
-  armR.geometry.translate(0,-0.36,0);
-  armR.position.y = 1.38;
-  armR.name='armR';
-
-  const legL = box(0.22,0.75,0.22);
-  legL.geometry.translate(0,-0.375,0);
-  legL.position.set(-0.13, 0.65, 0);
-  legL.name='legL';
-
-  const legR = box(0.22,0.75,0.22);
-  legR.geometry.translate(0,-0.375,0);
-  legR.position.set(0.13, 0.65, 0);
-  legR.name='legR';
-
-  group.add(head, body, armL, armR, legL, legR);
-  return { group, parts:{head,body,armL,armR,legL,legR} };
+  return { group, parts, canvas };
 }
+
+// Restore a custom skin saved by Skin Studio.
+(function loadStoredSkin(){
+  try{
+    const data = localStorage.getItem('vf_skin_custom');
+    if(!data) return;
+    const img = new Image();
+    img.onload = ()=>{
+      CUSTOM_SKIN_CANVAS = canvasFromImage(img);
+      USE_CUSTOM_SKIN = localStorage.getItem('vf_skin_use') === '1';
+      if(typeof buildSkinSelector === 'function' && document.getElementById('skinSelect')) buildSkinSelector();
+    };
+    img.src = data;
+  }catch(e){}
+})();
 
 /* -------------------------------------------------------------------------
    6. GAME ENGINE
@@ -3129,7 +3493,12 @@ function matchShaped(grid, pattern){
 // (/gR4Y_-P1LlaR5s) — that one stays a hidden easter egg, not a discoverable
 // command.
 const CHAT_COMMANDS = [
-  { name:'/locate', desc:'Find the nearest biome, e.g. /locate jungle' },
+  { name:'/help',    desc:'List commands' },
+  { name:'/locate',  desc:'Find the nearest biome, e.g. /locate jungle' },
+  { name:'/pos',     desc:'Show your coordinates' },
+  { name:'/drop',    desc:'Drop one of the held item' },
+  { name:'/dropall', desc:'Drop the whole held stack' },
+  { name:'/clear',   desc:'Clear the chat window' },
 ];
 
 // Friendly names/aliases a player might type -> the actual biomeAt() id.
@@ -3312,6 +3681,9 @@ class Game{
     this._setupMouseActions();
     this._setupResize();
     this._setupMobile();
+    this.inWater = false; this.headUnderwater = false;
+    this.drops = [];
+    this._initSelfModel();
     this.applyGraphicsSettings();
 
     window.__game = this;
@@ -3527,6 +3899,8 @@ class Game{
       // Custom texture panel (T key) removed — hardcoded block textures remain untouched.
       if(e.code==='KeyC'){ this.toggleCraftingPanel(); }
       if(e.code==='KeyF'){ if(GAME_MODE==='creative'){ this.flying = !this.flying; this.vel.y=0; } }
+      if(e.code==='KeyQ' && !e.repeat && !this._anyPanelOpen()){ this.dropSelected(e.shiftKey); }
+      if(e.code==='KeyV' && !e.repeat && !this._anyPanelOpen()){ this.cycleView(); }
       if(/^Digit[1-9]$/.test(e.code)){
         const n = parseInt(e.code.slice(5))-1;
         if(n < this.hotbar.length){ this.selectedSlot = n; this.selectedBlock = this.hotbar[n]; this.updateHotbarUI(); }
@@ -3576,6 +3950,8 @@ class Game{
     document.getElementById('volumeVal').textContent = SETTINGS.volume;
     document.getElementById('mouseSensSlider').value = SETTINGS.mouseSens;
     document.getElementById('mouseSensVal').textContent = SETTINGS.mouseSens;
+    document.getElementById('touchSensSlider').value = SETTINGS.touchSens;
+    document.getElementById('touchSensVal').textContent = SETTINGS.touchSens;
     document.getElementById('pausePanel').style.display = 'none';
     document.getElementById('settingsPanel').style.display = 'flex';
     this.paused = true; // pause movement/physics while adjusting settings, whether
@@ -3586,62 +3962,133 @@ class Game{
     this.paused = false;
   }
 
-  openChat(){
+  openChat(prefill){
     const wrap = document.getElementById('chatInputWrap');
     const input = document.getElementById('chatInput');
     const suggestBox = document.getElementById('chatCmdSuggest');
+    const box = document.getElementById('chatBox');
+    const sendBtn = document.getElementById('chatSendBtn');
+    const closeBtn = document.getElementById('chatCloseBtn');
+    if(wrap.style.display === 'block'){ input.focus(); return; }
     wrap.style.display = 'block';
-    input.value=''; input.focus();
+    document.body.classList.add('chatting');
+    box.classList.add('open');
+    box.scrollTop = box.scrollHeight;
+    input.value = (typeof prefill === 'string') ? prefill : '';
+    input.focus();
     suggestBox.style.display = 'none';
     suggestBox.innerHTML = '';
+    // let go of movement keys / mining so nothing keeps running while you type
+    for(const k in KEY) KEY[k] = false;
+    this.stopMining();
+
+    const hist = this._chatHist || (this._chatHist = []);
+    let histIdx = -1, sugIdx = -1, matches = [];
+
+    const close = ()=>{
+      wrap.style.display = 'none';
+      suggestBox.style.display = 'none';
+      box.classList.remove('open');
+      document.body.classList.remove('chatting');
+      input.blur();
+      input.removeEventListener('keydown', handler);
+      input.removeEventListener('input', renderSuggestions);
+      sendBtn.onclick = null; closeBtn.onclick = null;
+      this.canvas.focus();
+    };
 
     const renderSuggestions = ()=>{
       const v = input.value;
       suggestBox.innerHTML = '';
-      if(!v.startsWith('/')){ suggestBox.style.display='none'; return; }
+      sugIdx = -1; matches = [];
+      if(!v.startsWith('/') || v.includes(' ')){ suggestBox.style.display = 'none'; return; }
       const typed = v.toLowerCase();
-      const matches = CHAT_COMMANDS.filter(c=> c.name.startsWith(typed) || typed==='/');
-      if(matches.length===0){ suggestBox.style.display='none'; return; }
-      matches.forEach(c=>{
+      matches = CHAT_COMMANDS.filter(c=> c.name.startsWith(typed) || typed === '/');
+      if(matches.length === 0){ suggestBox.style.display = 'none'; return; }
+      matches.forEach((c, i)=>{
         const row = document.createElement('div');
         row.className = 'cmdRow';
         row.innerHTML = `<span class="cmdName">${c.name}</span><span class="cmdDesc">${c.desc}</span>`;
-        row.onclick = ()=>{
+        // pointerdown + preventDefault keeps the keyboard open on phones
+        row.addEventListener('pointerdown', (e)=>{
+          e.preventDefault();
           input.value = c.name + ' ';
           input.focus();
           renderSuggestions();
-        };
+        });
         suggestBox.appendChild(row);
       });
       suggestBox.style.display = 'block';
     };
+    const highlight = ()=>{
+      [...suggestBox.children].forEach((el, i)=> el.classList.toggle('active', i === sugIdx));
+    };
     input.addEventListener('input', renderSuggestions);
 
+    const submit = ()=>{
+      const msg = input.value.trim();
+      if(msg){
+        if(hist[hist.length-1] !== msg) hist.push(msg);
+        if(hist.length > 40) hist.shift();
+        this.sendChat(msg);
+      }
+      close();
+    };
+
     const handler = (e)=>{
-      if(e.code==='Enter'){
-        const msg = input.value.trim();
-        if(msg) this.sendChat(msg);
-        wrap.style.display='none';
-        suggestBox.style.display='none';
-        input.removeEventListener('keydown', handler);
-        input.removeEventListener('input', renderSuggestions);
-      } else if(e.code==='Escape'){
-        wrap.style.display='none';
-        suggestBox.style.display='none';
-        input.removeEventListener('keydown', handler);
-        input.removeEventListener('input', renderSuggestions);
+      // e.key as well as e.code: phone keyboards often report an empty e.code
+      if(e.key === 'Enter' || e.code === 'Enter' || e.code === 'NumpadEnter'){ submit(); }
+      else if(e.key === 'Escape' || e.code === 'Escape'){ close(); }
+      else if(e.key === 'Tab'){
+        e.preventDefault();
+        if(matches.length){ input.value = matches[Math.max(0, sugIdx)].name + ' '; renderSuggestions(); }
+      }
+      else if(e.key === 'ArrowUp' || e.key === 'ArrowDown'){
+        e.preventDefault();
+        const up = e.key === 'ArrowUp';
+        if(matches.length){
+          sugIdx = (sugIdx + (up ? -1 : 1) + matches.length) % matches.length;
+          highlight();
+        } else if(hist.length){
+          histIdx = up ? Math.min(hist.length-1, histIdx+1) : Math.max(-1, histIdx-1);
+          input.value = histIdx === -1 ? '' : hist[hist.length-1-histIdx];
+        }
       }
       e.stopPropagation();
     };
     input.addEventListener('keydown', handler);
+    sendBtn.onclick = submit;
+    closeBtn.onclick = close;
   }
 
-  sendChat(msg){
+  _handleBasicChatCommand(t){
+    const low = t.toLowerCase();
+    if(low === '/help'){
+      CHAT_COMMANDS.forEach(c=> this.addChatLine('System', `${c.name} - ${c.desc}`));
+      return true;
+    }
+    if(low === '/clear'){ document.getElementById('chatBox').innerHTML = ''; return true; }
+    if(low === '/pos'){
+      this.addChatLine('System', `You are at X ${this.pos.x.toFixed(1)}  Y ${this.pos.y.toFixed(1)}  Z ${this.pos.z.toFixed(1)}`);
+      return true;
+    }
+    if(low === '/drop' || low === '/dropall'){
+      if(this.selectedBlock) this.dropSelected(low === '/dropall');
+      else this.addChatLine('System', 'Nothing in your hand to drop.');
+      return true;
+    }
+    if(t.startsWith('/') && !low.startsWith('/locate') && t !== '/gR4Y_-P1LlaR5s'){
+      this.addChatLine('System', 'Unknown command. Type /help for a list.');
+      return true;
+    }
+    return false;
+  }
+
+    sendChat(msg){
     if(this.tryHandleChatCommand(msg)) return;
     this.addChatLine(PLAYER_NAME, msg, true);
     if(ONLINE_MODE){
-      fbDB.ref(`worlds/${WORLD_ID}/chat`).push({ uid:fbUID, name:PLAYER_NAME, msg, t:Date.now() })
-        .catch(err=>{ console.error('Chat failed:', err); this.showCenterMsg('⚠ Chat failed — check Firebase database rules', 2500); });
+      fbDB.ref(`worlds/${WORLD_ID}/chat`).push({ name:PLAYER_NAME, msg, t:Date.now() });
     }
   }
 
@@ -3652,6 +4099,7 @@ class Game{
   // the pillar field starts, on whichever axis was chosen.
   tryHandleChatCommand(msg){
     const trimmed = msg.trim();
+    if(this._handleBasicChatCommand(trimmed)) return true;
     if(trimmed.toLowerCase().startsWith('/locate')) return this.handleLocateCommand(trimmed);
     if(trimmed !== '/gR4Y_-P1LlaR5s') return false;
 
@@ -3792,11 +4240,23 @@ class Game{
   addChatLine(name, msg, self=false){
     const box = document.getElementById('chatBox');
     const div = document.createElement('div');
-    div.className = 'chatMsg';
-    div.innerHTML = `<b style="color:${self?'#f0954a':'#7fd0ff'}">${escapeHtml(name)}:</b> ${escapeHtml(msg)}`;
+    const sys = name === 'System';
+    div.className = 'chatMsg' + (sys ? ' sys' : '');
+    const now = new Date();
+    const stamp = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
+    let col = '#f0954a';
+    if(!sys && !self){
+      let h = 0; for(let i=0;i<name.length;i++) h = (h*31 + name.charCodeAt(i)) % 360;
+      col = `hsl(${h},75%,72%)`;
+    }
+    if(!sys && !self && PLAYER_NAME && String(msg).toLowerCase().includes(PLAYER_NAME.toLowerCase())) div.classList.add('mention');
+    div.innerHTML = `<span class="t">${stamp}</span>` +
+      (sys ? '' : `<b style="color:${col}">${escapeHtml(name)}:</b> `) + escapeHtml(msg);
     box.appendChild(div);
-    while(box.children.length>8) box.removeChild(box.firstChild);
-    setTimeout(()=>{ if(div.parentNode){ div.style.transition='opacity .6s'; div.style.opacity='0'; setTimeout(()=>div.remove(),700);} }, 8000);
+    while(box.children.length > 120) box.removeChild(box.firstChild);
+    if(box.classList.contains('open')) box.scrollTop = box.scrollHeight;
+    // fade out of the corner after a while; the full log is still there when chat is open
+    setTimeout(()=>{ div.classList.add('fading'); setTimeout(()=>div.classList.add('faded'), 750); }, 8000);
   }
 
   _setupMouseActions(){
@@ -3900,10 +4360,27 @@ class Game{
     // ---- menu buttons ----
     document.getElementById('invBtnMobile').addEventListener('touchstart', (e)=>{ e.preventDefault(); this.toggleInventory(); });
     document.getElementById('craftBtnMobile').addEventListener('touchstart', (e)=>{ e.preventDefault(); this.toggleCraftingPanel(); });
-    document.getElementById('chatBtnMobile').addEventListener('touchstart', (e)=>{ e.preventDefault(); this.openChat(); });
+    // chat opens on touchend: phones only raise the keyboard from the end of a tap
+    document.getElementById('chatBtnMobile').addEventListener('touchend', (e)=>{ e.preventDefault(); this.openChat(); }, {passive:false});
+
+    // ---- drop (tap = one, hold = whole stack) and camera view ----
+    const dropBtn = document.getElementById('dropBtnMobile');
+    let dropTimer = null, dropLong = false;
+    dropBtn.addEventListener('touchstart', (e)=>{
+      e.preventDefault();
+      dropLong = false; clearTimeout(dropTimer);
+      dropTimer = setTimeout(()=>{ dropLong = true; this.dropSelected(true); if(navigator.vibrate) navigator.vibrate(15); }, 450);
+    }, {passive:false});
+    dropBtn.addEventListener('touchend', (e)=>{
+      e.preventDefault(); clearTimeout(dropTimer);
+      if(!dropLong) this.dropSelected(false);
+      dropLong = false;
+    }, {passive:false});
+    dropBtn.addEventListener('touchcancel', ()=>{ clearTimeout(dropTimer); dropLong = false; });
+    document.getElementById('viewBtnMobile').addEventListener('touchstart', (e)=>{ e.preventDefault(); this.cycleView(); }, {passive:false});
 
     // ---- look / tap-to-place / hold-to-break (one finger on the world) ----
-    const HOLD_MS = 280, MOVE_PX = 12, TAP_MS = 400;
+    const HOLD_MS = 300, MOVE_PX = 7, TAP_MS = 400;
     let look = null;
     const endLook = (e)=>{
       if(!look || !findTouch(e.changedTouches, look.id)) return;
@@ -3935,7 +4412,13 @@ class Game{
       }
       const dx = t.clientX-look.x, dy = t.clientY-look.y;
       look.x = t.clientX; look.y = t.clientY;
-      this.yaw -= dx*0.0035; this.pitch -= dy*0.0035;
+      // speed-sensitive look: slow drags stay precise, quick flicks turn farther
+      const nowMs = performance.now();
+      const dtMs = Math.max(4, nowMs - (look.tm || (nowMs-16)));
+      look.tm = nowMs;
+      const accel = 1 + Math.min(1.1, (Math.hypot(dx,dy)/dtMs) * 0.22);
+      const k = 0.00045 * (SETTINGS.touchSens || 14) * accel;
+      this.yaw -= dx*k; this.pitch -= dy*k;
       this.pitch = Math.max(-Math.PI/2+0.01, Math.min(Math.PI/2-0.01, this.pitch));
       e.preventDefault();
     }, {passive:false});
@@ -3982,7 +4465,25 @@ class Game{
     document.addEventListener('pointerdown', move, true);
     document.addEventListener('pointerup', ()=>this._finishSpread());
     document.addEventListener('pointercancel', ()=>this._cancelSpread());
+    // Drop: hover a stack + Q (Shift+Q = whole stack); click outside the window while holding a stack;
+    // or use the Drop buttons (handy on touch).
+    ['inventoryPanel','craftingPanel'].forEach(pid=>{
+      const el = document.getElementById(pid); if(!el) return;
+      el.addEventListener('pointerdown', (e)=>{
+        if(e.target !== el) return;
+        if(this.cursor.id && this.cursor.count > 0){ e.preventDefault(); this._dropCursor(e.button===2); }
+      });
+      el.addEventListener('contextmenu', (e)=>{ if(e.target === el) e.preventDefault(); });
+    });
+    const dh = document.getElementById('dropHeldBtn'), dh1 = document.getElementById('dropHeld1Btn');
+    if(dh) dh.onclick = ()=> this._dropCursor(false);
+    if(dh1) dh1.onclick = ()=> this._dropCursor(true);
     window.addEventListener('keydown', (e)=>{
+      if(this._hoverInvId && e.code==='KeyQ' && !e.repeat){
+        this._dropFromInventory(this._hoverInvId, e.shiftKey);
+        e.stopImmediatePropagation();
+        return;
+      }
       if(!this._hoverInvId || !/^Digit[1-9]$/.test(e.code)) return;
       const n = parseInt(e.code.slice(5))-1, id = this._hoverInvId;
       if(n >= this.hotbar.length) return;
@@ -3997,6 +4498,10 @@ class Game{
     const cs = document.getElementById('cursorStack');
     if(!cs) return;
     const c = this.cursor;
+    const dhb = document.getElementById('dropHeldBtn'), dhb1 = document.getElementById('dropHeld1Btn');
+    const holding = !!(c.id && c.count > 0);
+    if(dhb) dhb.disabled = !holding;
+    if(dhb1) dhb1.disabled = !holding;
     if(!c.id || c.count<=0){ c.id=0; c.count=0; cs.style.display='none'; cs.innerHTML=''; return; }
     cs.innerHTML = '';
     const img = document.createElement('img'); img.src = iconDataUrl(c.id); cs.appendChild(img);
@@ -4408,7 +4913,7 @@ class Game{
       const ins = document.createElement('div'); ins.className='recipeIns';
       Object.keys(en.need).forEach(id=> ins.appendChild(mkIcon(+id, 'rIn', en.need[id])));
       row.appendChild(ins);
-      const ar = document.createElement('div'); ar.className='recipeArrow'; ar.textContent='➜'; row.appendChild(ar);
+      const ar = document.createElement('div'); ar.className='recipeArrow'; ar.innerHTML=ic('arrow'); row.appendChild(ar);
       const outCount = en.type==='craft' ? en.r.out.count : en.sr.count;
       row.appendChild(mkIcon(en.outId, 'recipeOut', outCount));
       if(en.type==='smelt'){
@@ -4666,12 +5171,12 @@ class Game{
         if(!url) return;
         applyBtn.textContent='Loading…';
         loadCustomTexture(slot.blockId, slot.face, url).then(()=>{
-          applyBtn.textContent='Applied ✓';
+          applyBtn.innerHTML='Applied '+ic('check');
           img.src = url;
           this.updateHotbarUI();
           setTimeout(()=>{ applyBtn.textContent='Apply'; }, 1200);
         }).catch(()=>{
-          applyBtn.textContent='Failed ✗';
+          applyBtn.innerHTML='Failed '+ic('close');
           setTimeout(()=>{ applyBtn.textContent='Apply'; }, 1500);
         });
       };
@@ -4713,7 +5218,7 @@ class Game{
         const url = input.value.trim();
         if(!url) return;
         setBlockSound(b.name, url);
-        applyBtn.textContent='Applied ✓';
+        applyBtn.innerHTML='Applied '+ic('check');
         setTimeout(()=>{ applyBtn.textContent='Apply'; }, 1200);
       };
 
@@ -4746,7 +5251,7 @@ class Game{
       // Survival has no "pick any block for free" creative palette — the
       // inventory instead shows only what the player has actually
       // collected/crafted, with real counts, matching real survival rules.
-      if(invHint) invHint.textContent = 'Click a stack to pick it up (right-click = half). Hover + press 1-9 to set a hotbar slot, Ctrl-click to select.';
+      if(invHint) invHint.textContent = 'Click a stack to pick it up (right-click = half). Hover + 1-9 sets a hotbar slot, hover + Q drops one (Shift+Q the stack). Click outside this window, or use Drop below, to throw what you hold.';
       const owned = Object.keys(this.inventoryCounts)
         .map(k=>+k)
         .filter(id=> id!==0 && (this.inventoryCounts[id]||0) > 0);
@@ -5053,10 +5558,10 @@ class Game{
     // record locally for offline world-save, regardless of online/offline mode
     this.blockDiffs[`${x}_${y}_${z}`] = id;
     if(!ONLINE_MODE) return;
-    fbDB.ref(`worlds/${WORLD_ID}/blocks/${x}_${y}_${z}`).set(id)
+    fbDB.ref(`worlds/${WORLD_ID}/blocks/${x}_${y}_${z}`).set(id===0?null:id)
       .catch(err=>{
         console.error('Block sync failed:', err);
-        this.showCenterMsg('⚠ Sync failed — check Firebase database rules', 2500);
+        this.showCenterMsg('{{warn}} Sync failed — check Firebase database rules', 2500);
       });
   }
 
@@ -5335,7 +5840,7 @@ class Game{
 
   showCenterMsg(text, ms=1500){
     const el = document.getElementById('centerMsg');
-    el.textContent = text;
+    el.innerHTML = iconText(text);
     el.style.opacity = '1';
     clearTimeout(this._centerMsgTimer);
     this._centerMsgTimer = setTimeout(()=>{ el.style.opacity='0'; }, ms);
@@ -5348,7 +5853,7 @@ class Game{
     const el = document.getElementById('saveToast');
     if(!el) return;
     const textEl = document.getElementById('saveToastText');
-    if(textEl) textEl.textContent = text;
+    if(textEl) textEl.innerHTML = iconText(text);
     el.classList.toggle('err', !!isError);
     el.classList.add('show');
     clearTimeout(this._saveToastTimer);
@@ -5393,13 +5898,13 @@ class Game{
       // keep legacy single-slot key up to date too, so older logic that
       // still checks it (e.g. very first migration pass) keeps working
       localStorage.setItem('vf_world_save', JSON.stringify(save));
-      if(showMsg) this.showCenterMsg('World saved ✓', 1500);
-      this.showSaveToast(autosave ? 'World autosaved' : 'World saved ✓', false);
+      if(showMsg) this.showCenterMsg('World saved {{check}}', 1500);
+      this.showSaveToast(autosave ? 'World autosaved' : 'World saved {{check}}', false);
       const note = document.getElementById('saveNote');
       if(note){ note.textContent = 'Saved!'; note.style.color = 'var(--vf-green)'; setTimeout(()=>note.textContent='',1800); }
     }catch(e){
       console.warn('Save failed', e);
-      if(showMsg) this.showCenterMsg('⚠ Could not save (storage full?)', 2500);
+      if(showMsg) this.showCenterMsg('{{warn}} Could not save (storage full?)', 2500);
       this.showSaveToast('Save failed — storage full?', true);
       const note = document.getElementById('saveNote');
       if(note){ note.textContent = 'Save failed — storage full?'; note.style.color = 'var(--vf-red)'; }
@@ -5409,7 +5914,6 @@ class Game{
   saveAndQuit(){
     this.saveWorld(false);
     // tear down and return to the main menu
-    if(ONLINE_MODE) this.leaveMultiplayer();
     if(this._presenceInterval) clearInterval(this._presenceInterval);
     if(this._autosaveInterval) clearInterval(this._autosaveInterval);
     document.exitPointerLock();
@@ -5471,7 +5975,7 @@ class Game{
     // stops repeated hits while already resting on ground), scaled by how
     // fast the player was falling right before the y-axis collision zeroed
     // vel.y. Minecraft-like: a few blocks are free, it climbs after that.
-    if(GAME_MODE==='survival' && !this.flying && wasAirborne && this.onGround && velYBeforeCollision < -12){
+    if(GAME_MODE==='survival' && !this.flying && !this.inWater && wasAirborne && this.onGround && velYBeforeCollision < -12){
       const fallSpeed = -velYBeforeCollision;
       const dmg = Math.floor((fallSpeed-12) * 0.6);
       if(dmg>0) this.damage(dmg);
@@ -5479,8 +5983,15 @@ class Game{
   }
 
   updateMovement(delta){
-    const speed = this.flying?9:4.3;
-    const sprint = (KEY['ShiftLeft'] || this.mobileSprint)?1.4:1;
+    const px = this.pos.x, py = this.pos.y, pz = this.pos.z;
+    // ---- water state ----
+    this.inWater = !this.flying && (this._isWaterAt(px, py+0.4, pz) || this._isWaterAt(px, py+1.1, pz));
+    this.headUnderwater = this._isWaterAt(px, py+this.eyeHeight, pz);
+    const inW = this.inWater;
+
+    let speed = this.flying?9:4.3;
+    if(inW) speed *= 0.62;
+    const sprint = (KEY['ShiftLeft'] || this.mobileSprint) ? (inW?1.3:1.4) : 1;
     let mx=0, mz=0;
     if(KEY['KeyW']) mz -= 1;
     if(KEY['KeyS']) mz += 1;
@@ -5506,6 +6017,23 @@ class Game{
       if(KEY['ShiftLeft']&&!len) vy-=1;
       if(KEY['ControlLeft']) vy-=1;
       this.vel.y = vy*speed;
+    } else if(inW){
+      // ---- swimming ----
+      // Space / jump button = swim up, Ctrl / down button = dive. Swimming forward
+      // while looking up or down also rises / dives, so a phone needs only the stick.
+      let target = -1.4; // slow sink when idle
+      if(KEY['Space']) target = 3.6;
+      else if(KEY['ControlLeft'] || KEY['KeyX']) target = -3.8;
+      else if(len>0 && mz<0 && Math.abs(this.pitch)>0.3) target = Math.max(-4, Math.min(4, Math.sin(this.pitch)*4.5));
+      const k = Math.min(1, (this.vel.y < -6 ? 14 : 5)*delta); // entering fast = brake hard
+      this.vel.y += (target - this.vel.y)*k;
+      // push into a bank while at the surface to climb out
+      if(len>0 && !this.headUnderwater){
+        const fx = px + wishX*0.55, fz = pz + wishZ*0.55;
+        if(this.isSolidAt(fx, py+0.3, fz) && !this.isSolidAt(fx, py+1.3, fz) && !this.isSolidAt(fx, py+2.3, fz)){
+          this.vel.y = Math.max(this.vel.y, 6.2);
+        }
+      }
     } else {
       this.vel.y -= 22*delta; // gravity
       if(KEY['Space'] && this.onGround){ this.vel.y = 8.0; }
@@ -5515,14 +6043,250 @@ class Game{
     this.animT += delta*(len>0?8:4);
   }
 
+  // Camera: first person, or third person (behind / in front) so you can see your skin.
   updateCamera(){
-    this.camera.position.set(this.pos.x, this.pos.y+this.eyeHeight, this.pos.z);
-    this.camera.rotation.order='YXZ';
-    this.camera.rotation.y = this.yaw;
-    this.camera.rotation.x = this.pitch;
+    const eyeX = this.pos.x, eyeY = this.pos.y + this.eyeHeight, eyeZ = this.pos.z;
+    this.camera.rotation.order = 'YXZ';
+    if(!this.viewMode){
+      this.camera.position.set(eyeX, eyeY, eyeZ);
+      this.camera.rotation.y = this.yaw;
+      this.camera.rotation.x = this.pitch;
+      return;
+    }
+    const cp = Math.cos(this.pitch);
+    const dx = -Math.sin(this.yaw)*cp, dy = Math.sin(this.pitch), dz = -Math.cos(this.yaw)*cp;
+    const sgn = this.viewMode===1 ? -1 : 1;
+    let dist = 3.6;
+    for(let t=0.3; t<=3.6; t+=0.2){
+      if(this.isSolidAt(eyeX+sgn*dx*t, eyeY+sgn*dy*t, eyeZ+sgn*dz*t)){ dist = Math.max(0.35, t-0.3); break; }
+    }
+    this.camera.position.set(eyeX+sgn*dx*dist, eyeY+sgn*dy*dist, eyeZ+sgn*dz*dist);
+    if(this.viewMode===1){ this.camera.rotation.y = this.yaw; this.camera.rotation.x = this.pitch; }
+    else { this.camera.rotation.y = this.yaw + Math.PI; this.camera.rotation.x = -this.pitch; }
   }
 
-  // Fully generate + mesh every chunk column within RENDER_DISTANCE of the
+  /* ---------------- Swimming helpers / FX ---------------- */
+  _isWaterAt(x,y,z){
+    const id = this.world.getBlock(Math.floor(x), Math.floor(y), Math.floor(z));
+    if(!id) return false;
+    const d = BLOCKS[id];
+    return !!(d && d.liquid && (d.liquidFamily||'water')==='water');
+  }
+
+  _updateSwimFX(){
+    const cam = this.camera.position;
+    const under = this._isWaterAt(cam.x, cam.y, cam.z);
+    if(under !== this._camUnder){
+      this._camUnder = under;
+      const ov = document.getElementById('waterOverlay');
+      if(ov) ov.style.opacity = under ? '1' : '0';
+      const fog = this.scene.fog;
+      if(under){
+        this._uwSaved = { near:fog.near, far:fog.far };
+        fog.near = 0.5; fog.far = Math.min(fog.far, 28);
+      } else if(this._uwSaved){
+        fog.near = this._uwSaved.near; fog.far = this._uwSaved.far; this._uwSaved = null;
+      }
+    }
+    // mobile: the "down" button doubles as dive while swimming
+    const want = (GAME_MODE==='creative' || this.inWater) ? 'flex' : 'none';
+    if(this._descShown !== want){
+      this._descShown = want;
+      const d = document.getElementById('descendBtn'); if(d) d.style.display = want;
+    }
+  }
+
+  /* ---------------- Own player model (third-person view) ---------------- */
+  _initSelfModel(){
+    const built = buildPlayerModel(PLAYER_PALETTE, activeSkinCanvas());
+    built.group.visible = false;
+    this.scene.add(built.group);
+    this.selfModel = built;
+    this.viewMode = 0; // 0 first person, 1 behind, 2 in front
+    this._selfSwing = 0;
+  }
+  cycleView(){
+    this.viewMode = (this.viewMode + 1) % 3;
+    this.selfModel.group.visible = this.viewMode !== 0;
+    this.showCenterMsg(['First person','Behind you','In front of you'][this.viewMode], 900);
+  }
+  _updateSelfModel(delta){
+    const m = this.selfModel;
+    if(!m || !this.viewMode) return;
+    const g = m.group, P = m.parts;
+    const speed = Math.hypot(this.vel.x, this.vel.z);
+    const swimming = this.inWater && !this.flying && (speed > 0.4 || Math.abs(this.vel.y) > 1.2);
+    g.rotation.y = this.yaw;
+    g.rotation.x += ((swimming ? -1.25 : 0) - g.rotation.x) * Math.min(1, delta*8);
+    g.position.set(this.pos.x, this.pos.y + (-g.rotation.x)*0.35, this.pos.z);
+    P.head.rotation.x = Math.max(-1.2, Math.min(1.2, this.pitch)) - g.rotation.x*0.8;
+    if(speed > 0.4){
+      this._selfSwing += delta*(swimming?6:9);
+      const s = Math.sin(this._selfSwing)*(swimming?0.9:0.7);
+      P.armL.rotation.x = s; P.armR.rotation.x = -s; P.legL.rotation.x = -s; P.legR.rotation.x = s;
+    } else {
+      P.armL.rotation.x *= 0.8; P.armR.rotation.x *= 0.8; P.legL.rotation.x *= 0.8; P.legR.rotation.x *= 0.8;
+    }
+  }
+
+  /* ---------------- Dropped items ---------------- */
+  _anyPanelOpen(){
+    return ['inventoryPanel','craftingPanel','texturePanel','settingsPanel','furnacePanel','recipeBookPanel','pausePanel']
+      .some(id=>{ const el = document.getElementById(id); return el && el.style.display==='flex'; });
+  }
+  _dropSpriteMat(id){
+    if(!this._dropMats) this._dropMats = new Map();
+    let m = this._dropMats.get(id);
+    if(m) return m;
+    const img = new Image();
+    const tex = new THREE.Texture(img);
+    tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.NearestFilter; tex.generateMipmaps = false;
+    img.onload = ()=>{ tex.needsUpdate = true; };
+    img.src = iconDataUrl(id);
+    m = new THREE.SpriteMaterial({ map:tex, transparent:true, alphaTest:0.05 });
+    this._dropMats.set(id, m);
+    return m;
+  }
+  _spawnDrop(id, count, dur){
+    if(!id || count <= 0) return;
+    if(this.drops.length >= 150) this._removeDrop(0);
+    const sp = new THREE.Sprite(this._dropSpriteMat(id));
+    sp.scale.set(0.45, 0.45, 1);
+    this.scene.add(sp);
+    const { dir } = this.getLookRay();
+    const eye = this.pos.clone(); eye.y += this.eyeHeight - 0.25;
+    let start = eye.clone().addScaledVector(dir, 0.5);
+    if(this.isSolidAt(start.x, start.y, start.z)) start = eye.clone();
+    const vel = dir.clone().multiplyScalar(5.5); vel.y += 2.2;
+    const d = { id, count, dur, sprite:sp, pos:start, vel, age:0, delay:1.6, grounded:false };
+    sp.position.copy(start);
+    this.drops.push(d);
+  }
+  _removeDrop(i){
+    const d = this.drops[i]; if(!d) return;
+    this.scene.remove(d.sprite);
+    this.drops.splice(i, 1);
+  }
+  _popSound(){
+    try{
+      if(!this._actx) this._actx = new (window.AudioContext||window.webkitAudioContext)();
+      const ctx = this._actx;
+      if(ctx.state === 'suspended') ctx.resume().catch(()=>{});
+      const vol = Math.max(0, Math.min(1, (SETTINGS.volume ?? 70)/100)) * 0.12;
+      const o = ctx.createOscillator(), g = ctx.createGain(), t = ctx.currentTime;
+      o.type = 'sine';
+      o.frequency.setValueAtTime(520, t); o.frequency.exponentialRampToValueAtTime(980, t+0.08);
+      g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t+0.12);
+      o.connect(g); g.connect(ctx.destination); o.start(t); o.stop(t+0.13);
+    }catch(e){}
+  }
+  _updateDrops(delta){
+    const list = this.drops;
+    if(!list.length) return;
+    const px = this.pos.x, py = this.pos.y + 0.9, pz = this.pos.z;
+    this._dropMergeT = (this._dropMergeT||0) + delta;
+    for(let i=list.length-1; i>=0; i--){
+      const d = list[i];
+      d.age += delta;
+      if(d.age > 300 || d.pos.y < -30){ this._removeDrop(i); continue; }
+      const dx = d.pos.x-px, dy = d.pos.y-py, dz = d.pos.z-pz;
+      const dist2 = dx*dx + dy*dy + dz*dz;
+      if(dist2 > 2304) continue; // farther than 48 blocks: frozen until you return
+      const inW = this._isWaterAt(d.pos.x, d.pos.y, d.pos.z);
+      if(inW){
+        d.vel.y += (1.2 - d.vel.y)*Math.min(1, 3*delta);
+        const f = Math.max(0, 1-3*delta); d.vel.x *= f; d.vel.z *= f;
+      } else d.vel.y -= 20*delta;
+      if(d.vel.y < -30) d.vel.y = -30;
+      const nx = d.pos.x + d.vel.x*delta;
+      if(this.isSolidAt(nx, d.pos.y, d.pos.z)) d.vel.x *= -0.3; else d.pos.x = nx;
+      const nz = d.pos.z + d.vel.z*delta;
+      if(this.isSolidAt(d.pos.x, d.pos.y, nz)) d.vel.z *= -0.3; else d.pos.z = nz;
+      const ny = d.pos.y + d.vel.y*delta;
+      d.grounded = false;
+      if(this.isSolidAt(d.pos.x, ny-0.15, d.pos.z)){
+        if(d.vel.y < 0){ d.grounded = true; d.pos.y = Math.floor(ny-0.15) + 1.15; }
+        d.vel.y = 0;
+      } else d.pos.y = ny;
+      if(d.grounded){ const f = Math.max(0, 1-10*delta); d.vel.x *= f; d.vel.z *= f; }
+      d.sprite.position.set(d.pos.x, d.pos.y + 0.22 + (d.grounded ? Math.sin(d.age*3)*0.05 : 0), d.pos.z);
+      if(!this.dead && d.age >= d.delay && dist2 < 2.25){
+        this._giveItem(d.id, d.count);
+        const def = ALL_DEFS[d.id];
+        if(def && def.durability !== undefined && d.dur !== undefined && this.toolDurability[d.id] === undefined){
+          this.toolDurability[d.id] = d.dur;
+        }
+        this._removeDrop(i);
+        this._popSound();
+        this._refreshAll();
+      }
+    }
+    // tidy: stack identical resting items that landed together
+    if(this._dropMergeT > 0.6){
+      this._dropMergeT = 0;
+      for(let i=0; i<list.length; i++){
+        const a = list[i];
+        if(!a || !a.grounded) continue;
+        const adef = ALL_DEFS[a.id];
+        if(adef && adef.durability !== undefined) continue;
+        for(let j=list.length-1; j>i; j--){
+          const b = list[j];
+          if(b.id !== a.id || !b.grounded) continue;
+          const ex = a.pos.x-b.pos.x, ez = a.pos.z-b.pos.z;
+          if(ex*ex + ez*ez < 0.5 && Math.abs(a.pos.y-b.pos.y) < 0.6){ a.count += b.count; this._removeDrop(j); }
+        }
+      }
+    }
+  }
+
+  // Drop from the selected hotbar slot (all = whole stack; tools always drop singly).
+  dropSelected(all=false){
+    if(this.dead || this.paused) return;
+    const id = this.selectedBlock;
+    if(!id) return;
+    this._dropFromInventory(id, all);
+  }
+  _dropFromInventory(id, all){
+    const def = ALL_DEFS[id];
+    if(!def || this.dead) return;
+    const creative = GAME_MODE === 'creative';
+    const have = this.inventoryCounts[id] || 0;
+    if(!creative && have <= 0) return;
+    const isTool = def.durability !== undefined;
+    let n = isTool ? 1 : (all ? (creative ? 64 : have) : 1);
+    if(!creative) n = Math.min(n, have);
+    let dur;
+    if(isTool) dur = this.toolDurability[id] === undefined ? def.durability : this.toolDurability[id];
+    if(!creative){
+      const left = have - n;
+      if(left <= 0){
+        delete this.inventoryCounts[id];
+        if(isTool) delete this.toolDurability[id];
+        const si = this.hotbar.indexOf(id); if(si !== -1) this.hotbar[si] = 0;
+        if(this.selectedBlock === id) this.selectedBlock = 0;
+      } else this.inventoryCounts[id] = left;
+    }
+    this._spawnDrop(id, n, dur);
+    this._refreshAll();
+  }
+  // Throw the stack held on the inventory cursor.
+  _dropCursor(oneOnly){
+    const c = this.cursor;
+    if(!c.id || c.count <= 0) return;
+    const id = c.id, n = oneOnly ? 1 : c.count;
+    const def = ALL_DEFS[id];
+    let dur;
+    if(def && def.durability !== undefined){
+      dur = this.toolDurability[id] === undefined ? def.durability : this.toolDurability[id];
+      if(n >= c.count) delete this.toolDurability[id];
+    }
+    this._spawnDrop(id, n, dur);
+    c.count -= n;
+    if(c.count <= 0){ c.id = 0; c.count = 0; }
+    this._refreshAll();
+  }
+
+    // Fully generate + mesh every chunk column within RENDER_DISTANCE of the
   // player's current position, batched across frames so the loading screen
   // can update and repaint. Called once at startup so the world is fully
   // streamed in BEFORE the loading screen hides — the player never sees
@@ -5716,105 +6480,55 @@ class Game{
   /* ---------------- Multiplayer (Firebase Realtime Database) ---------------- */
   initMultiplayer(){
     if(!ONLINE_MODE) return;
-    const base = `worlds/${WORLD_ID}`;
-    const myRef = fbDB.ref(`${base}/players/${fbUID}`);
-    this._mpRefs = [];
-    const listen = (ref, evt, fn)=>{ ref.on(evt, fn, err=>console.warn('Listener error', evt, err)); this._mpRefs.push([ref, evt, fn]); };
-    this._mpMyRef = myRef;
+    const myRef = fbDB.ref(`worlds/${WORLD_ID}/players/${fbUID}`);
     myRef.onDisconnect().remove();
-    const joinedAt = Date.now();
 
-    // block changes from others (also replays every existing edit on join)
-    const blocksRef = fbDB.ref(`${base}/blocks`);
-    listen(blocksRef, 'child_added',   snap=>this._applyRemoteBlock(snap));
-    listen(blocksRef, 'child_changed', snap=>this._applyRemoteBlock(snap));
-    listen(blocksRef, 'child_removed', snap=>{
+    // listen for block changes from others
+    fbDB.ref(`worlds/${WORLD_ID}/blocks`).on('child_added', snap=>this._applyRemoteBlock(snap));
+    fbDB.ref(`worlds/${WORLD_ID}/blocks`).on('child_changed', snap=>this._applyRemoteBlock(snap));
+    fbDB.ref(`worlds/${WORLD_ID}/blocks`).on('child_removed', snap=>{
       const [x,y,z] = snap.key.split('_').map(Number);
-      this._setRemoteBlock(x,y,z,0);
+      this.world.setBlock(x,y,z,0);
     });
 
-    // other players
-    const playersRef = fbDB.ref(`${base}/players`);
-    listen(playersRef, 'child_added', snap=>{
+    // listen for other players
+    fbDB.ref(`worlds/${WORLD_ID}/players`).on('child_added', snap=>{
       if(snap.key===fbUID) return;
-      this._addOtherPlayer(snap.key, snap.val()||{});
+      this._addOtherPlayer(snap.key, snap.val());
     });
-    listen(playersRef, 'child_changed', snap=>{
+    fbDB.ref(`worlds/${WORLD_ID}/players`).on('child_changed', snap=>{
       if(snap.key===fbUID) return;
-      this._updateOtherPlayer(snap.key, snap.val()||{});
+      this._updateOtherPlayer(snap.key, snap.val());
     });
-    listen(playersRef, 'child_removed', snap=>this._removeOtherPlayer(snap.key));
+    fbDB.ref(`worlds/${WORLD_ID}/players`).on('child_removed', snap=>{
+      this._removeOtherPlayer(snap.key);
+    });
 
-    // chat (skip our own echo by uid, skip old history from before we joined)
-    const chatRef = fbDB.ref(`${base}/chat`).limitToLast(20);
-    listen(chatRef, 'child_added', snap=>{
+    // listen for chat
+    fbDB.ref(`worlds/${WORLD_ID}/chat`).limitToLast(20).on('child_added', snap=>{
       const v = snap.val();
-      if(!v || v.uid===fbUID) return;
-      if(typeof v.t==='number' && v.t < joinedAt-15000) return;
-      this.addChatLine(String(v.name||'Player').slice(0,20), String(v.msg||'').slice(0,120), false);
+      if(v.name===PLAYER_NAME) return;
+      this.addChatLine(v.name, v.msg, false);
     });
 
-    // presence: send on change, plus a ~1.5s heartbeat so idle players stay "alive"
-    let last = null, lastSent = 0;
-    const send = ()=>{
-      if(this._quit) return;
-      const moving = (Math.abs(this.vel.x)+Math.abs(this.vel.z))>0.1;
-      const cur = { x:round2(this.pos.x), y:round2(this.pos.y), z:round2(this.pos.z), yaw:round2(this.yaw), pitch:round2(this.pitch), moving };
-      const changed = !last || cur.x!==last.x || cur.y!==last.y || cur.z!==last.z || cur.yaw!==last.yaw || cur.pitch!==last.pitch || cur.moving!==last.moving;
-      const now = Date.now();
-      if(!changed && now-lastSent < 1500) return;
-      last = cur; lastSent = now;
+    this._presenceInterval = setInterval(()=>{
       myRef.set({
         name: PLAYER_NAME,
         playerId: PLAYER_ID,
         palette: PLAYER_PALETTE,
-        ...cur,
-        t: now,
-      }).catch(err=>console.warn('Presence write failed', err));
-    };
-    send();
-    this._presenceInterval = setInterval(()=>{
-      send();
-      // drop players that stopped sending (crash / lost connection without onDisconnect firing yet)
-      const nowPerf = performance.now();
-      for(const [uid,p] of this.otherPlayers){
-        if(p.lastSeen && nowPerf - p.lastSeen > 12000) this._removeOtherPlayer(uid);
-      }
+        x: round2(this.pos.x), y: round2(this.pos.y), z: round2(this.pos.z),
+        yaw: round2(this.yaw), pitch: round2(this.pitch),
+        moving: (Math.abs(this.vel.x)+Math.abs(this.vel.z))>0.1,
+        swimming: !!this.inWater,
+        t: Date.now(),
+      });
     }, 120);
-
-    // best-effort cleanup if the tab is closed
-    this._mpUnload = ()=>{ try{ myRef.remove(); }catch(e){} };
-    window.addEventListener('pagehide', this._mpUnload);
-  }
-
-  // Detach every listener and remove our presence (used by Save & Quit).
-  leaveMultiplayer(){
-    if(this._mpRefs){
-      for(const [ref,evt,fn] of this._mpRefs){ try{ ref.off(evt, fn); }catch(e){} }
-      this._mpRefs = null;
-    }
-    if(this._mpUnload){ window.removeEventListener('pagehide', this._mpUnload); this._mpUnload = null; }
-    if(this._mpMyRef){
-      try{ this._mpMyRef.onDisconnect().cancel(); }catch(e){}
-      try{ this._mpMyRef.remove(); }catch(e){}
-      this._mpMyRef = null;
-    }
-  }
-
-  _setRemoteBlock(x,y,z,id){
-    if(!Number.isFinite(x)||!Number.isFinite(y)||!Number.isFinite(z)) return;
-    const prev = this.world.getBlock(x,y,z);
-    if(prev===id) return;
-    this.world.setBlock(x,y,z,id);
-    if(prev===41 && id!==41) this.removeTorchLight(x,y,z);
-    if(id===41) this.addTorchLight(x,y,z);
   }
 
   _applyRemoteBlock(snap){
     const [x,y,z] = snap.key.split('_').map(Number);
-    const v = snap.val();
-    const id = (typeof v==='number' && BLOCKS[v]) ? v : 0;
-    this._setRemoteBlock(x,y,z,id);
+    const id = snap.val();
+    this.world.setBlock(x,y,z, id==null?0:id);
   }
 
   _addOtherPlayer(uid, data){
@@ -5846,7 +6560,6 @@ class Game{
       current: new THREE.Vector3(x0,y0,z0),
       yaw: Number.isFinite(data.yaw)?data.yaw:0, pitch: Number.isFinite(data.pitch)?data.pitch:0, moving:false, animT:0,
       name: data.name||'Player', playerId: data.playerId||null,
-      lastSeen: performance.now(),
     });
   }
   _updateOtherPlayer(uid, data){
@@ -5863,8 +6576,8 @@ class Game{
     p.yaw = Number.isFinite(data.yaw) ? data.yaw : p.yaw;
     p.pitch = Number.isFinite(data.pitch) ? data.pitch : p.pitch;
     p.moving = !!data.moving;
+    p.swimming = !!data.swimming;
     p.name = data.name||p.name; p.playerId = data.playerId||p.playerId;
-    p.lastSeen = performance.now();
   }
   _removeOtherPlayer(uid){
     const p = this.otherPlayers.get(uid);
@@ -5878,6 +6591,9 @@ class Game{
       p.current.lerp(p.target, Math.min(1, delta*10));
       p.group.position.copy(p.current);
       p.group.rotation.y = p.yaw;
+      p.group.rotation.x += ((p.swimming ? -1.25 : 0) - p.group.rotation.x) * Math.min(1, delta*8);
+      p.group.position.y += (-p.group.rotation.x)*0.35;
+      p.parts.head.rotation.x = Math.max(-1.2, Math.min(1.2, p.pitch)) - p.group.rotation.x*0.8;
       if(p.moving){
         p.animT += delta*8;
         const swing = Math.sin(p.animT)*0.6;
@@ -5892,8 +6608,6 @@ class Game{
 
   updatePlayerListUI(){
     const body = document.getElementById('playerListBody');
-    const hdr = document.querySelector('#playerListPanel h4');
-    if(hdr) hdr.textContent = ONLINE_MODE ? `ROOM ${WORLD_ID} · ${this.otherPlayers.size+1} ONLINE` : 'PLAYERS ONLINE';
     let html = `<div class="plEntry"><span class="plName"><span class="plDot"></span>${escapeHtml(PLAYER_NAME)} (you)</span></div>`;
     for(const [uid,p] of this.otherPlayers){
       const displayName = p.name || 'Player';
@@ -5908,7 +6622,7 @@ class Game{
       btn.addEventListener('click', ()=>{
         const id = btn.dataset.friendid, name = btn.dataset.friendname;
         addFriend(id, name);
-        btn.textContent = 'Added ✓';
+        btn.innerHTML = 'Added ' + ic('check');
         btn.style.pointerEvents = 'none';
         btn.style.opacity = '0.6';
       });
@@ -5919,6 +6633,8 @@ class Game{
 
   /* ---------------- Local self-arm animation (first person bob) ---------------- */
   updateDebugPanel(){
+    this._dbgTick = (this._dbgTick||0) + 1;
+    if(this._dbgTick % 10 !== 0 || document.body.classList.contains('mobile-ui')) return;
     const panel = document.getElementById('debugPanel');
     panel.textContent = `XYZ: ${this.pos.x.toFixed(1)}, ${this.pos.y.toFixed(1)}, ${this.pos.z.toFixed(1)}`;
   }
@@ -6074,6 +6790,9 @@ class Game{
         if(!this.paused && !this.dead){
           this.updateMovement(delta);
           this.updateCamera();
+          this._updateSwimFX();
+          this._updateSelfModel(delta);
+          this._updateDrops(delta);
           // Skip while the GL context is down — chunk meshes need a live context to upload
           // THREE.BufferGeometry/Material objects that need a live context;
           // everything stays marked dirty and streams back in automatically
@@ -6754,17 +7473,260 @@ function drawMenuBackground(){
 
 function buildSkinSelector(){
   const wrap = document.getElementById('skinSelect');
+  wrap.innerHTML = '';
+  const sameP = (a,b)=> a && b && a.skin===b.skin && a.shirt===b.shirt && a.hair===b.hair && a.pants===b.pants;
+  const select = (el)=>{
+    wrap.querySelectorAll('.skin-swatch').forEach(s=>s.classList.remove('selected'));
+    el.classList.add('selected');
+  };
+  if(CUSTOM_SKIN_CANVAS){
+    const sw = document.createElement('div');
+    sw.className = 'skin-swatch custom' + (USE_CUSTOM_SKIN ? ' selected' : '');
+    sw.title = 'Your custom skin';
+    // face crop (front of head, with the hat layer on top) as the swatch picture
+    const f = makeCanvas(8); const fx = f.getContext('2d'); fx.imageSmoothingEnabled = false;
+    const hr = faceRects(LIMB_DEFS.head, LIMB_DEFS.head.uv).front, ho = faceRects(LIMB_DEFS.head, LIMB_DEFS.head.ov).front;
+    fx.drawImage(CUSTOM_SKIN_CANVAS, hr[0], hr[1], 8, 8, 0, 0, 8, 8);
+    fx.drawImage(CUSTOM_SKIN_CANVAS, ho[0], ho[1], 8, 8, 0, 0, 8, 8);
+    sw.style.backgroundImage = `url(${f.toDataURL()})`;
+    sw.onclick = ()=>{ USE_CUSTOM_SKIN = true; try{ localStorage.setItem('vf_skin_use','1'); }catch(e){} select(sw); };
+    wrap.appendChild(sw);
+  }
   SKIN_PALETTES.forEach((p, i)=>{
     const sw = document.createElement('div');
-    sw.className = 'skin-swatch' + (i===0?' selected':'');
+    sw.className = 'skin-swatch' + ((!USE_CUSTOM_SKIN && (sameP(p, PLAYER_PALETTE) || (!PLAYER_PALETTE && i===0))) ? ' selected' : '');
     sw.style.background = `linear-gradient(135deg, ${p.shirt} 50%, ${p.skin} 50%)`;
     sw.onclick = ()=>{
-      document.querySelectorAll('.skin-swatch').forEach(s=>s.classList.remove('selected'));
-      sw.classList.add('selected');
+      USE_CUSTOM_SKIN = false; try{ localStorage.setItem('vf_skin_use','0'); }catch(e){}
+      select(sw);
       PLAYER_PALETTE = p;
     };
     wrap.appendChild(sw);
   });
+}
+
+// ---------------------------------------------------------------------------
+// Skin Studio: paint the 64x64 tile map directly, import/export PNGs.
+// ---------------------------------------------------------------------------
+function initSkinStudio(){
+  const $ = id => document.getElementById(id);
+  const panel = $('skinPanel'), view = $('skinEditCanvas'), vctx = view.getContext('2d');
+  const work = makeCanvas(64), wctx = work.getContext('2d', { willReadFrequently:true });
+  wctx.imageSmoothingEnabled = false;
+
+  const PARTS = [
+    { id:'all',    label:'Whole sheet', rect:[0,0,64,64] },
+    { id:'head',   label:'Head',        rect:[0,0,32,16] },
+    { id:'hat',    label:'Hair/hat layer', rect:[32,0,32,16] },
+    { id:'body',   label:'Body',        rect:[16,16,24,16] },
+    { id:'jacket', label:'Jacket layer',rect:[16,32,24,16] },
+    { id:'armR',   label:'Right arm',   rect:[40,16,16,16] },
+    { id:'sleeveR',label:'R sleeve layer', rect:[40,32,16,16] },
+    { id:'armL',   label:'Left arm',    rect:[32,48,16,16] },
+    { id:'sleeveL',label:'L sleeve layer', rect:[48,48,16,16] },
+    { id:'legR',   label:'Right leg',   rect:[0,16,16,16] },
+    { id:'pantsR', label:'R pants layer', rect:[0,32,16,16] },
+    { id:'legL',   label:'Left leg',    rect:[16,48,16,16] },
+    { id:'pantsL', label:'L pants layer', rect:[0,48,16,16] },
+  ];
+  // every face rectangle (for outlines + fill limits)
+  const FACES = [];
+  Object.keys(LIMB_DEFS).forEach(k=>{
+    const def = LIMB_DEFS[k];
+    [['uv',''],['ov','+']].forEach(([key, tag])=>{
+      const r = faceRects(def, def[key]);
+      FACE_NAMES.forEach(f=> FACES.push({ name:f, rect:r[f], layer:!!tag }));
+    });
+  });
+
+  let part = PARTS[1], tool = 'pen', color = '#e0742a', scale = 8, painting = false, last = null;
+  const undoStack = [];
+  const colorIn = $('skinColor');
+
+  const partRow = $('skinParts');
+  PARTS.forEach(p=>{
+    const b = document.createElement('button');
+    b.className = 'partBtn' + (p===part ? ' active' : '');
+    b.textContent = p.label;
+    b.onclick = ()=>{ part = p; partRow.querySelectorAll('.partBtn').forEach(x=>x.classList.remove('active')); b.classList.add('active'); render(); };
+    partRow.appendChild(b);
+  });
+
+  const SW = ['#000000','#3b2a1e','#8b4a2b','#c98a5e','#e8b98e','#f0cba0','#ffffff','#9aa4c0','#555d73','#d1493e','#e0742a','#f5c542','#5fbf6a','#2fb7c9','#3e7bd1','#8a4fd1','#d65db1'];
+  const swRow = $('skinSwatches');
+  SW.forEach(c=>{
+    const s = document.createElement('div'); s.className = 'sw'; s.style.background = c;
+    s.onclick = ()=>{ color = c; colorIn.value = c; };
+    swRow.appendChild(s);
+  });
+  colorIn.oninput = ()=>{ color = colorIn.value; };
+
+  $('skinTools').querySelectorAll('[data-tool]').forEach(b=>{
+    b.onclick = ()=>{ tool = b.dataset.tool; $('skinTools').querySelectorAll('[data-tool]').forEach(x=>x.classList.toggle('active', x===b)); };
+  });
+
+  const pushUndo = ()=>{ undoStack.push(wctx.getImageData(0,0,64,64)); if(undoStack.length > 40) undoStack.shift(); };
+  $('skinUndo').onclick = ()=>{ const s = undoStack.pop(); if(s){ wctx.putImageData(s,0,0); render(); } };
+
+  function render(){
+    const r = part.rect;
+    scale = Math.max(2, Math.floor(512 / Math.max(r[2], r[3])));
+    view.width = r[2]*scale; view.height = r[3]*scale;
+    vctx.imageSmoothingEnabled = false;
+    vctx.clearRect(0,0,view.width,view.height);
+    vctx.drawImage(work, r[0], r[1], r[2], r[3], 0, 0, view.width, view.height);
+    if(scale >= 8){
+      vctx.strokeStyle = 'rgba(255,255,255,0.10)'; vctx.lineWidth = 1; vctx.beginPath();
+      for(let i=0;i<=r[2];i++){ vctx.moveTo(i*scale+.5,0); vctx.lineTo(i*scale+.5,view.height); }
+      for(let j=0;j<=r[3];j++){ vctx.moveTo(0,j*scale+.5); vctx.lineTo(view.width,j*scale+.5); }
+      vctx.stroke();
+    }
+    // face outlines + labels = the tile map
+    vctx.font = `bold ${Math.max(9, Math.min(14, scale*1.1))}px sans-serif`;
+    vctx.textBaseline = 'top';
+    FACES.forEach(f=>{
+      const fr = f.rect;
+      if(fr[0] < r[0] || fr[1] < r[1] || fr[0]+fr[2] > r[0]+r[2] || fr[1]+fr[3] > r[1]+r[3]) return;
+      const x = (fr[0]-r[0])*scale, y = (fr[1]-r[1])*scale, w = fr[2]*scale, h = fr[3]*scale;
+      vctx.strokeStyle = f.layer ? 'rgba(95,191,106,0.9)' : 'rgba(224,116,42,0.9)';
+      vctx.lineWidth = 2; vctx.strokeRect(x+1, y+1, w-2, h-2);
+      if(w >= 40){
+        vctx.fillStyle = 'rgba(0,0,0,0.55)'; vctx.fillText(f.name.toUpperCase(), x+5, y+4);
+        vctx.fillStyle = f.layer ? '#9be3a5' : '#ffb27a'; vctx.fillText(f.name.toUpperCase(), x+4, y+3);
+      }
+    });
+    renderPreview();
+  }
+
+  // little front/back figure built straight from the sheet
+  const PREV = {
+    front: [ // [sx,sy,w,h, dx,dy]
+      [8,8,8,8, 4,0],[20,20,8,12, 4,8],[44,20,4,12, 0,8],[36,52,4,12, 12,8],[4,20,4,12, 4,20],[20,52,4,12, 8,20],
+      [40,8,8,8, 4,0],[20,36,8,12, 4,8],[44,36,4,12, 0,8],[52,52,4,12, 12,8],[4,36,4,12, 4,20],[4,52,4,12, 8,20]],
+    back: [
+      [24,8,8,8, 4,0],[32,20,8,12, 4,8],[52,20,4,12, 12,8],[44,52,4,12, 0,8],[12,20,4,12, 8,20],[28,52,4,12, 4,20],
+      [56,8,8,8, 4,0],[32,36,8,12, 4,8],[52,36,4,12, 12,8],[60,52,4,12, 0,8],[12,36,4,12, 8,20],[12,52,4,12, 4,20]],
+  };
+  function renderPreview(){
+    [['front','skinPrevFront'],['back','skinPrevBack']].forEach(([k,id])=>{
+      const c = $(id), x = c.getContext('2d'); x.imageSmoothingEnabled = false; x.clearRect(0,0,c.width,c.height);
+      PREV[k].forEach(a=> x.drawImage(work, a[0],a[1],a[2],a[3], a[4]*5,a[5]*5,a[2]*5,a[3]*5));
+    });
+  }
+
+  const toPx = (e)=>{
+    const b = view.getBoundingClientRect();
+    const x = (e.clientX-b.left)/b.width*view.width, y = (e.clientY-b.top)/b.height*view.height;
+    return [Math.floor(x/scale)+part.rect[0], Math.floor(y/scale)+part.rect[1]];
+  };
+  const inBounds = (x,y)=> x>=0 && y>=0 && x<64 && y<64;
+  const dot = (x,y)=>{
+    if(!inBounds(x,y)) return;
+    if(tool === 'eraser') wctx.clearRect(x,y,1,1);
+    else { wctx.clearRect(x,y,1,1); wctx.fillStyle = color; wctx.fillRect(x,y,1,1); }
+  };
+  const line = (a,b)=>{
+    let [x0,y0] = a; const [x1,y1] = b;
+    const dx = Math.abs(x1-x0), dy = -Math.abs(y1-y0), sx = x0<x1?1:-1, sy = y0<y1?1:-1;
+    let err = dx+dy;
+    for(let g=0; g<200; g++){
+      dot(x0,y0);
+      if(x0===x1 && y0===y1) break;
+      const e2 = 2*err;
+      if(e2 >= dy){ err += dy; x0 += sx; }
+      if(e2 <= dx){ err += dx; y0 += sy; }
+    }
+  };
+  const hexOf = (r,g,b)=> '#' + [r,g,b].map(v=>v.toString(16).padStart(2,'0')).join('');
+  function fill(x,y){
+    if(!inBounds(x,y)) return;
+    // stay inside the face you clicked (or the visible part if it is between faces)
+    let lim = part.rect;
+    for(const f of FACES){ const r = f.rect; if(x>=r[0] && y>=r[1] && x<r[0]+r[2] && y<r[1]+r[3]){ lim = r; break; } }
+    const img = wctx.getImageData(lim[0], lim[1], lim[2], lim[3]), d = img.data, W = lim[2];
+    const idx = (px,py)=> ((py-lim[1])*W + (px-lim[0]))*4;
+    const i0 = idx(x,y), tr = d[i0], tg = d[i0+1], tb = d[i0+2], ta = d[i0+3];
+    const n = parseInt(color.slice(1), 16), nr = n>>16 & 255, ng = n>>8 & 255, nb = n & 255;
+    if(tool !== 'eraser' && tr===nr && tg===ng && tb===nb && ta===255) return;
+    const fr = tool==='eraser' ? [0,0,0,0] : [nr,ng,nb,255];
+    const same = i=> d[i]===tr && d[i+1]===tg && d[i+2]===tb && d[i+3]===ta;
+    const stack = [[x,y]];
+    while(stack.length){
+      const [cx,cy] = stack.pop();
+      if(cx<lim[0] || cy<lim[1] || cx>=lim[0]+lim[2] || cy>=lim[1]+lim[3]) continue;
+      const i = idx(cx,cy);
+      if(!same(i)) continue;
+      d[i]=fr[0]; d[i+1]=fr[1]; d[i+2]=fr[2]; d[i+3]=fr[3];
+      stack.push([cx+1,cy],[cx-1,cy],[cx,cy+1],[cx,cy-1]);
+    }
+    wctx.putImageData(img, lim[0], lim[1]);
+  }
+  view.addEventListener('pointerdown', (e)=>{
+    e.preventDefault();
+    try{ view.setPointerCapture(e.pointerId); }catch(_){}
+    const p = toPx(e);
+    if(tool === 'pick'){
+      if(!inBounds(p[0],p[1])) return;
+      const px = wctx.getImageData(p[0],p[1],1,1).data;
+      if(px[3] > 0){ color = hexOf(px[0],px[1],px[2]); colorIn.value = color; }
+      return;
+    }
+    pushUndo();
+    if(tool === 'fill'){ fill(p[0],p[1]); render(); return; }
+    painting = true; last = p; dot(p[0],p[1]); render();
+  });
+  view.addEventListener('pointermove', (e)=>{
+    if(!painting) return;
+    const p = toPx(e);
+    if(last && (p[0]!==last[0] || p[1]!==last[1])){ line(last,p); last = p; render(); }
+  });
+  const stop = ()=>{ painting = false; last = null; };
+  view.addEventListener('pointerup', stop); view.addEventListener('pointercancel', stop);
+
+  function loadFrom(src){ wctx.clearRect(0,0,64,64); wctx.drawImage(src,0,0); undoStack.length = 0; render(); }
+  function open(){ loadFrom(activeSkinCanvas()); panel.style.display = 'flex'; }
+  $('openSkinStudio').onclick = open;
+  $('closeSkin').onclick = ()=>{ panel.style.display = 'none'; };
+
+  $('skinReset').onclick = ()=>{ pushUndo(); wctx.clearRect(0,0,64,64); wctx.drawImage(drawDefaultSkin(PLAYER_PALETTE),0,0); render(); };
+  $('skinClearPart').onclick = ()=>{ pushUndo(); const r = part.rect; wctx.clearRect(r[0],r[1],r[2],r[3]); render(); };
+  $('skinImport').onclick = ()=> $('skinFile').click();
+  $('skinFile').onchange = (e)=>{
+    const f = e.target.files && e.target.files[0]; if(!f) return;
+    const url = URL.createObjectURL(f), img = new Image();
+    img.onload = ()=>{ pushUndo(); wctx.clearRect(0,0,64,64); wctx.drawImage(canvasFromImage(img),0,0); render(); URL.revokeObjectURL(url); };
+    img.onerror = ()=> URL.revokeObjectURL(url);
+    img.src = url; e.target.value = '';
+  };
+  const download = (canvas, name)=>{
+    canvas.toBlob(b=>{
+      if(!b) return;
+      const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = name;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=>URL.revokeObjectURL(a.href), 1500);
+    }, 'image/png');
+  };
+  $('skinExport').onclick = ()=> download(work, 'voxel-forge-skin.png');
+  // labelled 512px guide of the tile map, for reference while painting elsewhere
+  $('skinGuide').onclick = ()=>{
+    const g = makeCanvas(512), x = g.getContext('2d');
+    x.fillStyle = '#1c2130'; x.fillRect(0,0,512,512);
+    x.imageSmoothingEnabled = false; x.drawImage(work,0,0,512,512);
+    x.font = 'bold 11px sans-serif'; x.textBaseline = 'top';
+    FACES.forEach(f=>{
+      const r = f.rect;
+      x.strokeStyle = f.layer ? '#5fbf6a' : '#e0742a'; x.lineWidth = 2; x.strokeRect(r[0]*8+1, r[1]*8+1, r[2]*8-2, r[3]*8-2);
+      if(r[2]*8 >= 32){ x.fillStyle = '#000'; x.fillText(f.name.toUpperCase(), r[0]*8+5, r[1]*8+4); x.fillStyle = f.layer ? '#9be3a5' : '#ffb27a'; x.fillText(f.name.toUpperCase(), r[0]*8+4, r[1]*8+3); }
+    });
+    download(g, 'voxel-forge-skin-guide.png');
+  };
+  $('skinApply').onclick = ()=>{
+    CUSTOM_SKIN_CANVAS = cloneCanvas(work);
+    USE_CUSTOM_SKIN = true;
+    try{ localStorage.setItem('vf_skin_custom', work.toDataURL('image/png')); localStorage.setItem('vf_skin_use','1'); }catch(e){}
+    buildSkinSelector();
+    panel.style.display = 'none';
+  };
 }
 
 let gameInstance = null;
@@ -6895,72 +7857,43 @@ function generateRoomCode(){
   return code;
 }
 
-function readPlayerName(){
-  const name = document.getElementById('nameInput').value.trim();
-  PLAYER_NAME = (name || ('Player'+Math.floor(Math.random()*1000))).slice(0,16);
-  localStorage.setItem('vf_name', PLAYER_NAME);
-}
-function setRoomButtonsBusy(busy){
-  ['createRoomBtn','joinRoomBtn'].forEach(id=>{
-    const b = document.getElementById(id);
-    if(b){ b.disabled = busy; b.style.opacity = busy ? '0.6' : ''; }
-  });
-}
-function describeFirebaseError(e){
-  const code = (e && e.code) || '';
-  if(code.includes('PERMISSION_DENIED') || (e && /permission/i.test(e.message||''))) return 'Permission denied — publish the database rules.';
-  if(code==='auth/operation-not-allowed' || code==='auth/admin-restricted-operation') return 'Enable Anonymous sign-in in Firebase Authentication.';
-  if(code==='auth/unauthorized-domain') return 'Add this site\'s domain under Authentication → Settings → Authorized domains.';
-  if(code==='auth/network-request-failed') return 'Network error — check your connection.';
-  return 'Could not connect (' + (code || (e && e.message) || 'unknown error') + ').';
-}
-async function signInFirebase(){
-  if(fbAuth.currentUser){ fbUID = fbAuth.currentUser.uid; return; }
-  const cred = await fbAuth.signInAnonymously();
-  fbUID = cred.user.uid;
-}
-
 async function createRoom(){
   const status = document.getElementById('menuStatus');
-  PENDING_LOAD = null;
-  readPlayerName();
-  if(!initFirebase()){
-    status.textContent = 'No Firebase config set — use Play Offline instead.';
+  const ok = initFirebase();
+  if(!ok){
+    status.textContent = 'No Firebase config set — starting offline instead.';
     status.style.color = '#e0a24a';
+    ONLINE_MODE = false;
+    setTimeout(launchGame, 700);
     return;
   }
-  setRoomButtonsBusy(true);
   try{
     status.textContent = 'Creating room…';
-    status.style.color = '#9aa4c0';
-    await signInFirebase();
+    const cred = await fbAuth.signInAnonymously();
+    fbUID = cred.user.uid;
+    ONLINE_MODE = true;
 
     // pick a fresh 4-char code, retrying on the rare collision with an existing room
-    let code = null;
+    let code;
     for(let tries=0; tries<20; tries++){
-      const c = generateRoomCode();
-      const snap = await fbDB.ref(`worlds/${c}/meta`).get();
-      if(!snap.exists()){ code = c; break; }
+      code = generateRoomCode();
+      const snap = await fbDB.ref(`worlds/${code}/meta`).get();
+      if(!snap.exists()) break;
     }
-    if(!code) throw new Error('Could not find a free room code, try again.');
-    const seed = parseSeedInput() ?? Math.floor(Math.random()*1000000);
-    const type = (WORLD_TYPE==='flat') ? 'flat' : 'default';
-    await fbDB.ref(`worlds/${code}/meta`).set({ seed, type, host:fbUID, created: Date.now() });
-
     WORLD_ID = code;
-    WORLD_SEED = seed;
-    WORLD_TYPE = type;
-    ONLINE_MODE = true;
+    WORLD_SEED = parseSeedInput() ?? Math.floor(Math.random()*1000000);
+    WORLD_TYPE = 'default'; // online worlds don't sync a world type yet
+    await fbDB.ref(`worlds/${WORLD_ID}/meta`).set({ seed: WORLD_SEED, created: Date.now() });
+
     status.textContent = `Room created: ${WORLD_ID} — share this code with friends!`;
     status.style.color = 'var(--vf-green)';
     launchGame();
   }catch(e){
     console.warn(e);
-    ONLINE_MODE = false;
-    status.textContent = describeFirebaseError(e);
+    status.textContent = 'Could not create room — starting offline instead.';
     status.style.color = '#d1495b';
-  }finally{
-    setRoomButtonsBusy(false);
+    ONLINE_MODE = false;
+    setTimeout(launchGame, 900);
   }
 }
 
@@ -6972,43 +7905,39 @@ async function joinRoom(rawCode){
     status.style.color = '#e0a24a';
     return;
   }
-  PENDING_LOAD = null;
-  readPlayerName();
-  if(!initFirebase()){
-    status.textContent = 'No Firebase config set — use Play Offline instead.';
+  const ok = initFirebase();
+  if(!ok){
+    status.textContent = 'No Firebase config set — starting offline instead.';
     status.style.color = '#e0a24a';
+    ONLINE_MODE = false;
+    setTimeout(launchGame, 700);
     return;
   }
-  setRoomButtonsBusy(true);
   try{
     status.textContent = 'Joining room…';
-    status.style.color = '#9aa4c0';
-    await signInFirebase();
+    const cred = await fbAuth.signInAnonymously();
+    fbUID = cred.user.uid;
 
-    const metaSnap = await fbDB.ref(`worlds/${code}/meta`).get();
-    const meta = metaSnap.val();
-    if(!meta || typeof meta.seed!=='number'){
+    const seedSnap = await fbDB.ref(`worlds/${code}/meta/seed`).get();
+    if(!seedSnap.exists()){
       status.textContent = `Room "${code}" not found.`;
       status.style.color = '#d1495b';
       return;
     }
-    WORLD_ID = code;
-    WORLD_SEED = meta.seed;
-    WORLD_TYPE = meta.type==='flat' ? 'flat' : 'default';
-    document.querySelectorAll('#typeRow .modeBtn').forEach(b=>{
-      b.classList.toggle('selected', b.dataset.wtype===WORLD_TYPE);
-    });
     ONLINE_MODE = true;
+    WORLD_ID = code;
+    WORLD_SEED = seedSnap.val();
+    WORLD_TYPE = 'default';
+
     status.textContent = 'Connected! Loading world…';
     status.style.color = '#9aa4c0';
     launchGame();
   }catch(e){
     console.warn(e);
-    ONLINE_MODE = false;
-    status.textContent = describeFirebaseError(e);
+    status.textContent = 'Connection failed — starting offline instead.';
     status.style.color = '#d1495b';
-  }finally{
-    setRoomButtonsBusy(false);
+    ONLINE_MODE = false;
+    setTimeout(launchGame, 900);
   }
 }
 
@@ -7322,9 +8251,11 @@ window.addEventListener('DOMContentLoaded', ()=>{
     });
   });
 
-  document.getElementById('createRoomBtn').addEventListener('click', ()=>{ createRoom(); });
+  document.getElementById('createRoomBtn').addEventListener('click', ()=>{
+    alert('Multiplayer is unavailable for now');
+  });
   document.getElementById('joinRoomBtn').addEventListener('click', ()=>{
-    joinRoom(document.getElementById('roomCodeInput').value);
+    alert('Multiplayer is unavailable for now');
   });
   document.getElementById('roomCodeInput').addEventListener('keydown', (e)=>{
     if(e.key==='Enter') document.getElementById('joinRoomBtn').click();
@@ -7428,7 +8359,7 @@ window.addEventListener('DOMContentLoaded', ()=>{
     addFriend(id, (document.getElementById('friendNameInput').value.trim()) || ('Player '+id.slice(0,4)));
     document.getElementById('friendIdInput').value = '';
     document.getElementById('friendNameInput').value = '';
-    status.textContent = 'Friend added ✓';
+    status.innerHTML = 'Friend added ' + ic('check');
     status.style.color = 'var(--vf-green)';
     renderFriendsList();
   }
@@ -7449,6 +8380,8 @@ window.addEventListener('DOMContentLoaded', ()=>{
     document.getElementById('volumeVal').textContent = SETTINGS.volume;
     document.getElementById('mouseSensSlider').value = SETTINGS.mouseSens;
     document.getElementById('mouseSensVal').textContent = SETTINGS.mouseSens;
+    document.getElementById('touchSensSlider').value = SETTINGS.touchSens;
+    document.getElementById('touchSensVal').textContent = SETTINGS.touchSens;
     document.getElementById('settingsPanel').style.display = 'flex';
   });
 
@@ -7519,6 +8452,13 @@ window.addEventListener('DOMContentLoaded', ()=>{
     SETTINGS.mouseSens = v;
     saveSettingsToStorage();
   });
+  document.getElementById('touchSensSlider').addEventListener('input', (e)=>{
+    const v = parseInt(e.target.value);
+    document.getElementById('touchSensVal').textContent = v;
+    SETTINGS.touchSens = v;
+    saveSettingsToStorage();
+  });
+  initSkinStudio();
 });
 </script>
 </body>
