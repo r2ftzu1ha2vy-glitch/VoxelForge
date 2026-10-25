@@ -2529,6 +2529,8 @@ const DEFAULT_BREAK_SOUNDS = {
   wood:  'assets/Sounds/Wood_Break.mp3',   // oak log (block "wood")
 };
 const PICKUP_SOUND_URL = 'assets/Sounds/Pickup.mp3';
+const DOOR_OPEN_SOUND_URL  = 'assets/Sounds/WoodDoor_Open.mp3';
+const DOOR_CLOSE_SOUND_URL = 'assets/Sounds/WoodDoor_Close.mp3';
 const _sfxGood = {};     // wanted url -> url variant that actually loads
 const _sfxReported = {}; // wanted url -> true once the player was told it is missing
 function sfxCandidates(url){
@@ -2573,7 +2575,7 @@ function playSfxUrl(url){
 // Checks every built-in sound file once shortly after the world loads, so a
 // wrong path shows up in chat right away instead of failing silently later.
 function warmSfx(){
-  const urls = Object.values(DEFAULT_BREAK_SOUNDS).concat([PICKUP_SOUND_URL]);
+  const urls = Object.values(DEFAULT_BREAK_SOUNDS).concat([PICKUP_SOUND_URL, DOOR_OPEN_SOUND_URL, DOOR_CLOSE_SOUND_URL]);
   setTimeout(()=>{
     urls.forEach(url=>{
       const cands = sfxCandidates(url);
@@ -2592,7 +2594,7 @@ function warmSfx(){
 }
 // Blocks whose break sound LOOPS while you hold the mouse on them (stops when the block breaks).
 // Add e.g. grass:true here to loop the grass sound too.
-const LOOP_BREAK_BLOCKS = { wood:true };
+const LOOP_BREAK_BLOCKS = { wood:true, grass:true };
 // A custom sound set in the sound table wins; otherwise the built-in break sound.
 function playBreakSound(blockName){
   if(BLOCK_SOUNDS[blockName]){ playBlockSound(blockName); return; }
@@ -5137,6 +5139,11 @@ class Game{
     if(dh1) dh1.onclick = ()=> this._dropCursor(true);
     window.addEventListener('keydown', (e)=>{
       if(e.target && e.target.id==='invSearch') return;
+      // Hover shortcuts only work while the inventory/crafting window is actually open.
+      // Closing the window with the mouse still over a slot never fires mouseleave, which
+      // left a stale id behind and made 1-9 / Q rearrange or drop that item mid-game.
+      const invOpen = ['inventoryPanel','craftingPanel'].some(id=>{ const el = document.getElementById(id); return el && el.style.display==='flex'; });
+      if(!invOpen){ this._hoverInvId = null; return; }
       if(this._hoverInvId && e.code==='KeyQ' && !e.repeat){
         this._dropFromInventory(this._hoverInvId, e.shiftKey);
         e.stopImmediatePropagation();
@@ -6379,6 +6386,7 @@ class Game{
     const oy = b.doorHalf==='lower' ? y+1 : y-1;
     const o = BLOCKS[this.world.getBlock(x,oy,z)];
     const open = !b.open;
+    playSfxUrl(open ? DOOR_OPEN_SOUND_URL : DOOR_CLOSE_SOUND_URL);
     this._setShaped(x,y,z, SHAPE.door(b.doorHalf,b.facing,open));
     if(o && o.doorHalf && o.doorHalf!==b.doorHalf) this._setShaped(x,oy,z, SHAPE.door(o.doorHalf,o.facing,open));
   }
