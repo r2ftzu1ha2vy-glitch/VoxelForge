@@ -2523,6 +2523,30 @@ function playBlockSound(blockName){
   }catch(e){}
 }
 
+// ---- built-in sounds (assets/Sounds/) ----
+const DEFAULT_BREAK_SOUNDS = {
+  grass: 'assets/Sounds/Grass_Break.mp3',
+  wood:  'assets/Sounds/Wood_Break.mp3',   // oak log (block "wood")
+};
+const PICKUP_SOUND_URL = 'assets/Sounds/Pickup.mp3';
+const _sfxCache = {};
+function playSfxUrl(url){
+  try{
+    let a = _sfxCache[url];
+    if(!a){ a = new Audio(url); a.preload = 'auto'; _sfxCache[url] = a; }
+    const inst = a.cloneNode();
+    inst.volume = Math.max(0, Math.min(1, (SETTINGS.volume ?? 70)/100));
+    inst.play().catch(()=>{});
+    return true;
+  }catch(e){ return false; }
+}
+// A custom sound set in the sound table wins; otherwise the built-in break sound.
+function playBreakSound(blockName){
+  if(BLOCK_SOUNDS[blockName]){ playBlockSound(blockName); return; }
+  const url = DEFAULT_BREAK_SOUNDS[blockName];
+  if(url) playSfxUrl(url);
+}
+
 /* -------------------------------------------------------------------------
    3. WORLD / CHUNK SYSTEM
    The world is split into CHUNK_SIZE^3 chunks stored in a Map keyed "cx,cy,cz".
@@ -2538,6 +2562,7 @@ const CY_MAX = Math.floor(MAX_Y / CHUNK_SIZE);   // 16: highest chunk layer
 const CY_BASE_HI = 7;         // terrain tops out below y=128, so chunks above this are only streamed when the player is up high
 const CHUNKS_Y = CY_BASE_HI - CY_MIN + 1; // chunk layers always streamed
 const SEA_LEVEL = 30;
+const CAVE_T = 0.345; // fbm2 only reaches ~0.5, so 0.63 was unreachable. Lower = more caves.
 let RENDER_DISTANCE = 4; // in chunks (radius) — mutable, adjustable in Settings
 
 let WORLD_SEED = 1337;
@@ -3146,7 +3171,7 @@ class World{
             else if(wy===MIN_Y) id = 17;
             else if(wy < FLAT_SURFACE_Y-4){
               id = 3;
-              const oreRoll = hash3(wx,wy,wz,this.seed+55);
+              const oreRoll = hash3(wx,wy,wz,this.seed+55) * 2;
               if(wy < FLAT_SURFACE_Y-20 && oreRoll > 0.9978) id = 16;
               else if(wy < FLAT_SURFACE_Y-12 && oreRoll > 0.9945) id = 15;
               else if(oreRoll > 0.9870) id = 14;
@@ -3171,28 +3196,25 @@ class World{
             id = 3; // stone
             // cave carving
             const cave = fbm2(wx*0.07, wy*0.07 + wz*0.03, this.seed+777, 3, 2.1, 0.5);
-            const isCave = cave > 0.63 && wy < surfaceY-6 && wy>MIN_Y+2;
+            const isCave = cave > CAVE_T && wy < surfaceY-6 && wy>MIN_Y+2;
             if(isCave){ id = 0; }
             // ore veins — boosted near cave walls so exposed ore is easy to
             // spot while exploring, but still findable (rarer) in solid rock
             if(id===3){
               // is this stone block touching an open cave void on any side?
               const nearCave =
-                (fbm2((wx+1)*0.07, wy*0.07 + wz*0.03, this.seed+777, 3, 2.1, 0.5) > 0.63) ||
-                (fbm2((wx-1)*0.07, wy*0.07 + wz*0.03, this.seed+777, 3, 2.1, 0.5) > 0.63) ||
-                (fbm2(wx*0.07, (wy+1)*0.07 + wz*0.03, this.seed+777, 3, 2.1, 0.5) > 0.63) ||
-                (fbm2(wx*0.07, (wy-1)*0.07 + wz*0.03, this.seed+777, 3, 2.1, 0.5) > 0.63) ||
-                (fbm2(wx*0.07, wy*0.07 + (wz+1)*0.03, this.seed+777, 3, 2.1, 0.5) > 0.63) ||
-                (fbm2(wx*0.07, wy*0.07 + (wz-1)*0.03, this.seed+777, 3, 2.1, 0.5) > 0.63);
+                (fbm2((wx+1)*0.07, wy*0.07 + wz*0.03, this.seed+777, 3, 2.1, 0.5) > CAVE_T) ||
+                (fbm2((wx-1)*0.07, wy*0.07 + wz*0.03, this.seed+777, 3, 2.1, 0.5) > CAVE_T) ||
+                (fbm2(wx*0.07, (wy+1)*0.07 + wz*0.03, this.seed+777, 3, 2.1, 0.5) > CAVE_T) ||
+                (fbm2(wx*0.07, (wy-1)*0.07 + wz*0.03, this.seed+777, 3, 2.1, 0.5) > CAVE_T) ||
+                (fbm2(wx*0.07, wy*0.07 + (wz+1)*0.03, this.seed+777, 3, 2.1, 0.5) > CAVE_T) ||
+                (fbm2(wx*0.07, wy*0.07 + (wz-1)*0.03, this.seed+777, 3, 2.1, 0.5) > CAVE_T);
 
-              const oreRoll = hash3(wx,wy,wz,this.seed+55);
-              // Lower thresholds (= more common) when adjacent to a cave void;
-              // baseline thresholds elsewhere stay rare so ore is still
-              // occasionally found by mining blind through solid rock.
-              const diamondT = nearCave ? 0.9930 : 0.9978;
-              const goldT    = nearCave ? 0.9860 : 0.9945;
-              const ironT    = nearCave ? 0.9650 : 0.9870;
-              const coalT    = nearCave ? 0.9350 : 0.9780;
+              const oreRoll = hash3(wx,wy,wz,this.seed+55) * 2; // hash3 only fills 0..0.5
+              const diamondT = nearCave ? 0.9900 : 0.9965;
+              const goldT    = nearCave ? 0.9800 : 0.9915;
+              const ironT    = nearCave ? 0.9500 : 0.9780;
+              const coalT    = nearCave ? 0.9100 : 0.9620;
 
               if(wy < surfaceY-20 && oreRoll > diamondT) id = 16; // diamond, deep
               else if(wy < surfaceY-12 && oreRoll > goldT) id = 15; // gold
@@ -6191,7 +6213,7 @@ class Game{
       }
     }
     this.damageHeldTool();
-    playBlockSound(def.name);
+    playBreakSound(def.name);
   }
 
   // Puts a newly-acquired item/block into the hotbar so it's actually visible
@@ -7328,17 +7350,7 @@ class Game{
     }catch(e){ finish(true); }
   }
   _popSound(){
-    try{
-      if(!this._actx) this._actx = new (window.AudioContext||window.webkitAudioContext)();
-      const ctx = this._actx;
-      if(ctx.state === 'suspended') ctx.resume().catch(()=>{});
-      const vol = Math.max(0, Math.min(1, (SETTINGS.volume ?? 70)/100)) * 0.12;
-      const o = ctx.createOscillator(), g = ctx.createGain(), t = ctx.currentTime;
-      o.type = 'sine';
-      o.frequency.setValueAtTime(520, t); o.frequency.exponentialRampToValueAtTime(980, t+0.08);
-      g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t+0.12);
-      o.connect(g); g.connect(ctx.destination); o.start(t); o.stop(t+0.13);
-    }catch(e){}
+    playSfxUrl(PICKUP_SOUND_URL);
   }
   _updateDrops(delta){
     const list = this.drops;
