@@ -1728,6 +1728,42 @@ function buildBlockTexture(name, seed){
   P.prismarine = (ctx,seed)=> paintNoise(ctx,'#4ba093',seed,{variance:16, speckleChance:0.2, speckleColor:'#2f7d73', speckleVariance:18});
   P.red_sandstone = (ctx,seed)=> paintNoise(ctx,'#b0532a',seed,{variance:10, speckleChance:0.12, speckleColor:'#8e3f1d', speckleVariance:12});
   P.white_terracotta = (ctx,seed)=> paintNoise(ctx,'#d2b4a1',seed,{variance:8, speckleChance:0.1, speckleColor:'#b99a86', speckleVariance:10});
+  // ---- tree types: logs (side + end grain), leaves, jungle planks ----
+  const TREE_TYPES = {
+    birch:    { side:'#d6d2c2', end:'#c9b98a', leaf:'#6f9f45', leafSpeck:'#4f7e2e' },
+    spruce:   { side:'#4b341e', end:'#6b4d2c', leaf:'#2f6b45', leafSpeck:'#1f4e31' },
+    jungle:   { side:'#5a4424', end:'#7a5a30', leaf:'#2f9a2a', leafSpeck:'#1d7a1c' },
+    acacia:   { side:'#6b6560', end:'#a85a35', leaf:'#7aa32e', leafSpeck:'#5a8220' },
+    dark_oak: { side:'#3a2a18', end:'#4a3820', leaf:'#2b5a27', leafSpeck:'#1c3f1a' },
+  };
+  Object.keys(TREE_TYPES).forEach(k=>{
+    const T = TREE_TYPES[k];
+    P['log_'+k] = function(ctx, seed){
+      const rnd = mulberry32(seed);
+      for(let x=0;x<TEX_SIZE;x++){
+        const stripe = Math.sin(x*1.3)*9;
+        for(let y=0;y<TEX_SIZE;y++){
+          ctx.fillStyle = shade(T.side, Math.floor(stripe + (rnd()-0.5)*12));
+          ctx.fillRect(x,y,1,1);
+        }
+      }
+      if(k==='birch'){ ctx.fillStyle='#2b2b2b'; for(let i=0;i<10;i++){ ctx.fillRect(Math.floor(rnd()*(TEX_SIZE-3)), Math.floor(rnd()*TEX_SIZE), 2+Math.floor(rnd()*3), 1); } }
+      if(k==='jungle'){ ctx.fillStyle='#3f6a2a'; for(let i=0;i<8;i++){ ctx.fillRect(Math.floor(rnd()*TEX_SIZE), Math.floor(rnd()*TEX_SIZE), 2, 2); } }
+      if(k==='acacia'){ ctx.fillStyle='#b9622f'; ctx.fillRect(TEX_SIZE/2-1, 0, 2, TEX_SIZE); }
+    };
+    P['log_top_'+k] = function(ctx, seed){
+      const rnd = mulberry32(seed);
+      const cx=TEX_SIZE/2, cy=TEX_SIZE/2;
+      for(let y=0;y<TEX_SIZE;y++) for(let x=0;x<TEX_SIZE;x++){
+        const d = Math.hypot(x-cx,y-cy);
+        const edge = (x<2||y<2||x>=TEX_SIZE-2||y>=TEX_SIZE-2);
+        ctx.fillStyle = edge ? shade(T.side, Math.floor((rnd()-0.5)*8)) : shade(T.end, Math.floor(Math.sin(d*1.5)*12 + (rnd()-0.5)*8));
+        ctx.fillRect(x,y,1,1);
+      }
+    };
+    P['leaves_'+k] = (ctx,seed)=> paintNoise(ctx, T.leaf, seed, {variance:26, speckleChance:0.25, speckleColor:T.leafSpeck, speckleVariance:20});
+  });
+  P.jungle_planks = plank('#a0703a', '#74502a');
   // trapdoors: planks with a dark frame and slats / iron with bars
   const trap = (base, dark)=> function(ctx, seed){
     paintNoise(ctx, base, seed, {variance:8});
@@ -1927,6 +1963,16 @@ const BLOCKS = {
   trap(255,'acacia_trapdoor','trapdoor_acacia',1.0,'axe');
   trap(256,'dark_oak_trapdoor','trapdoor_dark_oak',1.0,'axe');
   trap(257,'iron_trapdoor','trapdoor_iron',2.5,'pickaxe');
+})();
+// ---- Tree types: logs 258-262, leaves 263-267, jungle planks 268 ----
+const LOG_IDS = new Set([6,258,259,260,261,262]);
+const LEAF_IDS = new Set([7,263,264,265,266,267]);
+(function(){
+  ['birch','spruce','jungle','acacia','dark_oak'].forEach((k,i)=>{
+    BLOCKS[258+i] = { name:k+'_log', tex:{top:'log_top_'+k, bottom:'log_top_'+k, side:'log_'+k}, hardness:1.0, tool:'axe' };
+    BLOCKS[263+i] = { name:k+'_leaves', tex:{all:'leaves_'+k}, transparent:true, leafy:true, hardness:0.15 };
+  });
+  BLOCKS[268] = { name:'jungle_planks', tex:{all:'jungle_planks'}, hardness:1.0, tool:'axe' };
 })();
 // Non-block hand items (tools, sticks) — id space 100+ so they never collide
 // with placeable block ids. These live in the same inventory/hotbar system
@@ -2349,7 +2395,7 @@ function paintNameForKey(key){
 }
 function layerForPaint(paintName){
   // cut-out: pixels with alpha 0 are see-through (leaves, and doors so PNG windows can be transparent)
-  if(paintName === 'leaves' || paintName === 'door_wood' || paintName === 'door_wood_top') return LAYER_CUTOUT;
+  if(paintName === 'leaves' || paintName.startsWith('leaves_') || paintName === 'door_wood' || paintName === 'door_wood_top') return LAYER_CUTOUT;
   if(paintName === 'glass' || paintName === 'water' || paintName.startsWith('stained_glass_')) return LAYER_TRANSPARENT;
   return LAYER_SOLID;
 }
@@ -3623,6 +3669,25 @@ class World{
   // rule used during chunk generation's vegetation pass (see generateChunk)?
   // Mirrors: biome gate, chunk-interior gate (lx/lz 2..13 only), the
   // roll/threshold formula, and the flat-grass-patch requirement.
+  _treeThreshold(biome, moisture){
+    return biome==='forest' ? (0.405 + (1-moisture)*0.015) : (0.45 + (1-moisture)*0.015);
+  }
+  // Which kind of tree grows at this column: warm+wet = jungle, cold = spruce, warm+dry = acacia (savanna),
+  // plus small "groves" of every type scattered through temperate land so each world has variety.
+  _treeKindAt(wx, wz){
+    const temp = this.temperatureAt(wx,wz), moist = this.moistureAt(wx,wz);
+    const r = Math.min(0.999, hash2(wx,wz,this.seed+5150)*2);
+    const cell = Math.min(0.999, hash2(Math.floor(wx/28), Math.floor(wz/28), this.seed+6161)*2);
+    if(temp > 0.31 && moist > 0.30) return r < 0.8 ? 'jungle' : 'oak';
+    if(temp < 0.235) return r < 0.85 ? 'spruce' : 'birch';
+    if(temp > 0.30 && moist <= 0.30) return r < 0.7 ? 'acacia' : 'oak';
+    if(cell < 0.07) return r < 0.85 ? 'birch' : 'oak';
+    if(cell < 0.14) return r < 0.85 ? 'dark_oak' : 'oak';
+    if(cell < 0.21) return r < 0.85 ? 'spruce' : 'oak';
+    if(cell < 0.28) return r < 0.75 ? 'jungle' : 'oak';
+    if(cell < 0.35) return r < 0.75 ? 'acacia' : 'oak';
+    return r < 0.10 ? 'birch' : 'oak';
+  }
   _treeRootedAt(wx, wz){
     if(WORLD_TYPE==='flat' || this.isFarlands(wx,wz)) return false;
     const lx = ((wx%CHUNK_SIZE)+CHUNK_SIZE)%CHUNK_SIZE;
@@ -3633,7 +3698,7 @@ class World{
     const surfaceY = this.heightAt(wx,wz);
     const moisture = this.moistureAt(wx,wz);
     const roll = hash2(wx,wz,this.seed+9001);
-    const threshold = biome==='forest' ? (0.44 + (1-moisture)*0.015) : (0.475 + (1-moisture)*0.015);
+    const threshold = this._treeThreshold(biome, moisture);
     return roll > threshold && this._isFlatGrassPatch(wx, surfaceY, wz);
   }
 
@@ -3643,9 +3708,9 @@ class World{
   // corners cut) around any column that would root a tree. Used to keep
   // spawn (and anything else that wants "open grass") out of trees.
   isNearOrInTree(px, pz){
-    for(let dx=-2; dx<=2; dx++){
-      for(let dz=-2; dz<=2; dz++){
-        if(Math.abs(dx)===2 && Math.abs(dz)===2) continue; // corners cut, matches _placeTree
+    for(let dx=-4; dx<=4; dx++){
+      for(let dz=-4; dz<=4; dz++){
+        if(Math.abs(dx)>=3 && Math.abs(dz)>=3) continue; // wide canopies (jungle / dark oak) reach 4 out; their corners are cut
         const tx = px-dx, tz = pz-dz; // candidate trunk position with (dx,dz) as its offset to (px,pz)
         if(this._treeRootedAt(tx,tz)) return true;
       }
@@ -4024,7 +4089,7 @@ class World{
         if(biome==='forest' || biome==='plains'){
           const moisture = this.moistureAt(wx,wz);
           const roll = hash2(wx,wz,this.seed+9001);
-          let threshold = biome==='forest' ? (0.405 + (1-moisture)*0.015) : (0.45 + (1-moisture)*0.015); // lower = more trees
+          let threshold = this._treeThreshold(biome, moisture); // lower = more trees
           // Approaching the Farlands, the generator "glitches" and trees
           // spawn far more often — threshold drops toward 0 as we near the
           // hard cutoff, so almost every eligible column roots a tree.
@@ -4066,6 +4131,97 @@ class World{
     return true;
   }
 
+  // Non-oak trees. Logs/leaves are set through setBlock, so canopies that cross a chunk edge are
+  // remembered for the neighbouring chunk and applied when it is generated.
+  _placeTypedTree(kind, wx, groundY, wz){
+    const rnd = (salt)=> Math.min(0.999, hash2(wx,wz,this.seed+salt)*2);
+    const LOG = { birch:258, spruce:259, jungle:260, acacia:261, dark_oak:262 }[kind];
+    const LEAF = LOG + 5;
+    const G = (x,y,z)=>{ this.setBlock(x,y,z,LOG,true); };
+    const L = (x,y,z)=>{ if(this.getBlock(x,y,z)===0) this.setBlock(x,y,z,LEAF,true); };
+    // ragged leaf disc; ext = extra width east/south for 2x2 trunks
+    const disc = (cx,y,cz,r,ext,jag,salt,cut=true)=>{
+      for(let dx=-r; dx<=r+ext; dx++) for(let dz=-r; dz<=r+ext; dz++){
+        const ax = dx<0 ? -dx : Math.max(0,dx-ext), az = dz<0 ? -dz : Math.max(0,dz-ext);
+        if(cut && r>=2 && ax===r && az===r) continue;
+        if(jag && (ax===r || az===r) && rnd(salt + dx*17 + dz*29 + y*7) < jag) continue;
+        L(cx+dx, y, cz+dz);
+      }
+    };
+    if(kind==='birch'){
+      const h = 5 + Math.floor(rnd(13)*3);                    // 5-7, slim and pale
+      for(let i=0;i<h;i++) G(wx,groundY+i,wz);
+      const top = groundY+h;
+      [[-2,2],[-1,2],[0,1],[1,1]].forEach(([o,r],i)=> disc(wx,top+o,wz,r,0,0.15,100+i));
+      L(wx,top,wz);
+    } else if(kind==='spruce'){
+      const h = 7 + Math.floor(rnd(13)*5);                    // 7-11, conical
+      for(let i=0;i<h;i++) G(wx,groundY+i,wz);
+      const top = groundY+h, radii = [0,1,1,2,2,3,2,3,3];
+      for(let i=0;i<=h-2;i++){
+        const r = radii[Math.floor(i*(radii.length-1)/Math.max(1,h-2))], y = top-i;
+        for(let dx=-r; dx<=r; dx++) for(let dz=-r; dz<=r; dz++){
+          if(Math.abs(dx)+Math.abs(dz) > r + (r>=2 ? 1 : 0)) continue;
+          L(wx+dx,y,wz+dz);
+        }
+      }
+    } else if(kind==='jungle'){
+      const mega = rnd(77) < 0.14 && this._canFit2x2(wx,wz,groundY);
+      if(mega){
+        const h = 14 + Math.floor(rnd(13)*7);                 // 14-20, thick 2x2 trunk
+        for(let i=0;i<h;i++){ G(wx,groundY+i,wz); G(wx+1,groundY+i,wz); G(wx,groundY+i,wz+1); G(wx+1,groundY+i,wz+1); }
+        const top = groundY+h;
+        [[-2,3],[-1,4],[0,4],[1,3],[2,1]].forEach(([o,r],i)=> disc(wx,top+o,wz,r,1,0.2,200+i));
+      } else {
+        const h = 9 + Math.floor(rnd(13)*6);                  // 9-14, tall and straight
+        for(let i=0;i<h;i++) G(wx,groundY+i,wz);
+        const top = groundY+h;
+        [[-1,3],[0,3],[1,2],[2,1]].forEach(([o,r],i)=> disc(wx,top+o,wz,r,0,0.25,300+i));
+        // a couple of side branches with leaf clumps
+        const D = [[1,0],[-1,0],[0,1],[0,-1]];
+        for(let k=0;k<2;k++){
+          const [bx,bz] = D[Math.floor(rnd(400+k)*4)], by = groundY + 4 + Math.floor(rnd(410+k)*Math.max(1,h-7));
+          G(wx+bx,by,wz+bz);
+          for(let dx=-1;dx<=1;dx++) for(let dz=-1;dz<=1;dz++){ if(dx&&dz&&rnd(420+dx*3+dz*5+k)<0.5) continue; L(wx+bx*2+dx,by,wz+bz*2+dz); }
+          L(wx+bx*2,by+1,wz+bz*2);
+        }
+      }
+    } else if(kind==='acacia'){
+      const D = [[1,0],[-1,0],[0,1],[0,-1]];
+      const d = D[Math.floor(rnd(60)*4)];
+      const h1 = 3 + Math.floor(rnd(61)*3);                   // straight part 3-5
+      for(let i=0;i<h1;i++) G(wx,groundY+i,wz);
+      let x = wx, z = wz, y = groundY+h1;
+      const steps = 2 + Math.floor(rnd(62)*2);                // then it leans away, 2-3 steps
+      for(let s=0;s<steps;s++){ x+=d[0]; z+=d[1]; G(x,y,z); y++; }
+      disc(x,y-1,z,3,0,0.12,500);
+      disc(x,y,z,2,0,0.1,510);
+      if(rnd(63) < 0.6){                                      // second, shorter branch the other way
+        let x2 = wx, z2 = wz, y2 = groundY+h1-1;
+        const n = 1 + Math.floor(rnd(64)*2);
+        for(let s=0;s<n;s++){ x2-=d[0]; z2-=d[1]; G(x2,y2,z2); y2++; }
+        disc(x2,y2-1,z2,2,0,0.1,520);
+        disc(x2,y2,z2,1,0,0,530);
+      }
+    } else { // dark_oak: thick 2x2 trunk (single if it doesn't fit) and a huge, dense, domed canopy
+      const big = this._canFit2x2(wx,wz,groundY);
+      const h = 6 + Math.floor(rnd(13)*3);                    // 6-8
+      for(let i=0;i<h;i++){
+        G(wx,groundY+i,wz);
+        if(big){ G(wx+1,groundY+i,wz); G(wx,groundY+i,wz+1); G(wx+1,groundY+i,wz+1); }
+      }
+      const top = groundY+h, ext = big ? 1 : 0;
+      [[-2,3],[-1,4],[0,4],[1,3],[2,1]].forEach(([o,r],i)=> disc(wx,top+o,wz,r,ext,0.2,600+i));
+    }
+    if(kind==='birch' || kind==='spruce' || kind==='jungle') { /* leaf cap above trunk is part of the discs */ }
+  }
+  _canFit2x2(wx,wz,groundY){
+    for(let dx=0;dx<2;dx++) for(let dz=0;dz<2;dz++){
+      if(!this.isGrassSurface(wx+dx,wz+dz) || this.heightAt(wx+dx,wz+dz)!==groundY) return false;
+    }
+    return true;
+  }
+
   _placeTree(wx, groundY, wz, distortion=0){
     // Near the Farlands, trees "glitch" into tall bare trunks with no leaf
     // canopy at all — as if the generator ran out of budget to place foliage.
@@ -4076,6 +4232,8 @@ class World{
       for(let i=0;i<trunkH;i++) this.setBlock(wx, groundY+i, wz, 6, true);
       return;
     }
+    const treeKind = this._treeKindAt(wx,wz);
+    if(treeKind !== 'oak'){ this._placeTypedTree(treeKind, wx, groundY, wz); return; }
     // hash2 only fills ~0..0.5 (see note in generateChunk), so rescale to 0..1.
     const rnd = (salt)=> Math.min(0.999, hash2(wx,wz,this.seed+salt)*2);
     const variant = rnd(4242);
@@ -4759,6 +4917,22 @@ function removeFriend(friendId){
 const RECIPES = [
   // planks from a log (shapeless-ish: any single log cell)
   { pattern:[[6,0,0],[0,0,0],[0,0,0]], out:{id:8,count:4}, shapeless:true, inputs:[6] },
+  // other tree types: logs -> their own planks; any planks make sticks / a crafting table
+  { pattern:[[258,0,0],[0,0,0],[0,0,0]], out:{id:187,count:4}, shapeless:true, inputs:[258] },
+  { pattern:[[259,0,0],[0,0,0],[0,0,0]], out:{id:186,count:4}, shapeless:true, inputs:[259] },
+  { pattern:[[260,0,0],[0,0,0],[0,0,0]], out:{id:268,count:4}, shapeless:true, inputs:[260] },
+  { pattern:[[261,0,0],[0,0,0],[0,0,0]], out:{id:188,count:4}, shapeless:true, inputs:[261] },
+  { pattern:[[262,0,0],[0,0,0],[0,0,0]], out:{id:189,count:4}, shapeless:true, inputs:[262] },
+  { pattern:[[186,0,0],[186,0,0],[0,0,0]], out:{id:100,count:4} },
+  { pattern:[[186,186,0],[186,186,0],[0,0,0]], out:{id:18,count:1} },
+  { pattern:[[187,0,0],[187,0,0],[0,0,0]], out:{id:100,count:4} },
+  { pattern:[[187,187,0],[187,187,0],[0,0,0]], out:{id:18,count:1} },
+  { pattern:[[188,0,0],[188,0,0],[0,0,0]], out:{id:100,count:4} },
+  { pattern:[[188,188,0],[188,188,0],[0,0,0]], out:{id:18,count:1} },
+  { pattern:[[189,0,0],[189,0,0],[0,0,0]], out:{id:100,count:4} },
+  { pattern:[[189,189,0],[189,189,0],[0,0,0]], out:{id:18,count:1} },
+  { pattern:[[268,0,0],[268,0,0],[0,0,0]], out:{id:100,count:4} },
+  { pattern:[[268,268,0],[268,268,0],[0,0,0]], out:{id:18,count:1} },
   // sticks from 2 planks stacked
   { pattern:[[8,0,0],[8,0,0],[0,0,0]], out:{id:100,count:4} },
   // crafting table from 4 planks
@@ -4927,6 +5101,21 @@ const RECIPES_2x2 = [
   { pattern:[[8,0],[8,0]], out:{id:100,count:4} },
   { pattern:[[8,8],[8,8]], out:{id:18,count:1} },
   { pattern:[[116,0],[100,0]], out:{id:41,count:4} },
+  { pattern:[[258,0],[0,0]], out:{id:187,count:4}, shapeless:true, inputs:[258] },
+  { pattern:[[259,0],[0,0]], out:{id:186,count:4}, shapeless:true, inputs:[259] },
+  { pattern:[[260,0],[0,0]], out:{id:268,count:4}, shapeless:true, inputs:[260] },
+  { pattern:[[261,0],[0,0]], out:{id:188,count:4}, shapeless:true, inputs:[261] },
+  { pattern:[[262,0],[0,0]], out:{id:189,count:4}, shapeless:true, inputs:[262] },
+  { pattern:[[186,0],[186,0]], out:{id:100,count:4} },
+  { pattern:[[186,186],[186,186]], out:{id:18,count:1} },
+  { pattern:[[187,0],[187,0]], out:{id:100,count:4} },
+  { pattern:[[187,187],[187,187]], out:{id:18,count:1} },
+  { pattern:[[188,0],[188,0]], out:{id:100,count:4} },
+  { pattern:[[188,188],[188,188]], out:{id:18,count:1} },
+  { pattern:[[189,0],[189,0]], out:{id:100,count:4} },
+  { pattern:[[189,189],[189,189]], out:{id:18,count:1} },
+  { pattern:[[268,0],[268,0]], out:{id:100,count:4} },
+  { pattern:[[268,268],[268,268]], out:{id:18,count:1} },
 ];
 function to2x2(flat){ return [flat.slice(0,2), flat.slice(2,4)]; }
 function trimPattern2(p){
@@ -5781,7 +5970,7 @@ class Game{
       const def = BLOCKS[id];
       if(!def) return null;
       if(def.liquid) return null;
-      if(id===6 || id===7 || id===40) return null; // wood, leaves, cactus
+      if(LOG_IDS.has(id) || LEAF_IDS.has(id) || id===40) return null; // wood, leaves, cactus
       if(def.solid===false) continue;             // torches etc — look through them
       if(w.getBlock(x,y+1,z)===0 && w.getBlock(x,y+2,z)===0) return y+1;
       return null;
@@ -7448,7 +7637,7 @@ class Game{
     this.world.setBlock(m.x,m.y,m.z,0);
     this.markChunkRebuildsAround(m.x,m.y,m.z);
     this.syncBlockChange(m.x,m.y,m.z,0);
-    if(m.id===6) this._scheduleLeafDecayAround(m.x,m.y,m.z); // cut a log: leaves that lose their wood start to rot
+    if(LOG_IDS.has(m.id)) this._scheduleLeafDecayAround(m.x,m.y,m.z); // cut a log: leaves that lose their wood start to rot
     this.addExhaustion(0.005);
     this._cactusCollapseFrom(m.x, m.y+1, m.z); // a cactus resting on what we just removed falls apart
     if(def && def.doorHalf){ // a door is two blocks: take the other half too (no second drop)
@@ -7495,7 +7684,7 @@ class Game{
         });
       }
     }
-    if(m.id===7 && GAME_MODE==='survival') this._spawnLeafBonus(m.x,m.y,m.z,0.8,false); // mined leaves can also give sticks / apples / bananas
+    if(LEAF_IDS.has(m.id) && GAME_MODE==='survival') this._spawnLeafBonus(m.x,m.y,m.z,0.8,false); // mined leaves can also give sticks / apples / bananas
     this.damageHeldTool();
     const wasLooping = !!this._mineLoopKey;
     this.stopMineLoop();
@@ -7717,7 +7906,7 @@ class Game{
       this.world.setBlock(px,py,pz,heldId);
       this.markChunkRebuildsAround(px,py,pz);
       this.syncBlockChange(px,py,pz,heldId);
-      if(heldId===7) this._scheduleLeafCheck(px,py,pz); // leaves placed with no wood nearby will rot away
+      if(LEAF_IDS.has(heldId)) this._scheduleLeafCheck(px,py,pz); // leaves placed with no wood nearby will rot away
     }
     if(heldId===41) this.addTorchLight(px,py,pz);
     if(GAME_MODE!=='creative' && this.inventoryCounts[heldId] < 90){
@@ -7968,15 +8157,15 @@ class Game{
     const D = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
     const seen = new Set([x+','+y+','+z]);
     let frontier = [[x,y,z]];
-    for(let d=0; d<5; d++){
+    for(let d=0; d<7; d++){ // 7 so wide jungle / dark oak canopies stay attached
       const next = [];
       for(const [cx,cy,cz] of frontier){
         for(const [dx,dy,dz] of D){
           const nx=cx+dx, ny=cy+dy, nz=cz+dz;
           if(!this._mobReady(nx,ny,nz)) return true; // unloaded neighbour: assume it is fine
           const id = this.world.getBlock(nx,ny,nz);
-          if(id===6) return true;
-          if(id===7){
+          if(LOG_IDS.has(id)) return true;
+          if(LEAF_IDS.has(id)){
             const k = nx+','+ny+','+nz;
             if(!seen.has(k)){ seen.add(k); next.push([nx,ny,nz]); }
           }
@@ -7997,7 +8186,7 @@ class Game{
     for(let dx=-5; dx<=5; dx++) for(let dy=-5; dy<=5; dy++) for(let dz=-5; dz<=5; dz++){
       if(Math.abs(dx)+Math.abs(dy)+Math.abs(dz) > 6) continue;
       const lx=x+dx, ly=y+dy, lz=z+dz;
-      if(this.world.getBlock(lx,ly,lz)!==7) continue;
+      if(!LEAF_IDS.has(this.world.getBlock(lx,ly,lz))) continue;
       if(!this._leafSupported(lx,ly,lz)) this._scheduleLeafCheck(lx,ly,lz);
     }
   }
@@ -8014,7 +8203,7 @@ class Game{
           const x = Math.floor(this.pos.x + (Math.random()-0.5)*28);
           const z = Math.floor(this.pos.z + (Math.random()-0.5)*28);
           const y = Math.floor(this.pos.y) - 6 + Math.floor(Math.random()*22);
-          if(!this._mobReady(x,y,z) || this.world.getBlock(x,y,z)!==7) continue;
+          if(!this._mobReady(x,y,z) || !LEAF_IDS.has(this.world.getBlock(x,y,z))) continue;
           if(map.has(x+','+y+','+z)) continue;
           if(!this._leafSupported(x,y,z)) this._scheduleLeafCheck(x,y,z);
         }
@@ -8027,7 +8216,7 @@ class Game{
       if(done >= 3) break;
       map.delete(key);
       const [x,y,z] = key.split(',').map(Number);
-      if(this.world.getBlock(x,y,z)!==7) continue;
+      if(!LEAF_IDS.has(this.world.getBlock(x,y,z))) continue;
       if(!this._mobReady(x,y,z)){ map.set(key, this._leafClock+5); continue; }
       if(this._leafSupported(x,y,z)) continue;
       this._decayLeaf(x,y,z); done++;
