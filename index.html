@@ -693,6 +693,12 @@
   .bustRow label{flex:none; font-size:13px; letter-spacing:1px; color:#ffd2a8;}
   .bustRow input[type=range]{flex:1 1 auto; min-width:0; accent-color:var(--vf-orange);}
   .bustRow span{flex:none; width:28px; text-align:right; font-size:13px; color:#fff;}
+  .bustPaintRow{display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:4px 0; padding:8px 10px; background:#0e111a; border:2px solid var(--vf-line); border-radius:4px;}
+  .bustPaintRow label{flex:none; font-size:13px; letter-spacing:1px; color:#ffd2a8;}
+  .bustPaintRow input[type=color]{flex:none; width:38px; height:30px; padding:0; border:2px solid var(--vf-line); background:#0e111a; border-radius:4px; cursor:pointer;}
+  #bustPaintPanel{position:fixed; inset:0; z-index:58; display:none; align-items:center; justify-content:center; background:#000000a0;}
+  #bustPaintPanel canvas{display:block; width:100%; height:auto; image-rendering:pixelated; touch-action:none; background:#0e111a; border:2px solid var(--vf-line); border-radius:4px; cursor:crosshair;}
+  .bustPaintRow .bpState{flex:1 1 auto; min-width:60px; font-size:12px; color:#9aa4c0;}
   #skinPrevSide{cursor:pointer;}
 
   /* ---------- mobile layout ---------- */
@@ -1081,6 +1087,29 @@
   </div>
 </div>
 
+<div id="bustPaintPanel">
+  <div class="panel-box" style="width:min(94vw,560px)">
+    <span class="closeX" id="closeBustPaint" role="button" aria-label="Close"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></span>
+    <h2>Bust Paint</h2>
+    <div class="craftHint" style="text-align:left; margin-top:0;">Front view of both sides, as you see them in game. Only the lit oval inside each half is used. Mirror paints both sides at once. Your painting is only shown on your own model.</div>
+    <div class="toolRow" id="bpTools">
+      <button class="toolBtn active" data-bptool="pen">Pen</button>
+      <button class="toolBtn" data-bptool="eraser">Eraser</button>
+      <button class="toolBtn" data-bptool="fill">Fill</button>
+      <button class="toolBtn" data-bptool="pick">Pick</button>
+      <input type="color" id="bpColorIn" value="#e0742a" aria-label="Paint colour" style="width:40px;height:32px;padding:0;border:2px solid #000;border-radius:4px;background:none;">
+      <button class="toolBtn" id="bpUndo">Undo</button>
+    </div>
+    <div class="swRow" id="bpSwatches"></div>
+    <canvas id="bustPaintCanvas" width="512" height="256"></canvas>
+    <div class="toolRow">
+      <button class="toolBtn active" id="bpMirror">Mirror</button>
+      <button class="toolBtn" id="bpFillBase">Fill base color</button>
+    </div>
+    <button class="vf-btn green" id="bpDone">Done</button>
+  </div>
+</div>
+
 <div id="skinPanel">
   <div class="panel-box skinBox">
     <span class="closeX" id="closeSkin" role="button" aria-label="Close"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></span>
@@ -1110,6 +1139,14 @@
       <input type="range" id="bustSlider" min="0" max="100" step="1" value="50">
       <span id="bustVal">50</span>
       <button class="toolBtn" id="bustBounce">Bounce</button>
+    </div>
+    <div class="bustPaintRow" id="bustPaintRow" style="display:none">
+      <label for="bustColor">Bust paint</label>
+      <input type="color" id="bustColor" value="#e0742a" aria-label="Bust colour">
+      <button class="toolBtn" id="bustOpenPaint">Paint bust&hellip;</button>
+      <button class="toolBtn" id="bustUsePen">Use pen color</button>
+      <button class="toolBtn" id="bustMatch">Match torso</button>
+      <span class="bpState" id="bustPaintState">matches torso</span>
     </div>
     <div class="toolRow">
       <button class="toolBtn" id="skinImport">Import PNG</button>
@@ -4805,6 +4842,27 @@ function setModelHeld(rec, rawId){
 const BUST_DEFAULT = 50;
 let PLAYER_BUST_SIZE = BUST_DEFAULT;
 try{ const v = parseInt(localStorage.getItem('vf_bust_size'), 10); if(v >= 0 && v <= 100) PLAYER_BUST_SIZE = v; }catch(e){}
+// Optional bust paint: null = follow the torso/shirt colour (default), otherwise a '#rrggbb' of its own
+let PLAYER_BUST_COLOR = null;
+function clampBustColor(c){ return (typeof c === 'string' && /^#[0-9a-fA-F]{6}$/.test(c)) ? c.toLowerCase() : null; }
+try{ PLAYER_BUST_COLOR = clampBustColor(localStorage.getItem('vf_bust_color')); }catch(e){}
+// Hand-painted bust texture: 32x16 (left half = left side as seen from the front, right half = right side). Local only.
+const BUST_PAINT_W = 32, BUST_PAINT_H = 16;
+let BUST_PAINT_CANVAS = null;
+try{
+  const d = localStorage.getItem('vf_bust_paint');
+  if(d && d.indexOf('data:image/png') === 0){
+    const cv = document.createElement('canvas'); cv.width = BUST_PAINT_W; cv.height = BUST_PAINT_H;
+    const im = new Image();
+    im.onload = ()=>{
+      cv.getContext('2d').drawImage(im, 0, 0, BUST_PAINT_W, BUST_PAINT_H);
+      BUST_PAINT_CANVAS = cv;
+      try{ if(gameInstance && gameInstance.selfModel && gameInstance.selfModel.bust) gameInstance.selfModel.bust.setPaint(cv); }catch(e){}
+      try{ if(window.vfRefreshBustUI) window.vfRefreshBustUI(); }catch(e){}
+    };
+    im.src = d;
+  }
+}catch(e){}
 function vfBustAllowed(){
   let ok = false;
   try{ ok = localStorage.getItem('vf_model_unlocked') === '1'; }catch(e){}
@@ -4814,14 +4872,14 @@ function clampBust(v){ v = Number(v); return Number.isFinite(v) ? Math.max(0, Ma
 // radii (skin pixels) for a given size 0..100; shared by the 3D model and the Skin Studio side preview
 function bustDims(size){
   const m = clampBust(size)/100;
-  const rx = 1.6*(0.75+0.5*m+0.3*m*m);
-  return { rx, ry:1.45*(0.7+0.5*m+0.2*m*m), rz:1.4*(0.6+0.9*m+0.8*m*m), gap:Math.max(1.0, Math.min(1.55+0.3*(0.75+0.5*m), 4.1-rx)) };
+  const rx = 1.6*(0.75+0.5*m+0.3*m*m)*(1+0.16*m*m);
+  return { rx, ry:1.45*(0.7+0.5*m+0.2*m*m)*(1+0.22*m*m), rz:1.4*(0.6+0.9*m+0.8*m*m)*(1+0.28*m*m), gap:Math.max(1.2, Math.min(1.55+0.3*(0.75+0.5*m), 4.1-rx)) };
 }
 const BUST_JIGGLE_MAX = 2.4;   // px of travel
 function createBust(P, tex, chestUV){
   const root = new THREE.Group();            // lives on the torso mesh
   const sides = [];
-  const geo = new THREE.BoxGeometry(2, 2, 2);   // blocky, to match the rest of the model
+  const geo = new THREE.SphereGeometry(1, 22, 16);   // smooth ellipsoid so it reads as a rounded curve, not a block
   { // every vertex samples one pixel of the shirt, so the bust takes the shirt colour from any skin
     const uv = geo.attributes.uv, u = (chestUV[0]+0.5)/64, v = 1 - (chestUV[1]+0.5)/64;
     for(let i=0; i<uv.count; i++) uv.setXY(i, u, v);
@@ -4830,7 +4888,7 @@ function createBust(P, tex, chestUV){
     const pos = geo.attributes.position, col = new Float32Array(pos.count*3);
     for(let i=0; i<pos.count; i++){
       const y = pos.getY(i), z = pos.getZ(i);
-      const k = 0.74 + 0.20*(y*0.5+0.5) + 0.06*Math.max(0, -z);
+      const k = 0.78 + 0.18*(y*0.5+0.5) + 0.04*Math.max(0, -z);
       col[i*3] = col[i*3+1] = col[i*3+2] = k;
     }
     geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
@@ -4843,9 +4901,57 @@ function createBust(P, tex, chestUV){
     root.add(pivot);
     sides.push({ sgn, pivot, mesh, x:0, v:0, k: i ? 255 : 285, c: i ? 7.2 : 8.0, armorMesh:null });
   });
+  // own paint: a 1x1 texture so it goes through the same pipeline as the shirt texture (colours match the editor)
+  let paintMat = null, paintCv = null, paintTex = null;
+  let paintGeos = null, paintTex2 = null, paintMat2 = null;   // hand-painted look (own UV projection per side)
   const bust = {
-    root, sides, size: BUST_DEFAULT, armorTier: 0, t: 0, prevVy: null, flutter: 0,
+    root, sides, size: BUST_DEFAULT, armorTier: 0, t: 0, prevVy: null, flutter: 0, color: null, paint: null,
     setSize(s){ this.size = clampBust(s); this.layout(); },
+    // hex = '#rrggbb' paints the bust that colour; null goes back to matching the shirt
+    setColor(hex){
+      hex = clampBustColor(hex);
+      this.color = hex;
+      if(hex){
+        if(!paintMat){
+          paintCv = document.createElement('canvas'); paintCv.width = paintCv.height = 1;
+          paintTex = new THREE.CanvasTexture(paintCv);
+          paintTex.magFilter = THREE.NearestFilter; paintTex.minFilter = THREE.NearestFilter; paintTex.generateMipmaps = false;
+          paintMat = new THREE.MeshLambertMaterial({ map: paintTex, vertexColors: true });
+        }
+        const x = paintCv.getContext('2d'); x.fillStyle = hex; x.fillRect(0,0,1,1);
+        paintTex.needsUpdate = true;
+      }
+      this._look();
+    },
+    // picks geometry + material for the current look: hand-painted > solid colour > shirt
+    _look(){
+      sides.forEach((s, i)=>{
+        if(this.paint){ s.mesh.geometry = paintGeos[i]; s.mesh.material = paintMat2; }
+        else { s.mesh.geometry = geo; s.mesh.material = this.color ? paintMat : mat; }
+      });
+    },
+    // cv = 32x16 canvas painted in the editor (front view, left half = left side), or null for none
+    setPaint(cv){
+      this.paint = cv || null;
+      if(cv){
+        if(!paintGeos){
+          // front-on projection of the ellipsoid onto its own 16x16 half of the canvas
+          paintGeos = sides.map(s=>{
+            const g = geo.clone(), uv = g.attributes.uv, pos = g.attributes.position;
+            for(let i=0; i<uv.count; i++) uv.setXY(i, (s.sgn < 0 ? 0.5 : 0) + 0.25*(1 - pos.getX(i)), (pos.getY(i) + 1)/2);
+            uv.needsUpdate = true;
+            return g;
+          });
+        }
+        if(!paintTex2 || paintTex2.image !== cv){
+          paintTex2 = new THREE.CanvasTexture(cv);
+          paintTex2.magFilter = THREE.NearestFilter; paintTex2.minFilter = THREE.NearestFilter; paintTex2.generateMipmaps = false;
+          paintMat2 = new THREE.MeshLambertMaterial({ map: paintTex2, vertexColors: true });
+        }
+        paintTex2.needsUpdate = true;
+      }
+      this._look();
+    },
     layout(){
       const d = bustDims(this.size);
       root.visible = this.size > 0;
@@ -4917,7 +5023,7 @@ function createBust(P, tex, chestUV){
 
 // Build the blocky player (head, body, 2 arms, 2 legs + outer layers).
 // Returns {group, parts:{head,body,armL,armR,legL,legR}, bust?, update(dt, vy, speed, phase)} for animation.
-function buildPlayerModel(palette, skinCanvas, style, bustSize){
+function buildPlayerModel(palette, skinCanvas, style, bustSize, bustColor){
   const girl = style === 'girl';
   const canvas = skinCanvas || drawDefaultSkin(palette || SKIN_PALETTES[0], girl ? 'girl' : 'boy');
   const tex = new THREE.CanvasTexture(canvas);
@@ -5015,6 +5121,8 @@ function buildPlayerModel(palette, skinCanvas, style, bustSize){
     if(allowSelf){
       const bust = createBust(P, tex, [24, 24]);   // one pixel on the front of the shirt
       bust.setSize(size);
+      bust.setColor((bustSize === undefined) ? PLAYER_BUST_COLOR : bustColor);
+      if(bustSize === undefined && BUST_PAINT_CANVAS) bust.setPaint(BUST_PAINT_CANVAS);
       parts.body.add(bust.root);
       built.bust = bust;
     }
@@ -10557,12 +10665,12 @@ class Game{
         held: sanitizeHeldId(this.selectedBlock),
         armor: this.armorCode(),
       };
-      if(PLAYER_MODEL_STYLE === 'girl' && vfBustAllowed()) m.bust = clampBust(PLAYER_BUST_SIZE);
+      if(PLAYER_MODEL_STYLE === 'girl' && vfBustAllowed()){ m.bust = clampBust(PLAYER_BUST_SIZE); if(PLAYER_BUST_COLOR) m.bustColor = PLAYER_BUST_COLOR; }
       return m;
     };
     // If the database rules don't allow the optional "held" field, the whole write
     // is rejected and multiplayer dies. Detect that once, drop the field, carry on.
-    const stripHeld = (rec)=>{ if(this._noHeldSync){ delete rec.held; delete rec.armor; delete rec.model; delete rec.bust; } return rec; };
+    const stripHeld = (rec)=>{ if(this._noHeldSync){ delete rec.held; delete rec.armor; delete rec.model; delete rec.bust; delete rec.bustColor; } return rec; };
     const onWriteFail = (err, retry)=>{
       const denied = err && /permission|denied|validat/i.test(String(err.code||'') + ' ' + String(err.message||''));
       if(denied && !this._noHeldSync){
@@ -10675,7 +10783,7 @@ class Game{
   _addOtherPlayer(uid, data){
     if(this.otherPlayers.has(uid)) return;
     const palette = data.palette || SKIN_PALETTES[0];
-    const built = buildPlayerModel(palette, (this._remoteSkins && this._remoteSkins[uid]) || null, data.model === 'girl' ? 'girl' : 'boy', Number.isFinite(data.bust) ? clampBust(data.bust) : BUST_DEFAULT);
+    const built = buildPlayerModel(palette, (this._remoteSkins && this._remoteSkins[uid]) || null, data.model === 'girl' ? 'girl' : 'boy', Number.isFinite(data.bust) ? clampBust(data.bust) : BUST_DEFAULT, clampBustColor(data.bustColor));
     this.scene.add(built.group);
 
     // name tag sprite
@@ -10736,6 +10844,7 @@ class Game{
     if(!p.buf) p.moving = !!data.moving; // otherwise movement is derived from the interpolated path
     p.swimming = !!data.swimming;
     if(p.model && p.model.bust && Number.isFinite(data.bust) && clampBust(data.bust) !== p.model.bust.size) p.model.bust.setSize(data.bust);
+    if(p.model && p.model.bust && p.model.bust.color !== clampBustColor(data.bustColor)) p.model.bust.setColor(data.bustColor);
     p.name = data.name||p.name; p.playerId = data.playerId||p.playerId;
     p.lastData = data; p.heldRaw = data.held;
     setModelHeld(p, data.held);
@@ -12727,6 +12836,14 @@ function initSkinStudio(){
     // shirt colour from the chest of the sheet (what the 3D bust is textured with)
     let col = '#888';
     try{ const p = wctx.getImageData(24,24,1,1).data; col = `rgb(${p[0]},${p[1]},${p[2]})`; }catch(e){}
+    if(PLAYER_BUST_COLOR) col = PLAYER_BUST_COLOR;   // painted separately from the torso
+    if(BUST_PAINT_CANVAS){ // hand-painted: show its average colour
+      try{
+        const d = BUST_PAINT_CANVAS.getContext('2d').getImageData(0,0,BUST_PAINT_W,BUST_PAINT_H).data; let r=0,g=0,b=0,n=0;
+        for(let i=0;i<d.length;i+=4){ r+=d[i]; g+=d[i+1]; b+=d[i+2]; n++; }
+        if(n) col = `rgb(${Math.round(r/n)},${Math.round(g/n)},${Math.round(b/n)})`;
+      }catch(e){}
+    }
     const face = (sx,sy,w,h,dx,dy)=> x.drawImage(work, sx,sy,w,h, dx*S,dy*S,w*S,h*S);
     face(0,20,4,12, 6,20);                 // leg
     face(16,20,4,12, 6,8);                 // torso side
@@ -12736,8 +12853,9 @@ function initSkinStudio(){
       const cx = (10 + (0.42*d.rz - 0.1))*S, cy = (8 + 2.8 - bounce.x)*S;
       x.fillStyle = col;
       const bw = d.rz*S*2, bh = d.ry*S*2*(1 + Math.abs(bounce.x)*0.03);
-      x.fillRect(Math.round(cx - bw/2), Math.round(cy - bh/2), Math.round(bw), Math.round(bh));
-      x.fillStyle = 'rgba(0,0,0,0.25)'; x.fillRect(Math.round(cx - bw/2), Math.round(cy + bh/2 - 4), Math.round(bw), 4);
+      x.beginPath(); x.ellipse(Math.round(cx), Math.round(cy), bw/2, bh/2, 0, 0, Math.PI*2); x.fill();
+      x.fillStyle = 'rgba(0,0,0,0.22)';
+      x.beginPath(); x.ellipse(Math.round(cx), Math.round(cy + 2), bw/2 - 1, bh/2 - 2, 0, 0.15*Math.PI, 0.85*Math.PI); x.fill();
     }
     face(40,20,4,12, 6,8);                 // arm in front of the torso
   }
@@ -12760,9 +12878,152 @@ function initSkinStudio(){
     try{ if(typeof gameInstance !== 'undefined' && gameInstance && gameInstance.selfModel && gameInstance.selfModel.bust) gameInstance.selfModel.bust.setSize(PLAYER_BUST_SIZE); }catch(e){}
     drawSide();
   }
+  // ---- Bust paint: give the bust its own colour (base) or a full hand-painted texture ----
+  function bustStateText(){ return BUST_PAINT_CANVAS ? 'hand-painted' : (PLAYER_BUST_COLOR ? 'custom ' + PLAYER_BUST_COLOR : 'matches torso'); }
+  const bustPaintRow = $('bustPaintRow'), bustColorIn = $('bustColor'), bustPaintState = $('bustPaintState');
+  function applyBustColor(hex){
+    PLAYER_BUST_COLOR = clampBustColor(hex);
+    try{ if(PLAYER_BUST_COLOR) localStorage.setItem('vf_bust_color', PLAYER_BUST_COLOR); else localStorage.removeItem('vf_bust_color'); }catch(e){}
+    try{ if(typeof gameInstance !== 'undefined' && gameInstance && gameInstance.selfModel && gameInstance.selfModel.bust) gameInstance.selfModel.bust.setColor(PLAYER_BUST_COLOR); }catch(e){}
+    if(PLAYER_BUST_COLOR) bustColorIn.value = PLAYER_BUST_COLOR;
+    bustPaintState.textContent = bustStateText();
+    drawSide();
+  }
+  bustColorIn.addEventListener('input', ()=> applyBustColor(bustColorIn.value));
+  $('bustUsePen').onclick = ()=>{ applyBustColor($('skinColor').value); kickBounce(14); };
+  $('bustMatch').onclick = ()=>{
+    BUST_PAINT_CANVAS = null;
+    try{ localStorage.removeItem('vf_bust_paint'); }catch(e){}
+    try{ if(typeof gameInstance !== 'undefined' && gameInstance && gameInstance.selfModel && gameInstance.selfModel.bust) gameInstance.selfModel.bust.setPaint(null); }catch(e){}
+    applyBustColor(null); kickBounce(14);
+  };
+
+  // ---- the bust painting area ----
+  const bpPanel = $('bustPaintPanel'), bpCv = $('bustPaintCanvas'), bpCtx = bpCv.getContext('2d');
+  const BW = BUST_PAINT_W, BH = BUST_PAINT_H, BS = bpCv.width / BW;
+  const bpWork = document.createElement('canvas'); bpWork.width = BW; bpWork.height = BH;
+  const bpw = bpWork.getContext('2d', { willReadFrequently: true });
+  let bpTool = 'pen', bpColor = '#e0742a', bpMirror = true, bpDown = false, bpLast = null;
+  const bpUndo = [];
+  const bpColorIn = $('bpColorIn');
+  function bpBase(){
+    if(PLAYER_BUST_COLOR) return PLAYER_BUST_COLOR;
+    try{ const p = wctx.getImageData(24,24,1,1).data; return hexOf(p[0],p[1],p[2]); }catch(e){ return '#888888'; }
+  }
+  function bpRender(){
+    bpCtx.imageSmoothingEnabled = false;
+    bpCtx.clearRect(0,0,bpCv.width,bpCv.height);
+    bpCtx.drawImage(bpWork, 0,0,BW,BH, 0,0,bpCv.width,bpCv.height);
+    const hw = bpCv.width/2, h = bpCv.height;
+    // dim everything outside the oval of each half (that part is never shown on the model)
+    bpCtx.fillStyle = 'rgba(8,10,16,0.62)';
+    for(let half=0; half<2; half++){
+      bpCtx.beginPath();
+      bpCtx.rect(half*hw, 0, hw, h);
+      bpCtx.ellipse(half*hw + hw/2, h/2, hw/2, h/2, 0, 0, Math.PI*2);
+      bpCtx.fill('evenodd');
+      bpCtx.strokeStyle = 'rgba(224,116,42,0.9)'; bpCtx.lineWidth = 2;
+      bpCtx.beginPath(); bpCtx.ellipse(half*hw + hw/2, h/2, hw/2 - 1, h/2 - 1, 0, 0, Math.PI*2); bpCtx.stroke();
+    }
+    bpCtx.strokeStyle = 'rgba(255,255,255,0.07)'; bpCtx.lineWidth = 1; bpCtx.beginPath();
+    for(let i=1;i<BW;i++){ bpCtx.moveTo(i*BS+.5,0); bpCtx.lineTo(i*BS+.5,h); }
+    for(let j=1;j<BH;j++){ bpCtx.moveTo(0,j*BS+.5); bpCtx.lineTo(bpCv.width,j*BS+.5); }
+    bpCtx.stroke();
+    bpCtx.strokeStyle = 'rgba(255,255,255,0.35)'; bpCtx.lineWidth = 2;
+    bpCtx.beginPath(); bpCtx.moveTo(hw,0); bpCtx.lineTo(hw,h); bpCtx.stroke();
+  }
+  // first edit switches the model over to the hand-painted look; later edits just refresh the texture
+  function bpApply(){
+    BUST_PAINT_CANVAS = bpWork;
+    try{ if(typeof gameInstance !== 'undefined' && gameInstance && gameInstance.selfModel && gameInstance.selfModel.bust) gameInstance.selfModel.bust.setPaint(bpWork); }catch(e){}
+    bustPaintState.textContent = bustStateText();
+    drawSide();
+  }
+  function bpSave(){ try{ localStorage.setItem('vf_bust_paint', bpWork.toDataURL('image/png')); }catch(e){} }
+  function bpPush(){ bpUndo.push(bpw.getImageData(0,0,BW,BH)); if(bpUndo.length > 40) bpUndo.shift(); }
+  function bpPx(x, y, c){
+    if(x<0||y<0||x>=BW||y>=BH) return;
+    bpw.fillStyle = c; bpw.fillRect(x,y,1,1);
+    if(bpMirror) bpw.fillRect(BW-1-x,y,1,1);
+  }
+  function bpLine(a, b, c){
+    let x0=a[0], y0=a[1]; const x1=b[0], y1=b[1];
+    const dx=Math.abs(x1-x0), dy=-Math.abs(y1-y0), sx=x0<x1?1:-1, sy=y0<y1?1:-1; let err=dx+dy;
+    for(;;){ bpPx(x0,y0,c); if(x0===x1 && y0===y1) break; const e2=2*err; if(e2>=dy){err+=dy;x0+=sx;} if(e2<=dx){err+=dx;y0+=sy;} }
+  }
+  function bpFloodAt(x, y, c){
+    if(x<0||y<0||x>=BW||y>=BH) return;
+    const img = bpw.getImageData(0,0,BW,BH), d = img.data;
+    const at = (px,py)=> (py*BW+px)*4;
+    const i0 = at(x,y), tr=d[i0], tg=d[i0+1], tb=d[i0+2], ta=d[i0+3];
+    const rgb = c.match(/[0-9a-f]{2}/gi).map(v=>parseInt(v,16));
+    if(tr===rgb[0] && tg===rgb[1] && tb===rgb[2] && ta===255) return;
+    const stack=[[x,y]];
+    while(stack.length){
+      const [px,py]=stack.pop();
+      if(px<0||py<0||px>=BW||py>=BH) continue;
+      const i=at(px,py);
+      if(d[i]!==tr||d[i+1]!==tg||d[i+2]!==tb||d[i+3]!==ta) continue;
+      d[i]=rgb[0]; d[i+1]=rgb[1]; d[i+2]=rgb[2]; d[i+3]=255;
+      stack.push([px+1,py],[px-1,py],[px,py+1],[px,py-1]);
+    }
+    bpw.putImageData(img,0,0);
+  }
+  function bpPos(e){
+    const r = bpCv.getBoundingClientRect();
+    return [Math.max(0, Math.min(BW-1, Math.floor((e.clientX - r.left)/r.width*BW))), Math.max(0, Math.min(BH-1, Math.floor((e.clientY - r.top)/r.height*BH)))];
+  }
+  function bpInit(){
+    if(BUST_PAINT_CANVAS && BUST_PAINT_CANVAS !== bpWork){ bpw.clearRect(0,0,BW,BH); bpw.drawImage(BUST_PAINT_CANVAS,0,0); }
+    else if(!BUST_PAINT_CANVAS){ bpw.fillStyle = bpBase(); bpw.fillRect(0,0,BW,BH); }
+    bpUndo.length = 0;
+  }
+  bpCv.addEventListener('pointerdown', (e)=>{
+    e.preventDefault();
+    try{ bpCv.setPointerCapture(e.pointerId); }catch(_){}
+    const p = bpPos(e);
+    if(bpTool === 'pick'){
+      const d = bpw.getImageData(p[0],p[1],1,1).data;
+      bpColor = hexOf(d[0],d[1],d[2]); bpColorIn.value = bpColor; return;
+    }
+    bpPush();
+    const c = bpTool === 'eraser' ? bpBase() : bpColor;
+    if(bpTool === 'fill'){
+      bpFloodAt(p[0], p[1], c);
+      if(bpMirror) bpFloodAt(BW-1-p[0], p[1], c);
+      bpRender(); bpApply(); bpSave(); return;
+    }
+    bpDown = true; bpLast = p; bpPx(p[0],p[1],c); bpRender(); bpApply();
+  });
+  bpCv.addEventListener('pointermove', (e)=>{
+    if(!bpDown) return;
+    const p = bpPos(e);
+    if(bpLast && (p[0]!==bpLast[0] || p[1]!==bpLast[1])){
+      bpLine(bpLast, p, bpTool === 'eraser' ? bpBase() : bpColor); bpLast = p; bpRender(); bpApply();
+    }
+  });
+  const bpStop = ()=>{ if(bpDown){ bpDown = false; bpLast = null; bpSave(); } };
+  bpCv.addEventListener('pointerup', bpStop); bpCv.addEventListener('pointercancel', bpStop);
+  $('bpTools').querySelectorAll('[data-bptool]').forEach(b=>{
+    b.onclick = ()=>{ bpTool = b.dataset.bptool; $('bpTools').querySelectorAll('[data-bptool]').forEach(x=>x.classList.toggle('active', x===b)); };
+  });
+  bpColorIn.oninput = ()=>{ bpColor = bpColorIn.value; };
+  SW.forEach(c=>{
+    const sw = document.createElement('div'); sw.className = 'sw'; sw.style.background = c;
+    sw.onclick = ()=>{ bpColor = c; bpColorIn.value = c; };
+    $('bpSwatches').appendChild(sw);
+  });
+  $('bpUndo').onclick = ()=>{ const u = bpUndo.pop(); if(u){ bpw.putImageData(u,0,0); bpRender(); bpApply(); bpSave(); } };
+  $('bpMirror').onclick = function(){ bpMirror = !bpMirror; this.classList.toggle('active', bpMirror); };
+  $('bpFillBase').onclick = ()=>{ bpPush(); bpw.fillStyle = bpBase(); bpw.fillRect(0,0,BW,BH); bpRender(); bpApply(); bpSave(); };
+  $('bustOpenPaint').onclick = ()=>{ bpInit(); bpRender(); bpPanel.style.display = 'flex'; };
+  const bpClose = ()=>{ bpStop(); bpPanel.style.display = 'none'; drawSide(); };
+  $('closeBustPaint').onclick = bpClose; $('bpDone').onclick = bpClose;
   function refreshBustUI(){
     const on = bustShown();
     bustRow.style.display = on ? 'flex' : 'none';
+    bustPaintRow.style.display = on ? 'flex' : 'none';
+    if(on){ if(PLAYER_BUST_COLOR) bustColorIn.value = PLAYER_BUST_COLOR; bustPaintState.textContent = bustStateText(); drawSide(); }
     sideC.style.display = on ? 'block' : 'none';
     if(on){ bustSlider.value = PLAYER_BUST_SIZE; bustVal.textContent = PLAYER_BUST_SIZE; drawSide(); }
   }
