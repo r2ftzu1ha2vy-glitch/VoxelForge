@@ -4814,7 +4814,8 @@ function clampBust(v){ v = Number(v); return Number.isFinite(v) ? Math.max(0, Ma
 // radii (skin pixels) for a given size 0..100; shared by the 3D model and the Skin Studio side preview
 function bustDims(size){
   const m = clampBust(size)/100;
-  return { rx:1.6*(0.75+0.5*m), ry:1.45*(0.7+0.5*m), rz:1.4*(0.6+0.9*m), gap:1.55+0.3*(0.75+0.5*m) };
+  const rx = 1.6*(0.75+0.5*m+0.3*m*m);
+  return { rx, ry:1.45*(0.7+0.5*m+0.2*m*m), rz:1.4*(0.6+0.9*m+0.8*m*m), gap:Math.max(1.0, Math.min(1.55+0.3*(0.75+0.5*m), 4.1-rx)) };
 }
 const BUST_JIGGLE_MAX = 2.4;   // px of travel
 function createBust(P, tex, chestUV){
@@ -4852,7 +4853,7 @@ function createBust(P, tex, chestUV){
       for(const s of sides){
         s.mesh.scale.set(d.rx*P, d.ry*P, d.rz*P);
         s.pivot.userData.bx = s.sgn*d.gap*P;
-        s.pivot.userData.by = 2.0*P;
+        s.pivot.userData.by = 3.2*P;   // chest height (shoulders are at +6)
         s.pivot.userData.bz = -(1.9 + 0.42*d.rz)*P;
         s.pivot.position.set(s.pivot.userData.bx, s.pivot.userData.by, s.pivot.userData.bz);
         if(s.armorMesh) s.armorMesh.scale.copy(s.mesh.scale).multiplyScalar(1.14);
@@ -12732,7 +12733,7 @@ function initSkinStudio(){
     face(0,8,8,8, 4,0);                    // head side
     face(32,8,8,8, 4,0);                   // hair layer
     if(PLAYER_BUST_SIZE > 0){
-      const cx = (10 + (0.42*d.rz - 0.1))*S, cy = (8 + 4.0 - bounce.x)*S;
+      const cx = (10 + (0.42*d.rz - 0.1))*S, cy = (8 + 2.8 - bounce.x)*S;
       x.fillStyle = col;
       const bw = d.rz*S*2, bh = d.ry*S*2*(1 + Math.abs(bounce.x)*0.03);
       x.fillRect(Math.round(cx - bw/2), Math.round(cy - bh/2), Math.round(bw), Math.round(bh));
