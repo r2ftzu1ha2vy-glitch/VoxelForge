@@ -692,7 +692,7 @@
   .bustRow{display:flex; align-items:center; gap:10px; margin:10px 0 4px; padding:8px 10px; background:#0e111a; border:2px solid var(--vf-line); border-radius:4px;}
   .bustRow label{flex:none; font-size:13px; letter-spacing:1px; color:#ffd2a8;}
   .bustRow input[type=range]{flex:1 1 auto; min-width:0; accent-color:var(--vf-orange);}
-  .bustRow span{flex:none; width:28px; text-align:right; font-size:13px; color:#fff;}
+  .bustRow span{flex:none; width:46px; text-align:right; font-size:13px; color:#fff;}
   .bustPaintRow{display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:4px 0; padding:8px 10px; background:#0e111a; border:2px solid var(--vf-line); border-radius:4px;}
   .bustPaintRow label{flex:none; font-size:13px; letter-spacing:1px; color:#ffd2a8;}
   .bustPaintRow input[type=color]{flex:none; width:38px; height:30px; padding:0; border:2px solid var(--vf-line); background:#0e111a; border-radius:4px; cursor:pointer;}
@@ -916,7 +916,7 @@
       <button class="vf-btn primary" id="createRoomBtn">Create Room</button>
     </div>
     <div class="menu-row" style="margin-top:8px;">
-      <input id="roomCodeInput" class="vf-input" style="margin-bottom:0; text-transform:uppercase; letter-spacing:3px; text-align:center;" placeholder="CODE" maxlength="22" autocomplete="off" autocapitalize="characters">
+      <input id="roomCodeInput" class="vf-input" style="margin-bottom:0; text-transform:uppercase; letter-spacing:3px; text-align:center;" placeholder="CODE" maxlength="24" autocomplete="off" autocapitalize="characters">
       <button class="vf-btn primary" id="joinRoomBtn" style="width:auto; flex:none; padding-left:16px; padding-right:16px;" >Join Room</button>
     </div>
     <div class="menu-row" style="margin-top:8px;">
@@ -1136,8 +1136,8 @@
     <div class="swRow" id="skinSwatches"></div>
     <div class="bustRow" id="bustRow" style="display:none">
       <label for="bustSlider">Bust size</label>
-      <input type="range" id="bustSlider" min="0" max="100" step="1" value="50">
-      <span id="bustVal">50</span>
+      <input type="range" id="bustSlider" min="0" max="250" step="5" value="100">
+      <span id="bustVal">100%</span>
       <button class="toolBtn" id="bustBounce">Bounce</button>
     </div>
     <div class="bustPaintRow" id="bustPaintRow" style="display:none">
@@ -4839,9 +4839,17 @@ function setModelHeld(rec, rawId){
    Size is 0..100 (0 = none, 50 = default). Each side is a small ellipsoid on the front of the torso, textured from
    the chest of the shirt so it always matches the skin. A damped spring per side makes it bounce when the body
    accelerates vertically: take-off, falling, landing, and a light bounce while running. */
-const BUST_DEFAULT = 50;
+// Size is a PERCENT now: 100% = the old default, 250% = normal cap, 500% = cap after the second secret code.
+const BUST_DEFAULT = 100;
+const BUST_PCT_MAX = 250, BUST_PCT_MAX_XL = 500;
+function vfBustXL(){ try{ return localStorage.getItem('vf_bust_xl') === '1'; }catch(e){ return false; } }
+function vfBustMax(){ return vfBustXL() ? BUST_PCT_MAX_XL : BUST_PCT_MAX; }
 let PLAYER_BUST_SIZE = BUST_DEFAULT;
-try{ const v = parseInt(localStorage.getItem('vf_bust_size'), 10); if(v >= 0 && v <= 100) PLAYER_BUST_SIZE = v; }catch(e){}
+try{
+  const pv = parseInt(localStorage.getItem('vf_bust_pct'), 10);
+  if(pv >= 0 && pv <= BUST_PCT_MAX_XL) PLAYER_BUST_SIZE = Math.min(pv, vfBustMax());
+  else { const ov = parseInt(localStorage.getItem('vf_bust_size'), 10); if(ov >= 0 && ov <= 100) PLAYER_BUST_SIZE = ov*2; }   // old 0..100 scale
+}catch(e){}
 // Optional bust paint: null = follow the torso/shirt colour (default), otherwise a '#rrggbb' of its own
 let PLAYER_BUST_COLOR = null;
 function clampBustColor(c){ return (typeof c === 'string' && /^#[0-9a-fA-F]{6}$/.test(c)) ? c.toLowerCase() : null; }
@@ -4868,62 +4876,122 @@ function vfBustAllowed(){
   try{ ok = localStorage.getItem('vf_model_unlocked') === '1'; }catch(e){}
   return ok && PLAYER_MODEL_STYLE === 'girl';
 }
-function clampBust(v){ v = Number(v); return Number.isFinite(v) ? Math.max(0, Math.min(100, Math.round(v))) : BUST_DEFAULT; }
-// radii (skin pixels) for a given size 0..100; shared by the 3D model and the Skin Studio side preview
-function bustDims(size){
-  const m = clampBust(size)/100;
-  // slider reads 0-100. Natural proportions: base width stays within its half of the chest, projection (rz) is about
-  // as much as the base radius, and larger sizes hang lower the way heavier tissue does (ptosis).
-  const t = Math.pow(m, 2.5);
-  const rx = Math.min(1.6*(0.75+0.5*m+0.3*m*m)*(1+0.16*m*m), 2.7);
-  const ry = 1.45*(0.7+0.5*m+0.2*m*m)*(1+0.22*m*m)*(1+1.1*t);
-  const rz = 1.4*(0.6+0.9*m+0.8*m*m)*(1+0.28*m*m)*(1+0.8*t);
-  const sg = Math.max(0, Math.min(1, (m - 0.3)/0.7)), sag = sg*sg*(3 - 2*sg);
-  return { rx, ry, rz, gap:Math.max(1.2, Math.min(1.55+0.3*(0.75+0.5*m), 4.1-rx)), lower:0.3*Math.max(0, ry-2.5) + 0.6*sag, sag };
+function clampBust(v){ v = Number(v); return Number.isFinite(v) ? Math.max(0, Math.min(BUST_PCT_MAX_XL, Math.round(v))) : BUST_DEFAULT; }
+// Half-width (skin px) of the girl torso at height y (0 = middle of the torso, +6 = shoulders). Same hourglass as torsoShape.
+function torsoHalfAt(y){
+  const t = Math.max(0, Math.min(1, y/12 + 0.5));
+  return 4*(t > 0.5 ? 0.80 + 0.14*(t-0.5)*2 : 0.98 - 0.18*t*2);
+}
+// radii (skin pixels) for a given size in percent; shared by the 3D model and the Skin Studio side preview.
+// k = extra scale of what is drawn (chest armor cups are 14% bigger). Besides the radii this works out where the
+// base sits so that the WHOLE base stays inside the torso silhouette: seen from behind (or from the side) nothing
+// pokes out past the ribcage, the shoulders or the arms. Growth past 200% goes into projection, height and a
+// narrower gap (the two sides merge toward the middle), never past the torso edge.
+function bustDims(size, k){
+  k = k || 1;
+  const p = clampBust(size), m = p/200;                 // m: 0.5 = 100%, 1 = 200%, 1.25 = 250%, 2.5 = 500%
+  const mb = Math.min(m, 1), e = Math.max(0, m - 1), f = Math.min(1, e/1.5);
+  const t = Math.pow(mb, 2.5);
+  let rx = 1.25 + 1.0*mb + 0.15*mb*mb + 0.5*e;
+  let ry = (1.35 + 1.15*mb + 0.35*mb*mb) * (1 + 0.2*t) + 0.9*e;
+  const rz = (0.8 + 1.5*mb + 0.8*mb*mb) * (1 + 0.5*t) + 0.9*e;
+  const sg = Math.max(0, Math.min(1, (mb - 0.3)/0.7)), sag = sg*sg*(3 - 2*sg);
+  const spread = 0.3*sag;
+  const lowerOf = (r)=> 0.3*Math.max(0, r - 2.5) + 0.6*sag + 1.0*f;
+  // keep the top edge under the shoulders: shrink the height until it fits (it hangs lower as it grows)
+  let guard = 0;
+  while(3.2 - lowerOf(ry) + ry*k > 5.7 && ry > 0.6 && guard++ < 160) ry -= 0.05;
+  const lower = lowerOf(ry), by = 3.2 - lower;
+  // widest each side may be while its base stays inside the torso at every height it covers
+  const gapMin = 1.15 - 0.85*_bSstep(0.5, 2.5, m), cMin = gapMin + spread;
+  const N = 24, ys = [];
+  for(let i=0; i<=N; i++){
+    const y = by - ry + 2*ry*i/N, w = Math.sqrt(Math.max(0, 1 - ((y-by)/ry)*((y-by)/ry)));
+    if(w >= 0.2) ys.push([torsoHalfAt(y) - 0.1, w*k]);
+  }
+  let rxCap = Infinity;
+  for(const [room, w] of ys) rxCap = Math.min(rxCap, (room - cMin)/w);
+  rx = Math.max(0.6, Math.min(rx, rxCap));
+  let cLim = Infinity;
+  for(const [room, w] of ys) cLim = Math.min(cLim, room - rx*w);
+  const c = Math.max(cMin, Math.min(1.5 + 0.25*mb + spread, cLim));   // centre of each side, from the middle
+  return { rx, ry, rz, gap: c - spread, cMax: Math.max(c, cLim), lower, sag };
 }
 const BUST_JIGGLE_MAX = 2.4;   // px of travel
+function _bSstep(a, b, x){ const t = Math.max(0, Math.min(1, (x-a)/(b-a))); return t*t*(3 - 2*t); }
+// Height of the bust surface (0..1) over the unit disc of its base. Rim height is 0 so it melts into the torso with no
+// visible seam. Upper slope is long and gentle, the lower part is fuller and drops off more steeply (teardrop profile),
+// the point of greatest projection sits a little below centre, and the inner edge eases off toward the cleavage.
+function bustHeight(xn, yn, innerDir){
+  const r2 = xn*xn + yn*yn;
+  if(r2 >= 1) return 0;
+  const e = 0.58 + 0.87*_bSstep(-0.55, 0.95, yn);
+  let h = Math.pow(1 - r2, e);
+  h *= Math.max(0.7, Math.min(1.2, 1 - 0.2*yn));
+  h *= 1 - 0.22*_bSstep(0, 1, xn*innerDir);
+  return Math.min(1, h*0.98);
+}
+// Smooth polar-grid dome in unit space (x,y in [-1,1], front = -z, z in [-1,0]); scaled per side by bustDims.
+function buildBustGeo(innerDir){
+  const NR = 14, NS = 36, pos = [], col = [], uv = [], idx = [];
+  for(let i=0; i<=NR; i++){
+    const rho = 1 - Math.pow(1 - i/NR, 1.7);       // rings packed toward the rim where the surface bends most
+    for(let j=0; j<=NS; j++){
+      const th = j/NS*Math.PI*2, x = rho*Math.cos(th), y = rho*Math.sin(th);
+      pos.push(x, y, -bustHeight(x, y, innerDir));
+      // soft shading baked in: lighter on top, contact shadow under the curve and in the cleavage
+      let k = 0.80 + 0.20*_bSstep(-0.9, 0.9, y);
+      k *= 1 - 0.28*_bSstep(0.55, 1, rho)*(y < 0 ? 1 : 0.45);
+      k *= 1 - 0.18*_bSstep(0.3, 1, x*innerDir);
+      col.push(k, k, k);
+      uv.push(0, 0);
+    }
+  }
+  for(let i=0; i<NR; i++) for(let j=0; j<NS; j++){
+    const a = i*(NS+1)+j, b = (i+1)*(NS+1)+j, c = a+1, d = b+1;
+    idx.push(a, d, b,  a, c, d);                   // wound so the front faces -z
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  { // weld the normals along the seam and at the centre so there is no visible crease
+    const n = g.attributes.normal, S1 = NS+1;
+    for(let i=0; i<=NR; i++){
+      const a = i*S1, b = i*S1 + NS;
+      const nx = n.getX(a)+n.getX(b), ny = n.getY(a)+n.getY(b), nz = n.getZ(a)+n.getZ(b), l = Math.hypot(nx,ny,nz) || 1;
+      n.setXYZ(a, nx/l, ny/l, nz/l); n.setXYZ(b, nx/l, ny/l, nz/l);
+    }
+    let sx=0, sy=0, sz=0;
+    for(let j=0; j<NS; j++){ sx += n.getX(S1+j); sy += n.getY(S1+j); sz += n.getZ(S1+j); }
+    const l = Math.hypot(sx,sy,sz) || 1;
+    for(let j=0; j<=NS; j++) n.setXYZ(j, sx/l, sy/l, sz/l);
+    n.needsUpdate = true;
+  }
+  return g;
+}
 function createBust(P, tex, chestUV){
   const root = new THREE.Group();            // lives on the torso mesh
   const sides = [];
-  // Sphere with a natural profile (unit space, front = -z):
-  //  - the back is flat against the ribcage (no volume behind the chest surface)
-  //  - the upper part slopes gently into the chest, the lower part is fuller (teardrop profile)
-  //  - the point of greatest projection sits a little below the middle
-  const geo = new THREE.SphereGeometry(1, 28, 20);
-  geo.rotateY(Math.PI/2);        // put the sphere's UV seam at the back, where it is hidden
-  {
-    const pos = geo.attributes.position;
-    for(let i=0; i<pos.count; i++){
-      let x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
-      if(z > 0) z *= 0.12;
-      if(y > 0){ y *= 0.8; z *= 1 - 0.3*y; x *= 1 - 0.12*y; }
-      else { const f = 1 + 0.15*(-y); x *= f; z *= f; }
-      y -= 0.1;
-      pos.setXYZ(i, x, y, z);
-    }
-    pos.needsUpdate = true;
-    geo.computeVertexNormals();
-  }
+  const geos = [buildBustGeo(1), buildBustGeo(-1)];     // index 0 = sgn -1 (inner edge faces +x), index 1 = sgn +1
   { // every vertex samples one pixel of the shirt, so the bust takes the shirt colour from any skin
-    const uv = geo.attributes.uv, u = (chestUV[0]+0.5)/64, v = 1 - (chestUV[1]+0.5)/64;
-    for(let i=0; i<uv.count; i++) uv.setXY(i, u, v);
-    uv.needsUpdate = true;
-    // soft shading: darker underneath so each side reads as a curve of the shirt, not a separate ball
-    const pos = geo.attributes.position, col = new Float32Array(pos.count*3);
-    for(let i=0; i<pos.count; i++){
-      const y = pos.getY(i), z = pos.getZ(i);
-      const k = 0.72 + 0.26*Math.max(0, Math.min(1, y*0.6+0.5)) + 0.03*Math.max(0, -z);
-      col[i*3] = col[i*3+1] = col[i*3+2] = k;
+    const u = (chestUV[0]+0.5)/64, v = 1 - (chestUV[1]+0.5)/64;
+    for(const g of geos){
+      const uv = g.attributes.uv;
+      for(let i=0; i<uv.count; i++) uv.setXY(i, u, v);
+      uv.needsUpdate = true;
     }
-    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
   }
   const mat = new THREE.MeshLambertMaterial({ map: tex, vertexColors: true });
   [-1, 1].forEach((sgn, i)=>{
     const pivot = new THREE.Group();
-    const mesh = new THREE.Mesh(geo, mat);
+    const mesh = new THREE.Mesh(geos[i], mat);
     pivot.add(mesh);
     root.add(pivot);
-    sides.push({ sgn, pivot, mesh, x:0, v:0, k: i ? 255 : 285, c: i ? 7.2 : 8.0, armorMesh:null });
+    // x/y/z = displacement (skin px) of the soft tissue along each axis, w = a faster secondary ripple on top of y
+    sides.push({ sgn, pivot, mesh, geo: geos[i], x:0, vx:0, y:0, vy:0, z:0, vz:0, w:0, vw:0, kscale: i ? 0.93 : 1, armorMesh:null });
   });
   // own paint: a 1x1 texture so it goes through the same pipeline as the shirt texture (colours match the editor)
   let paintMat = null, paintCv = null, paintTex = null;
@@ -4951,7 +5019,7 @@ function createBust(P, tex, chestUV){
     _look(){
       sides.forEach((s, i)=>{
         if(this.paint){ s.mesh.geometry = paintGeos[i]; s.mesh.material = paintMat2; }
-        else { s.mesh.geometry = geo; s.mesh.material = this.color ? paintMat : mat; }
+        else { s.mesh.geometry = s.geo; s.mesh.material = this.color ? paintMat : mat; }
       });
     },
     // cv = 32x16 canvas painted in the editor (front view, left half = left side), or null for none
@@ -4959,10 +5027,10 @@ function createBust(P, tex, chestUV){
       this.paint = cv || null;
       if(cv){
         if(!paintGeos){
-          // front-on projection of the ellipsoid onto its own 16x16 half of the canvas
+          // front-on projection of the dome onto its own 16x16 half of the canvas
           paintGeos = sides.map(s=>{
-            const g = geo.clone(), uv = g.attributes.uv, pos = g.attributes.position;
-            for(let i=0; i<uv.count; i++) uv.setXY(i, (s.sgn < 0 ? 0.5 : 0) + 0.25*(1 - pos.getX(i)), (pos.getY(i) + 1)/2);
+            const g = s.geo.clone(), uv = g.attributes.uv, pos = g.attributes.position;
+            for(let i=0; i<uv.count; i++) uv.setXY(i, (s.sgn < 0 ? 0 : 0.5) + 0.25*(1 - pos.getX(i)), (pos.getY(i) + 1)/2);
             uv.needsUpdate = true;
             return g;
           });
@@ -4977,19 +5045,20 @@ function createBust(P, tex, chestUV){
       this._look();
     },
     layout(){
-      const d = bustDims(this.size);
+      const k = this.armorTier ? 1.14 : 1;
+      const d = bustDims(this.size, k);
       root.visible = this.size > 0;
-      this.dims = d;
+      this.dims = d; this.k = k;
       for(const s of sides){
         s.mesh.scale.set(d.rx*P, d.ry*P, d.rz*P);
-        s.pivot.userData.bx = s.sgn*d.gap*P;
-        s.pivot.userData.by = (3.2 - d.lower)*P;   // chest height (shoulders are at +6); big sizes sit a bit lower
-        s.pivot.userData.bz = -(1.6 + 0.12*d.rz)*P;   // back of the dome sits just inside the chest wall
-        s.pivot.userData.bx += s.sgn*0.3*d.sag*P;          // heavier tissue spreads slightly outward
-        s.pivot.userData.tx = -0.30*d.sag;                   // projection angles downward with weight
-        s.pivot.userData.tz = s.sgn*0.18*d.sag;              // and a little outward
-        s.pivot.rotation.z = s.pivot.userData.tz;
-        s.pivot.position.set(s.pivot.userData.bx, s.pivot.userData.by, s.pivot.userData.bz);
+        const u = s.pivot.userData;
+        u.bx = s.sgn*(d.gap + 0.3*d.sag)*P;      // heavier tissue spreads slightly outward
+        u.by = (3.2 - d.lower)*P;                  // chest height (shoulders are at +6); big sizes sit a bit lower
+        u.bz = -1.70*P;                            // base plane just inside the chest wall so the rim is hidden
+        u.tx = -0.30*d.sag;                        // projection angles downward with weight
+        u.tz = s.sgn*0.18*d.sag;                   // and a little outward
+        s.pivot.rotation.set(u.tx, 0, u.tz);
+        s.pivot.position.set(u.bx, u.by, u.bz);
         if(s.armorMesh) s.armorMesh.scale.copy(s.mesh.scale).multiplyScalar(1.14);
       }
     },
@@ -5000,52 +5069,89 @@ function createBust(P, tex, chestUV){
         if(s.armorMesh){ s.pivot.remove(s.armorMesh); s.armorMesh = null; }
         s.mesh.visible = !tier;
         if(tier){
-          s.armorMesh = new THREE.Mesh(geo, armorMat);
+          s.armorMesh = new THREE.Mesh(s.geo, armorMat);
           s.armorMesh.scale.copy(s.mesh.scale).multiplyScalar(1.14);
           s.pivot.add(s.armorMesh);
         }
       }
+      this.layout();     // the cups are bigger than the cloth, so re-fit the base inside the torso
     },
     // dt seconds, vy = vertical velocity (blocks/s), speed = horizontal speed, phase = walk-cycle phase (rad)
+    // Soft tissue is an underdamped spring-mass per axis (up/down, front/back, left/right), driven by the body's
+    // acceleration, with a weak spring between the two sides and a faster secondary ripple, so it overshoots and
+    // settles over a few cycles instead of snapping back.
     update(dt, vy, speed, phase){
-      if(!root.visible) { this.prevVy = vy; return; }
+      if(!root.visible){ this.prevVy = vy; return; }
       dt = Math.min(dt, 0.05);
       if(this.prevVy == null) this.prevVy = vy;
       this.t += dt;
-      // running adds a small vertical bob so the bust moves with each stride
+      const m = this.size/200, A = Math.min(1.3, 0.4 + 0.6*m);       // small sizes move less
       const run = Math.min(1, speed/4.3);
-      const stride = Math.cos(phase*2) * 2.4 * run;
+      const stride = Math.cos(phase*2) * 2.4 * run;   // two bobs per full stride
       const eff = vy + stride;
       const dv = eff - (this._prevEff == null ? eff : this._prevEff);
       this._prevEff = eff;
       this.prevVy = vy;
-      // Δvy -> impulse. Take-off (vy jumps up) pushes it down, landing (vy snaps to 0) throws it down then up.
-      const kick = Math.max(-40, Math.min(40, dv)) * 2.4;
+      const ds = this._prevSpd == null ? 0 : speed - this._prevSpd;   // speeding up / braking
+      this._prevSpd = speed;
+      const dph = this._prevPh == null ? 0 : phase - this._prevPh;    // walk-cycle rate -> sideways sway
+      this._prevPh = phase;
+      const omega = Math.max(0, Math.min(18, Math.abs(dph)/Math.max(dt, 0.0005)));
+      const sway = Math.sin(phase) * run * 0.2 * omega * omega;
+      // Δv -> impulse. Take-off pushes it down, landing throws it down then up, braking throws it forward.
+      const kickY = Math.max(-40, Math.min(40, dv)) * 2.2;
+      const kickZ = Math.max(-6, Math.min(6, ds)) * 6;
       const airborne = Math.abs(vy) > 1.2 && Math.abs(dv) < 6;
-      // falling: weightless float, a fast flutter on top that grows with speed
       this.flutter += dt*(34 + Math.min(20, Math.abs(vy)));
-      const flutter = airborne ? Math.sin(this.flutter) * Math.min(1, Math.abs(vy)/14) * 0.55 : 0;
+      const flutter = airborne ? Math.sin(this.flutter) * Math.min(1, Math.abs(vy)/14) * 0.5 : 0;
+      const lift = airborne && vy < -2 ? Math.min(1.1, -vy/22) : 0;      // weightless while falling
       const n = Math.max(1, Math.ceil(dt/0.008)), h = dt/n;
-      const mf = 1 + 1.4*(this.size/100);
-      for(let si=0; si<sides.length; si++){
-        const s = sides[si];
-        s.v -= kick*(si ? 0.93 : 1);                // body goes up -> bust lags down (springs differ a little so the sides drift apart)
-        // gravity unloading: while falling the bust floats up a little
-        const lift = airborne && vy < -2 ? Math.min(1.1, -vy/22) : 0;
-        for(let i=0; i<n; i++){
-          // tissue mass grows with size: lower natural frequency, damping ratio held near 0.3 (soft tissue is well damped)
-          const kk = s.k/mf, cc = 2*0.3*Math.sqrt(kk)*(si ? 0.92 : 1);
-          const a = -kk*(s.x - lift) - cc*s.v;
-          s.v += a*h; s.x += s.v*h;
+      const mf = 1 + 1.4*Math.min(m, 1.5);                                // mass grows with size -> lower frequency
+      const ky0 = 270/mf, kz0 = 330/mf, kx0 = 300/mf, zeta = 0.2;
+      const k2 = 1500, c2 = 2*0.12*Math.sqrt(k2);
+      const L = sides[0], R = sides[1];
+      L.vy -= kickY; R.vy -= kickY*0.93;
+      L.vz += kickZ; R.vz += kickZ*0.95;
+      for(let i=0; i<n; i++){
+        for(let si=0; si<2; si++){
+          const s = sides[si], o = sides[1-si], ks = s.kscale;
+          const ky = ky0*ks, kz = kz0*ks, kx = kx0*ks;
+          const ay = -ky*(s.y - lift) - 2*zeta*Math.sqrt(ky)*s.vy + 0.12*ky*(o.y - s.y);
+          const az = -kz*s.z - 2*zeta*Math.sqrt(kz)*s.vz + 0.10*kz*(o.z - s.z);
+          const ax = -kx*s.x - 2*zeta*Math.sqrt(kx)*s.vx + 0.15*kx*(o.x - s.x) + sway;
+          const aw = -k2*(s.w - s.y) - c2*s.vw;
+          s.vy += ay*h; s.y += s.vy*h;
+          s.vz += az*h; s.z += s.vz*h;
+          s.vx += ax*h; s.x += s.vx*h;
+          s.vw += aw*h; s.w += s.vw*h;
         }
-        if(s.x > BUST_JIGGLE_MAX) { s.x = BUST_JIGGLE_MAX; s.v *= 0.3; }
-        if(s.x < -BUST_JIGGLE_MAX){ s.x = -BUST_JIGGLE_MAX; s.v *= 0.3; }
-        const off = s.x + flutter*(si ? -1 : 1);
-        const u = s.pivot.userData;
-        s.pivot.position.set(u.bx + s.sgn*off*0.12*P, u.by + off*P, u.bz - Math.abs(off)*0.1*P);
-        s.pivot.scale.set(1 + Math.abs(off)*0.035, 1 - off*0.05, 1 + Math.abs(off)*0.035);
-        s.pivot.rotation.x = (u.tx || 0) + off*0.06;
-        s.pivot.rotation.z = u.tz || 0;
+      }
+      const breath = Math.sin(this.t*1.5) * 0.05;
+      for(let si=0; si<2; si++){
+        const s = sides[si], u = s.pivot.userData;
+        // hard stops stay as a safety net; what is drawn is a soft-saturated version so it never hits a wall
+        if(s.y > 2*BUST_JIGGLE_MAX){ s.y = 2*BUST_JIGGLE_MAX; s.vy *= 0.3; } else if(s.y < -2*BUST_JIGGLE_MAX){ s.y = -2*BUST_JIGGLE_MAX; s.vy *= 0.3; }
+        if(s.z > 3 || s.z < -3){ s.z = Math.max(-3, Math.min(3, s.z)); s.vz *= 0.3; }
+        if(s.x > 2.5 || s.x < -2.5){ s.x = Math.max(-2.5, Math.min(2.5, s.x)); s.vx *= 0.3; }
+        const yy = s.y + 0.3*(s.w - s.y) + flutter*(si ? -1 : 1) + breath;
+        const D = this.dims, K = this.k || 1;
+        let dy = BUST_JIGGLE_MAX*Math.tanh(yy/BUST_JIGGLE_MAX) * A;
+        const dz = 1.3*Math.tanh(s.z/1.3) * A;
+        const dx = 1.0*Math.tanh(s.x/1.0) * A;
+        // never let the travel carry it past the shoulders or the hips
+        { const byu = 3.2 - D.lower, up = Math.max(0, 6.4 - byu - D.ry*K*1.05), dn = Math.max(0, byu - D.ry*K*1.05 + 5.8);
+          dy = Math.max(-dn, Math.min(up, dy)); }
+        // up/down slides the tissue over the ribcage; front/back changes how far it projects (the base never leaves
+        // the chest); sideways shifts and tilts it. Volume is roughly kept: stretched = narrower, squashed = wider.
+        const sx = 1 + Math.abs(dy)*0.025 + Math.abs(dx)*0.02;
+        // sideways travel is limited so the outer edge stays inside the torso when seen from behind: if it would stick
+        // out, it is moved back in
+        let pxu = u.bx/P + dx*0.5 + s.sgn*Math.abs(dy)*0.08;
+        const capX = Math.max(0, D.cMax - D.rx*K*(sx - 1) - 0.1);
+        if(Math.abs(pxu) > capX) pxu = s.sgn*capX;
+        s.pivot.position.set(pxu*P, u.by + dy*P, u.bz + Math.max(0, dz)*0.35*P);
+        s.pivot.scale.set(sx, 1 - dy*0.045, 1 - dz*0.12);
+        s.pivot.rotation.set((u.tx || 0) + dy*0.05 - dz*0.04, 0, (u.tz || 0) + dx*0.08);
       }
     }
   };
@@ -5423,6 +5529,9 @@ try{ if(localStorage.getItem('vf_model_unlocked')==='1' && localStorage.getItem(
   const SEEDS = [0x9e37, 0x7f4a];
   const WANT = ['f696e3a0','8bbcbf1f','cdd3e65f','e90c51c0'];
   const codeOk = (v)=>{ v = String(v||'').trim(); return (H(v, SEEDS[0]) + H(v, SEEDS[1])) === WANT.join(''); };
+  // second code: raises the bust size limit from 250% to 500% (hashed the same way)
+  const WANT_XL = ['13e21dcc','c5725965','415bc987','51debb44'];
+  const codeOkXL = (v)=>{ v = String(v||'').trim(); return (H(v, SEEDS[0]) + H(v, SEEDS[1])) === WANT_XL.join(''); };
   const row = document.getElementById('modelRow'), menu = document.getElementById('menuScreen');
   if(!row || !menu) return;
   const sync = ()=> row.querySelectorAll('.modeBtn').forEach(b=> b.classList.toggle('selected', b.dataset.model === PLAYER_MODEL_STYLE));
@@ -5437,6 +5546,14 @@ try{ if(localStorage.getItem('vf_model_unlocked')==='1' && localStorage.getItem(
   }));
   // Called by the Join Room button when the room-code box holds the secret code.
   window.vfTrySecretCode = (value)=>{
+    if(codeOkXL(value)){
+      const on = vfBustXL();
+      try{ if(on) localStorage.removeItem('vf_bust_xl'); else localStorage.setItem('vf_bust_xl','1'); }catch(err){}
+      try{ if(window.vfRefreshBustUI) window.vfRefreshBustUI(); }catch(err){}   // clamps the size back to 250% when locking
+      const st = document.getElementById('menuStatus');
+      if(st){ st.textContent = on ? 'Size limit: 250%' : 'Size limit: 500%'; setTimeout(()=>{ if(st.textContent.indexOf('Size limit') === 0) st.textContent = ''; }, 2500); }
+      return true;
+    }
     if(!codeOk(value)) return false;
     let isOn = false;
     try{ isOn = localStorage.getItem('vf_model_unlocked') === '1'; }catch(err){}
@@ -10205,7 +10322,7 @@ class Game{
   _syncSelfVisibility(){
     const m = this.selfModel; if(!m) return;
     const fp = !this.viewMode, P = m.parts;
-    const showBust = !!(fp && m.bust && m.bust.size >= 35);
+    const showBust = !!(fp && m.bust && m.bust.size >= 70);
     m.group.visible = !fp || showBust;
     for(const k of ['head','armL','armR','legL','legR']) if(P[k]) P[k].visible = !fp;
     if(m.hair) m.hair.pivot.visible = !fp;
@@ -10731,7 +10848,7 @@ class Game{
         held: sanitizeHeldId(this.selectedBlock),
         armor: this.armorCode(),
       };
-      if(PLAYER_MODEL_STYLE === 'girl' && vfBustAllowed()){ m.bust = clampBust(PLAYER_BUST_SIZE); if(PLAYER_BUST_COLOR) m.bustColor = PLAYER_BUST_COLOR; }
+      if(PLAYER_MODEL_STYLE === 'girl' && vfBustAllowed()){ m.bust = Math.min(vfBustMax(), clampBust(PLAYER_BUST_SIZE)); if(PLAYER_BUST_COLOR) m.bustColor = PLAYER_BUST_COLOR; }
       return m;
     };
     // If the database rules don't allow the optional "held" field, the whole write
@@ -12916,18 +13033,16 @@ function initSkinStudio(){
     face(0,8,8,8, 4,0);                    // head side
     face(32,8,8,8, 4,0);                   // hair layer
     if(PLAYER_BUST_SIZE > 0){
-      const cx = (10 + (0.12*d.rz - 0.4))*S, cy = (8 + 2.8 + d.lower - bounce.x)*S;
-      x.fillStyle = col;
-      const bw = d.rz*S*2, bh = d.ry*S*2*(1 + Math.abs(bounce.x)*0.03);
-      // dome on the chest wall: full front, flat back, fuller below; hangs by the same angle as in game
-      const ey = d.ry*S*0.9;
-      x.save(); x.translate(Math.round(cx), Math.round(cy)); x.rotate(0.3*d.sag);
-      x.beginPath();
-      x.ellipse(0, 0, d.rz*S, ey, 0, -Math.PI/2, Math.PI/2);
-      x.ellipse(0, 0, 0.12*d.rz*S, ey, 0, Math.PI/2, Math.PI*1.5);
-      x.closePath(); x.fill();
-      x.fillStyle = 'rgba(0,0,0,0.22)';
-      x.beginPath(); x.ellipse(0, ey*0.3, d.rz*S*0.85, ey*0.62, 0, 0, Math.PI); x.fill();
+      const x0 = 9.7*S, cy = (8 + 2.8 + d.lower - bounce.x)*S, R = d.ry*S*(1 + Math.abs(bounce.x)*0.03), Z = d.rz*S;
+      // side profile of the same dome that is drawn in game: gentle slope above, fuller below, hangs by the same angle
+      x.save(); x.translate(Math.round(x0), Math.round(cy)); x.rotate(0.3*d.sag);
+      x.beginPath(); x.moveTo(0, -R);
+      for(let k=0; k<=32; k++){ const v = 1 - 2*k/32; x.lineTo(bustHeight(0, v, 0)*Z, -v*R); }
+      x.closePath();
+      x.fillStyle = col; x.fill();
+      const gr = x.createLinearGradient(0, -R, 0, R);
+      gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(1, 'rgba(0,0,0,0.28)');
+      x.fillStyle = gr; x.fill();
       x.restore();
     }
     face(40,20,4,12, 6,8);                 // arm in front of the torso
@@ -12945,9 +13060,9 @@ function initSkinStudio(){
     if(!bounce.raf){ bounce.last = 0; bounce.raf = requestAnimationFrame(bounceStep); }
   }
   function applyBust(v){
-    PLAYER_BUST_SIZE = clampBust(v);
-    bustVal.textContent = PLAYER_BUST_SIZE;
-    try{ localStorage.setItem('vf_bust_size', String(PLAYER_BUST_SIZE)); }catch(e){}
+    PLAYER_BUST_SIZE = Math.min(vfBustMax(), clampBust(v));
+    bustVal.textContent = PLAYER_BUST_SIZE + '%';
+    try{ localStorage.setItem('vf_bust_pct', String(PLAYER_BUST_SIZE)); }catch(e){}
     try{ if(typeof gameInstance !== 'undefined' && gameInstance && gameInstance.selfModel && gameInstance.selfModel.bust) gameInstance.selfModel.bust.setSize(PLAYER_BUST_SIZE); }catch(e){}
     drawSide();
   }
@@ -13098,7 +13213,10 @@ function initSkinStudio(){
     bustPaintRow.style.display = on ? 'flex' : 'none';
     if(on){ if(PLAYER_BUST_COLOR) bustColorIn.value = PLAYER_BUST_COLOR; bustPaintState.textContent = bustStateText(); drawSide(); }
     sideC.style.display = on ? 'block' : 'none';
-    if(on){ bustSlider.value = PLAYER_BUST_SIZE; bustVal.textContent = PLAYER_BUST_SIZE; drawSide(); }
+    // the second secret code raises the top of the slider from 250% to 500% (and locks it back when typed again)
+    bustSlider.max = vfBustMax();
+    if(PLAYER_BUST_SIZE > vfBustMax()) applyBust(vfBustMax());
+    if(on){ bustSlider.value = PLAYER_BUST_SIZE; bustVal.textContent = PLAYER_BUST_SIZE + '%'; drawSide(); }
   }
   bustSlider.addEventListener('input', ()=>{ applyBust(bustSlider.value); kickBounce(18); });
   $('bustBounce').onclick = ()=> kickBounce(34);
@@ -13725,7 +13843,7 @@ window.addEventListener('DOMContentLoaded', ()=>{
   });
   document.getElementById('roomCodeInput').addEventListener('input', (e)=>{
     const v = e.target.value.toUpperCase();
-    e.target.value = /^\d*$/.test(v) ? v.slice(0,22) : v.slice(0,4); // 22 digits are allowed only so the secret code fits
+    e.target.value = /^[\d=\-]*$/.test(v) ? v.slice(0,24) : v.slice(0,4); // digits, = and - are allowed up to 24 only so the secret codes fit
   });
   document.getElementById('soloBtn').addEventListener('click', ()=>{
     const name = document.getElementById('nameInput').value.trim();
