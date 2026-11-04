@@ -1676,12 +1676,88 @@ const TexturePainters = {
   },
 };
 
+
+const CONCRETE_COLORS = [['white','#d9dcdc'],['red','#a8322c'],['blue','#2f4fb0'],['yellow','#e0c52a'],['green','#3d7f2f'],['black','#15151a'],
+  ['orange','#d9680f'],['magenta','#a73eaf'],['light_blue','#3f98d6'],['lime','#6fb515'],['pink','#d9739b'],['gray','#383d42'],
+  ['light_gray','#86898a'],['cyan','#0f6c82'],['purple','#64209a'],['brown','#573520']];
+const GLASS_COLORS = [['red','210,50,50'],['blue','50,90,210'],['green','50,170,70'],['yellow','225,205,50'],['purple','140,60,190']];
+
 function buildBlockTexture(name, seed){
   const c = makeCanvas();
   const ctx = c.getContext('2d');
   (TexturePainters[name] || TexturePainters.stone)(ctx, seed);
   return canvasToTexture(c);
 }
+
+/* ---- Build-battle block painters (ids 186-199, 211-241) ---- */
+(function(){
+  const P = TexturePainters;
+  const plank = (base, dark)=> function(ctx, seed){
+    const rnd = mulberry32(seed);
+    for(let y=0;y<TEX_SIZE;y++){
+      const bandHex = shade(base, (y%4===0? -16 : 0));
+      for(let x=0;x<TEX_SIZE;x++){
+        ctx.fillStyle = shade(bandHex, Math.floor((rnd()-0.5)*10));
+        ctx.fillRect(x,y,1,1);
+      }
+    }
+    ctx.fillStyle = dark; for(let y=3;y<TEX_SIZE;y+=8){ ctx.fillRect((y*5)%TEX_SIZE, y, 2, 1); }
+  };
+  P.spruce_planks = plank('#7a5a34', '#5a3f22');
+  P.birch_planks = plank('#d4c28a', '#b3a06a');
+  P.acacia_planks = plank('#b45a30', '#8a3f1e');
+  P.dark_oak_planks = plank('#4a3320', '#33220f');
+  P.quartz_block = (ctx,seed)=> paintNoise(ctx,'#ece6dc',seed,{variance:5, speckleChance:0.05, speckleColor:'#d8d0c2', speckleVariance:6});
+  P.smooth_stone = (ctx,seed)=> paintNoise(ctx,'#9a9a9a',seed,{variance:4});
+  P.glowstone = (ctx,seed)=> paintNoise(ctx,'#e9b94a',seed,{variance:22, speckleChance:0.3, speckleColor:'#fff3b0', speckleVariance:30});
+  P.sea_lantern = (ctx,seed)=> paintNoise(ctx,'#a9ddd8',seed,{variance:14, speckleChance:0.3, speckleColor:'#e4fbf7', speckleVariance:22});
+  const metal = (hex, hi)=> (ctx,seed)=>{
+    paintNoise(ctx,hex,seed,{variance:6, speckleChance:0.08, speckleColor:hi, speckleVariance:10});
+    ctx.strokeStyle='rgba(0,0,0,0.18)'; ctx.lineWidth=1; ctx.strokeRect(0.5,0.5,TEX_SIZE-1,TEX_SIZE-1);
+  };
+  P.gold_block = metal('#f3cf3f','#fff0a0');
+  P.iron_block = metal('#d6d6d6','#ffffff');
+  P.diamond_block = metal('#58dcd2','#c8fffa');
+  P.emerald_block = metal('#2fbf5f','#9affba');
+  P.coal_block = metal('#1c1c20','#34343a');
+  P.hay_side = (ctx,seed)=>{
+    paintNoise(ctx,'#c9a227',seed,{variance:14, speckleChance:0.2, speckleColor:'#a07f12', speckleVariance:16});
+    ctx.fillStyle='rgba(90,60,10,0.55)'; ctx.fillRect(0,4,TEX_SIZE,1); ctx.fillRect(0,TEX_SIZE-5,TEX_SIZE,1);
+  };
+  P.hay_top = (ctx,seed)=> paintNoise(ctx,'#d6b232',seed,{variance:14, speckleChance:0.2, speckleColor:'#a98a1a', speckleVariance:16});
+  P.prismarine = (ctx,seed)=> paintNoise(ctx,'#4ba093',seed,{variance:16, speckleChance:0.2, speckleColor:'#2f7d73', speckleVariance:18});
+  P.red_sandstone = (ctx,seed)=> paintNoise(ctx,'#b0532a',seed,{variance:10, speckleChance:0.12, speckleColor:'#8e3f1d', speckleVariance:12});
+  P.white_terracotta = (ctx,seed)=> paintNoise(ctx,'#d2b4a1',seed,{variance:8, speckleChance:0.1, speckleColor:'#b99a86', speckleVariance:10});
+  // trapdoors: planks with a dark frame and slats / iron with bars
+  const trap = (base, dark)=> function(ctx, seed){
+    paintNoise(ctx, base, seed, {variance:8});
+    ctx.fillStyle = dark;
+    ctx.fillRect(0,0,TEX_SIZE,2); ctx.fillRect(0,TEX_SIZE-2,TEX_SIZE,2); ctx.fillRect(0,0,2,TEX_SIZE); ctx.fillRect(TEX_SIZE-2,0,2,TEX_SIZE);
+    for(let y=5;y<TEX_SIZE-3;y+=4) ctx.fillRect(2,y,TEX_SIZE-4,1);
+    ctx.fillRect((TEX_SIZE>>1)-1,2,2,TEX_SIZE-4);
+  };
+  P.trapdoor_oak = trap('#b98a4e','#6e4b22');
+  P.trapdoor_spruce = trap('#7a5a34','#432c14');
+  P.trapdoor_birch = trap('#d4c28a','#8f7d49');
+  P.trapdoor_acacia = trap('#b45a30','#6a2f14');
+  P.trapdoor_dark_oak = trap('#4a3320','#25170a');
+  P.trapdoor_iron = function(ctx, seed){
+    paintNoise(ctx, '#c9cccf', seed, {variance:6});
+    ctx.fillStyle = '#6f7378';
+    ctx.fillRect(0,0,TEX_SIZE,2); ctx.fillRect(0,TEX_SIZE-2,TEX_SIZE,2); ctx.fillRect(0,0,2,TEX_SIZE); ctx.fillRect(TEX_SIZE-2,0,2,TEX_SIZE);
+    for(let i=4;i<TEX_SIZE-2;i+=4){ ctx.fillRect(i,2,1,TEX_SIZE-4); }
+    ctx.fillRect(2,(TEX_SIZE>>1)-1,TEX_SIZE-4,2);
+  };
+  // concrete (16 colours, same palette as wool but flat and smooth)
+  CONCRETE_COLORS.forEach(([n,hex])=>{ P['concrete_'+n] = (ctx,seed)=> paintNoise(ctx,hex,seed,{variance:3}); });
+  // stained glass
+  GLASS_COLORS.forEach(([n,rgb])=>{
+    P['stained_glass_'+n] = (ctx)=>{
+      ctx.fillStyle='rgba('+rgb+',0.5)'; ctx.fillRect(0,0,TEX_SIZE,TEX_SIZE);
+      ctx.strokeStyle='rgba(255,255,255,0.55)'; ctx.lineWidth=1; ctx.strokeRect(0.5,0.5,TEX_SIZE-1,TEX_SIZE-1);
+    };
+  });
+})();
 
 /* -------------------------------------------------------------------------
    2. BLOCK REGISTRY
@@ -1801,6 +1877,57 @@ const BLOCKS = {
   184: { name:'carpet_purple', tex:{all:'wool_purple'}, texFrom:168, transparent:true, noCollide:true, boxes:[[0,0,0,1,1/16,1]], hardness:0.1 },
   185: { name:'carpet_brown', tex:{all:'wool_brown'}, texFrom:169, transparent:true, noCollide:true, boxes:[[0,0,0,1,1/16,1]], hardness:0.1 },
 };
+// ---- Build-battle blocks: ids 186-199 and 211-241 (200-210 are reserved for hidden shaped variants, see SHAPE) ----
+(function(){
+  const add = (id, def)=>{ BLOCKS[id] = def; };
+  add(186,{ name:'spruce_planks',   tex:{all:'spruce_planks'},   hardness:1.0, tool:'axe' });
+  add(187,{ name:'birch_planks',    tex:{all:'birch_planks'},    hardness:1.0, tool:'axe' });
+  add(188,{ name:'acacia_planks',   tex:{all:'acacia_planks'},   hardness:1.0, tool:'axe' });
+  add(189,{ name:'dark_oak_planks', tex:{all:'dark_oak_planks'}, hardness:1.0, tool:'axe' });
+  add(190,{ name:'quartz_block',    tex:{all:'quartz_block'},    hardness:1.5, tool:'pickaxe' });
+  add(191,{ name:'smooth_stone',    tex:{all:'smooth_stone'},    hardness:1.5, tool:'pickaxe' });
+  const slab = (name, paint, hardness, tool)=> ({ name, tex:{all:paint}, transparent:true, boxes:[[0,0,0,1,0.5,1]], hardness, tool });
+  add(192, slab('stone_slab','smooth_stone',1.5,'pickaxe'));
+  add(193, slab('planks_slab','planks',1.0,'axe'));
+  add(194, slab('quartz_slab','quartz_block',1.5,'pickaxe'));
+  add(195,{ name:'glowstone',   tex:{all:'glowstone'},   hardness:0.3, light:14 });
+  add(196,{ name:'sea_lantern', tex:{all:'sea_lantern'}, hardness:0.3, light:14 });
+  add(197,{ name:'gold_block',    tex:{all:'gold_block'},    hardness:3.0, tool:'pickaxe' });
+  add(198,{ name:'iron_block',    tex:{all:'iron_block'},    hardness:3.0, tool:'pickaxe' });
+  add(199,{ name:'diamond_block', tex:{all:'diamond_block'}, hardness:3.5, tool:'pickaxe' });
+  CONCRETE_COLORS.forEach(([n],i)=> add(211+i,{ name:'concrete_'+n, tex:{all:'concrete_'+n}, hardness:1.8, tool:'pickaxe' }));  // 211-226
+  add(227,{ name:'emerald_block', tex:{all:'emerald_block'}, hardness:3.0, tool:'pickaxe' });
+  add(228,{ name:'coal_block',    tex:{all:'coal_block'},    hardness:3.0, tool:'pickaxe' });
+  add(229,{ name:'hay_bale',      tex:{top:'hay_top', bottom:'hay_top', side:'hay_side'}, hardness:0.5 });
+  GLASS_COLORS.forEach(([n],i)=> add(230+i,{ name:'stained_glass_'+n, tex:{all:'stained_glass_'+n}, transparent:true, hardness:0.3 })); // 230-234
+  add(235,{ name:'prismarine',       tex:{all:'prismarine'},       hardness:1.5, tool:'pickaxe' });
+  add(236,{ name:'red_sandstone',    tex:{all:'red_sandstone'},    hardness:1.25, tool:'pickaxe' });
+  add(237,{ name:'white_terracotta', tex:{all:'white_terracotta'}, hardness:1.25, tool:'pickaxe' });
+  add(238,{ name:'dark_oak_planks_slab', tex:{all:'dark_oak_planks'}, transparent:true, boxes:[[0,0,0,1,0.5,1]], hardness:1.0, tool:'axe' });
+  add(239, slab('brick_slab','brick',1.8,'pickaxe'));
+  add(240, slab('cobblestone_slab','cobblestone',1.5,'pickaxe'));
+  add(241, slab('sandstone_slab','sandstone',1.25,'pickaxe'));
+})();
+// ---- More shaped blocks: stairs (242-250) and trapdoors (252-257). Variants (corners, flipped, open...) are hidden ids >= 300, see SHAPE2 ----
+(function(){
+  const stair = (id,name,paint,hardness,tool)=> { BLOCKS[id] = { name, tex:{all:paint}, hardness, tool, transparent:true }; };
+  stair(242,'cobblestone_stairs','cobblestone',1.5,'pickaxe');
+  stair(243,'stone_brick_stairs','stairs_stone',1.75,'pickaxe');
+  stair(244,'brick_stairs','brick',1.8,'pickaxe');
+  stair(245,'sandstone_stairs','sandstone',1.25,'pickaxe');
+  stair(246,'quartz_stairs','quartz_block',1.5,'pickaxe');
+  stair(247,'spruce_stairs','spruce_planks',1.0,'axe');
+  stair(248,'birch_stairs','birch_planks',1.0,'axe');
+  stair(249,'acacia_stairs','acacia_planks',1.0,'axe');
+  stair(250,'dark_oak_stairs','dark_oak_planks',1.0,'axe');
+  const trap = (id,name,paint,hardness,tool)=> { BLOCKS[id] = { name, tex:{all:paint}, hardness, tool, transparent:true }; };
+  trap(252,'oak_trapdoor','trapdoor_oak',1.0,'axe');
+  trap(253,'spruce_trapdoor','trapdoor_spruce',1.0,'axe');
+  trap(254,'birch_trapdoor','trapdoor_birch',1.0,'axe');
+  trap(255,'acacia_trapdoor','trapdoor_acacia',1.0,'axe');
+  trap(256,'dark_oak_trapdoor','trapdoor_dark_oak',1.0,'axe');
+  trap(257,'iron_trapdoor','trapdoor_iron',2.5,'pickaxe');
+})();
 // Non-block hand items (tools, sticks) — id space 100+ so they never collide
 // with placeable block ids. These live in the same inventory/hotbar system
 // but can't be placed in the world (isItem:true).
@@ -1994,6 +2121,87 @@ const SHAPE = (function(){
   };
 })();
 
+/* ---- SHAPE2: corner stairs (inner/outer, left/right), stairs for more materials, top + double slabs, trapdoors ----
+   All variants are hidden (non-enumerable) block ids starting at 300; the plain base id is always
+   the default variant (stairs: facing 0, straight, upright / slabs: bottom / trapdoors: closed, bottom). */
+const SHAPE2 = (function(){
+  const rot = (b,f)=>{ let [x0,y0,z0,x1,y1,z1] = b;
+    for(let i=0;i<f;i++){ const a=1-z1, c=1-z0, d=x0, e=x1; x0=a; x1=c; z0=d; z1=e; }
+    return [x0,y0,z0,x1,y1,z1]; };
+  const mirrorY = b=> [b[0],1-b[4],b[2],b[3],1-b[1],b[5]];
+  let next = 300;
+  const hide = (base, over)=>{
+    const id = next++;
+    const d = Object.assign({}, base, over, { id });
+    Object.defineProperty(BLOCKS, id, { value:d, enumerable:false, writable:true, configurable:true });
+    return id;
+  };
+  // ----- stairs -----
+  const STAIR_BASES = [22,23,242,243,244,245,246,247,248,249,250];
+  const SHAPES = ['st','il','ir','ol','or']; // straight, inner left/right, outer left/right
+  const stairBoxes = (shape,f,flip)=>{
+    const low = [0,0,0,1,0.5,1];
+    let b;
+    if(shape==='st') b = [low,[0,0.5,0,1,1,0.5]];
+    else if(shape==='ol') b = [low,[0,0.5,0,0.5,1,0.5]];
+    else if(shape==='or') b = [low,[0.5,0.5,0,1,1,0.5]];
+    else if(shape==='il') b = [low,[0,0.5,0,1,1,0.5],[0,0.5,0.5,0.5,1,1]];
+    else b = [low,[0,0.5,0,1,1,0.5],[0.5,0.5,0.5,1,1,1]];
+    b = b.map(q=> rot(q,f));
+    return flip ? b.map(mirrorY) : b;
+  };
+  const stairIds = {};
+  STAIR_BASES.forEach(base=>{
+    const bd = BLOCKS[base];
+    if(base!==22 && base!==23){ bd.transparent = true; bd.boxes = stairBoxes('st',0,false); bd.dropId = base; }
+    for(let flip=0; flip<2; flip++) for(let f=0; f<4; f++) for(const sh of SHAPES){
+      const meta = { stairBase:base, facing:f, flip:!!flip, shape:sh, boxes:stairBoxes(sh,f,!!flip), texFrom:base, dropId:base, solid:true, transparent:true };
+      let id;
+      if(sh==='st' && (base===22 || base===23)) id = SHAPE.stairs(base,f,!!flip);       // keep the ids existing worlds already use
+      else if(sh==='st' && f===0 && !flip && base!==22 && base!==23) id = base;
+      else id = hide(bd, meta);
+      if(id===base || sh==='st' && (base===22 || base===23)) Object.assign(BLOCKS[id], { stairBase:base, facing:f, flip:!!flip, shape:sh, dropId:base });
+      stairIds[base+'_'+f+'_'+flip+'_'+sh] = id;
+    }
+  });
+  // ----- slabs: bottom (the base id), top, double -----
+  const SLAB_BASES = [192,193,194,238,239,240,241];
+  const slabIds = {};
+  SLAB_BASES.forEach(base=>{
+    const bd = BLOCKS[base];
+    Object.assign(bd, { slabBase:base, slabHalf:'bottom', dropId:base });
+    slabIds[base+'_bottom'] = base;
+    slabIds[base+'_top'] = hide(bd, { boxes:[[0,0.5,0,1,1,1]], texFrom:base, dropId:base, slabBase:base, slabHalf:'top', solid:true, transparent:true });
+    slabIds[base+'_double'] = hide(bd, { boxes:null, texFrom:base, dropId:base, dropCount:2, slabBase:base, slabHalf:'double', solid:true, transparent:false });
+  });
+  // ----- trapdoors: side the plate sits on (0=-z 1=+x 2=+z 3=-x), top/bottom half, open/closed -----
+  const TRAP_BASES = [252,253,254,255,256,257];
+  const TT = 3/16;
+  const trapBoxes = (side,top,open)=>{
+    if(!open) return [ top ? [0,1-TT,0,1,1,1] : [0,0,0,1,TT,1] ];
+    return [ [[0,0,0,1,1,TT],[1-TT,0,0,1,1,1],[0,0,1-TT,1,1,1],[0,0,0,TT,1,1]][side] ];
+  };
+  const trapIds = {};
+  TRAP_BASES.forEach(base=>{
+    const bd = BLOCKS[base];
+    for(let side=0; side<4; side++) for(let top=0; top<2; top++) for(let open=0; open<2; open++){
+      const meta = { trapBase:base, trapSide:side, trapTop:!!top, trapOpen:!!open, boxes:trapBoxes(side,!!top,!!open), texFrom:base, dropId:base, solid:true, transparent:true };
+      const isBase = side===0 && !top && !open;
+      let id;
+      if(isBase){ id = base; Object.assign(bd, meta, { texFrom:undefined }); delete bd.texFrom; }
+      else id = hide(bd, meta);
+      trapIds[base+'_'+side+'_'+top+'_'+open] = id;
+    }
+  });
+  return {
+    STAIR_BASES, SLAB_BASES, TRAP_BASES,
+    isStair:(id)=> STAIR_BASES.includes(id), isSlab:(id)=> SLAB_BASES.includes(id), isTrap:(id)=> TRAP_BASES.includes(id),
+    stair:(base,f,flip,shape)=> stairIds[base+'_'+f+'_'+(flip?1:0)+'_'+(shape||'st')],
+    slab:(base,half)=> slabIds[base+'_'+half],
+    trap:(base,side,top,open)=> trapIds[base+'_'+side+'_'+(top?1:0)+'_'+(open?1:0)],
+  };
+})();
+
 function hashStr(s){
   let h=0; for(let i=0;i<s.length;i++){ h = (h*31 + s.charCodeAt(i))|0; }
   return h;
@@ -2142,11 +2350,11 @@ function paintNameForKey(key){
 function layerForPaint(paintName){
   // cut-out: pixels with alpha 0 are see-through (leaves, and doors so PNG windows can be transparent)
   if(paintName === 'leaves' || paintName === 'door_wood' || paintName === 'door_wood_top') return LAYER_CUTOUT;
-  if(paintName === 'glass' || paintName === 'water') return LAYER_TRANSPARENT;
+  if(paintName === 'glass' || paintName === 'water' || paintName.startsWith('stained_glass_')) return LAYER_TRANSPARENT;
   return LAYER_SOLID;
 }
 function alphaForPaint(paintName){
-  return paintName === 'water' ? 0.75 : (paintName === 'glass' ? 0.55 : 1);
+  return paintName === 'water' ? 0.75 : ((paintName === 'glass' || paintName.startsWith('stained_glass_')) ? 0.55 : 1);
 }
 
 // Every material key the world can ask for, so the atlas is fully laid out up
@@ -2996,7 +3204,7 @@ function chunkKey(cx,cy,cz){ return cx+','+cy+','+cz; }
 class Chunk{
   constructor(cx,cy,cz){
     this.cx=cx; this.cy=cy; this.cz=cz;
-    this.blocks = new Uint8Array(CHUNK_SIZE*CHUNK_SIZE*CHUNK_SIZE); // local index
+    this.blocks = new Uint16Array(CHUNK_SIZE*CHUNK_SIZE*CHUNK_SIZE); // local index (16-bit so hidden shaped variants can use ids above 255)
     this.mesh = null;         // THREE.Group of face meshes for this chunk
     this.dirty = true;
     this.generated = false;
@@ -3816,7 +4024,7 @@ class World{
         if(biome==='forest' || biome==='plains'){
           const moisture = this.moistureAt(wx,wz);
           const roll = hash2(wx,wz,this.seed+9001);
-          let threshold = biome==='forest' ? (0.44 + (1-moisture)*0.015) : (0.475 + (1-moisture)*0.015);
+          let threshold = biome==='forest' ? (0.405 + (1-moisture)*0.015) : (0.45 + (1-moisture)*0.015); // lower = more trees
           // Approaching the Farlands, the generator "glitches" and trees
           // spawn far more often — threshold drops toward 0 as we near the
           // hard cutoff, so almost every eligible column roots a tree.
@@ -4621,6 +4829,60 @@ const RECIPES = [
   { pattern:[[167,167,0],[0,0,0],[0,0,0]], out:{id:183,count:3} },
   { pattern:[[168,168,0],[0,0,0],[0,0,0]], out:{id:184,count:3} },
   { pattern:[[169,169,0],[0,0,0],[0,0,0]], out:{id:185,count:3} },
+
+  // build-battle blocks
+  { pattern:[[31,5,26],[0,0,0],[0,0,0]], out:{id:211,count:2} },
+  { pattern:[[32,5,26],[0,0,0],[0,0,0]], out:{id:212,count:2} },
+  { pattern:[[33,5,26],[0,0,0],[0,0,0]], out:{id:213,count:2} },
+  { pattern:[[34,5,26],[0,0,0],[0,0,0]], out:{id:214,count:2} },
+  { pattern:[[35,5,26],[0,0,0],[0,0,0]], out:{id:215,count:2} },
+  { pattern:[[36,5,26],[0,0,0],[0,0,0]], out:{id:216,count:2} },
+  { pattern:[[160,5,26],[0,0,0],[0,0,0]], out:{id:217,count:2} },
+  { pattern:[[161,5,26],[0,0,0],[0,0,0]], out:{id:218,count:2} },
+  { pattern:[[162,5,26],[0,0,0],[0,0,0]], out:{id:219,count:2} },
+  { pattern:[[163,5,26],[0,0,0],[0,0,0]], out:{id:220,count:2} },
+  { pattern:[[164,5,26],[0,0,0],[0,0,0]], out:{id:221,count:2} },
+  { pattern:[[165,5,26],[0,0,0],[0,0,0]], out:{id:222,count:2} },
+  { pattern:[[166,5,26],[0,0,0],[0,0,0]], out:{id:223,count:2} },
+  { pattern:[[167,5,26],[0,0,0],[0,0,0]], out:{id:224,count:2} },
+  { pattern:[[168,5,26],[0,0,0],[0,0,0]], out:{id:225,count:2} },
+  { pattern:[[169,5,26],[0,0,0],[0,0,0]], out:{id:226,count:2} },
+  { pattern:[[8,100,0],[0,0,0],[0,0,0]], out:{id:186,count:2} },
+  { pattern:[[8,5,0],[0,0,0],[0,0,0]], out:{id:187,count:2} },
+  { pattern:[[8,26,0],[0,0,0],[0,0,0]], out:{id:188,count:2} },
+  { pattern:[[8,116,0],[0,0,0],[0,0,0]], out:{id:189,count:2} },
+  { pattern:[[27,27,0],[27,27,0],[0,0,0]], out:{id:190,count:2} },
+  { pattern:[[3,3,0],[0,0,0],[0,0,0]], out:{id:191,count:2} },
+  { pattern:[[3,3,3],[0,0,0],[0,0,0]], out:{id:192,count:6} },
+  { pattern:[[8,8,8],[0,0,0],[0,0,0]], out:{id:193,count:6} },
+  { pattern:[[190,190,190],[0,0,0],[0,0,0]], out:{id:194,count:6} },
+  { pattern:[[11,11,11],[0,0,0],[0,0,0]], out:{id:239,count:6} },
+  { pattern:[[4,4,4],[0,0,0],[0,0,0]], out:{id:240,count:6} },
+  { pattern:[[27,27,27],[0,0,0],[0,0,0]], out:{id:241,count:6} },
+  { pattern:[[189,189,189],[0,0,0],[0,0,0]], out:{id:238,count:6} },
+  { pattern:[[116,116,0],[116,116,0],[0,0,0]], out:{id:195,count:2} },
+  { pattern:[[9,116,9],[9,9,9],[0,0,0]], out:{id:196,count:2} },
+  { pattern:[[114,114,114],[114,114,114],[114,114,114]], out:{id:197,count:1} },
+  { pattern:[[113,113,113],[113,113,113],[113,113,113]], out:{id:198,count:1} },
+  { pattern:[[115,115,115],[115,115,115],[115,115,115]], out:{id:199,count:1} },
+  { pattern:[[116,116,116],[116,116,116],[116,116,116]], out:{id:228,count:1} },
+
+  // corner-capable stairs + trapdoors
+  { pattern:[[4,0,0],[4,4,0],[4,4,4]], out:{id:242,count:4} },
+  { pattern:[[42,0,0],[42,42,0],[42,42,42]], out:{id:243,count:4} },
+  { pattern:[[11,0,0],[11,11,0],[11,11,11]], out:{id:244,count:4} },
+  { pattern:[[27,0,0],[27,27,0],[27,27,27]], out:{id:245,count:4} },
+  { pattern:[[190,0,0],[190,190,0],[190,190,190]], out:{id:246,count:4} },
+  { pattern:[[186,0,0],[186,186,0],[186,186,186]], out:{id:247,count:4} },
+  { pattern:[[187,0,0],[187,187,0],[187,187,187]], out:{id:248,count:4} },
+  { pattern:[[188,0,0],[188,188,0],[188,188,188]], out:{id:249,count:4} },
+  { pattern:[[189,0,0],[189,189,0],[189,189,189]], out:{id:250,count:4} },
+  { pattern:[[8,8,8],[8,8,8],[0,0,0]], out:{id:252,count:2} },
+  { pattern:[[186,186,186],[186,186,186],[0,0,0]], out:{id:253,count:2} },
+  { pattern:[[187,187,187],[187,187,187],[0,0,0]], out:{id:254,count:2} },
+  { pattern:[[188,188,188],[188,188,188],[0,0,0]], out:{id:255,count:2} },
+  { pattern:[[189,189,189],[189,189,189],[0,0,0]], out:{id:256,count:2} },
+  { pattern:[[113,113,0],[113,113,0],[0,0,0]], out:{id:257,count:1} },
   // wood door
   { pattern:[[8,8,0],[8,8,0],[8,8,0]], out:{id:21,count:3} },
   // stone stairs (simplified: 6 stone -> 4 stairs)
@@ -7208,6 +7470,7 @@ class Game{
       }
     }
     if(m.id===41) this.removeTorchLight(m.x,m.y,m.z);
+    this._refreshStairNeighbors(m.x,m.y,m.z); // neighbouring stairs re-shape themselves into/out of corners
 
     // determine if the held tool actually qualifies to harvest a drop
     // (e.g. stone pickaxe can't yield diamond — matches minTier gating above)
@@ -7225,7 +7488,7 @@ class Game{
       } else {
         // survival: the block pops out as an item and flies to you when you are close
         const a = Math.random()*Math.PI*2;
-        this._spawnDrop(dropId, 1, undefined, {
+        this._spawnDrop(dropId, (def && def.dropCount) || 1, undefined, {
           pos: new THREE.Vector3(m.x+0.5, m.y+0.4, m.z+0.5),
           vel: new THREE.Vector3(Math.cos(a)*1.2, 3.2, Math.sin(a)*1.2),
           delay: 0.45, magnet: true
@@ -7283,7 +7546,7 @@ class Game{
   }
   // 0 = not a shaped item, 1 = placed, -1 = refused (no room)
   _placeShaped(x,y,z,heldId){
-    if(heldId!==21 && heldId!==22 && heldId!==23 && heldId!==150 && heldId!==19) return 0;
+    if(heldId!==21 && heldId!==22 && heldId!==23 && heldId!==150 && heldId!==19 && !SHAPE2.isStair(heldId) && !SHAPE2.isSlab(heldId) && !SHAPE2.isTrap(heldId)) return 0;
     const f = SHAPE.facingOf(this.getLookRay().dir);
     if(heldId===150){
       const [dx,dz] = SHAPE.bedOff(f), hx = x+dx, hz = z+dz;
@@ -7305,8 +7568,48 @@ class Game{
       if(x===feet.x && z===feet.z && (y+1===feet.y || y+1===feet.y+1)) return -1;
       this._setShaped(x,y,z, SHAPE.door('lower',f,false));
       this._setShaped(x,y+1,z, SHAPE.door('upper',f,false));
-    } else this._setShaped(x,y,z, SHAPE.stairs(heldId,f,!!this._placeFlip));
+    } else if(SHAPE2.isStair(heldId)){
+      const flip = !!this._placeFlip;
+      this._setShaped(x,y,z, SHAPE2.stair(heldId,f,flip,this._stairShapeFor(x,y,z,heldId,f,flip)));
+      this._refreshStairNeighbors(x,y,z);
+    } else if(SHAPE2.isSlab(heldId)){
+      this._setShaped(x,y,z, SHAPE2.slab(heldId, this._placeFlip ? 'top' : 'bottom'));
+    } else if(SHAPE2.isTrap(heldId)){
+      const n = this._placeNormal || [0,1,0];
+      // against a wall the plate sits on the wall side; on floors/ceilings it sits on the side facing the player
+      const side = n[1]===0 ? SHAPE.facingOf({x:-n[0], z:-n[2]}) : (f+2)%4;
+      this._setShaped(x,y,z, SHAPE2.trap(heldId, side, !!this._placeFlip, false));
+    }
     return 1;
+  }
+  /* ---- corner stairs (same rules as Minecraft) ---- */
+  _stairAt(x,y,z){ const d = BLOCKS[this.world.getBlock(x,y,z)]; return (d && d.stairBase) ? d : null; }
+  _stairShapeFor(x,y,z,base,f,flip){
+    const DIR = [[0,-1],[1,0],[0,1],[-1,0]];
+    const same = (d)=> d && !!d.flip === !!flip;
+    const canTake = (face)=>{ const d = this._stairAt(x+DIR[face][0], y, z+DIR[face][1]); return !d || d.facing!==f || !!d.flip!==!!flip; };
+    const ccw = (f+3)%4;
+    const front = this._stairAt(x+DIR[f][0], y, z+DIR[f][1]);
+    if(same(front) && (front.facing%2)!==(f%2) && canTake((front.facing+2)%4)) return front.facing===ccw ? 'ol' : 'or';
+    const back = this._stairAt(x-DIR[f][0], y, z-DIR[f][1]);
+    if(same(back) && (back.facing%2)!==(f%2) && canTake(back.facing)) return back.facing===ccw ? 'il' : 'ir';
+    return 'st';
+  }
+  _refreshStairShape(x,y,z){
+    const d = this._stairAt(x,y,z); if(!d) return;
+    const sh = this._stairShapeFor(x,y,z,d.stairBase,d.facing,d.flip);
+    if(sh===d.shape) return;
+    this._setShaped(x,y,z, SHAPE2.stair(d.stairBase,d.facing,d.flip,sh));
+  }
+  _refreshStairNeighbors(x,y,z){
+    for(const [dx,dz] of [[0,-1],[1,0],[0,1],[-1,0]]) this._refreshStairShape(x+dx,y,z+dz);
+  }
+  _toggleTrap(x,y,z){
+    const b = BLOCKS[this.world.getBlock(x,y,z)];
+    if(!b || !b.trapBase) return;
+    const open = !b.trapOpen;
+    playSfxUrl(open ? DOOR_OPEN_SOUND_URL : DOOR_CLOSE_SOUND_URL);
+    this._setShaped(x,y,z, SHAPE2.trap(b.trapBase, b.trapSide, b.trapTop, open));
   }
   _useBed(x,y,z){
     this.bedPos = {x,y,z};
@@ -7349,17 +7652,17 @@ class Game{
     // Food in hand: right-click eats it (unless you are using a table / furnace / bed / door instead)
     if(GAME_MODE==='survival' && ITEMS[this.selectedBlock] && ITEMS[this.selectedBlock].food){
       const hb = hit && BLOCKS[hit.id];
-      const interactive = !!(hb && (hit.id===18 || hb.isFurnace || hb.bedPart || hb.doorHalf));
+      const interactive = !!(hb && (hit.id===18 || hb.isFurnace || hb.bedPart || hb.doorHalf || hb.trapBase));
       if(!interactive){ this.tryEat(); return; }
     }
     if(ITEMS[this.selectedBlock] && ITEMS[this.selectedBlock].armorSlot){
       const hb3 = hit && BLOCKS[hit.id];
-      const interactive3 = !!(hb3 && (hit.id===18 || hb3.isFurnace || hb3.bedPart || hb3.doorHalf));
+      const interactive3 = !!(hb3 && (hit.id===18 || hb3.isFurnace || hb3.bedPart || hb3.doorHalf || hb3.trapBase));
       if(!interactive3){ this.equipHeldArmor(); return; }
     }
     if(ITEMS[this.selectedBlock] && ITEMS[this.selectedBlock].bucket){
       const hb2 = hit && BLOCKS[hit.id];
-      const interactive2 = !!(hb2 && (hit.id===18 || hb2.isFurnace || hb2.bedPart || hb2.doorHalf));
+      const interactive2 = !!(hb2 && (hit.id===18 || hb2.isFurnace || hb2.bedPart || hb2.doorHalf || hb2.trapBase));
       if(!interactive2){ this._useBucket(); return; }
     }
     if(!hit) return;
@@ -7367,8 +7670,10 @@ class Game{
     if(BLOCKS[hit.id].isFurnace){ this.toggleFurnacePanel(hit.x,hit.y,hit.z); return; } // furnace: interact instead of place
     if(BLOCKS[hit.id].bedPart){ this._useBed(hit.x,hit.y,hit.z); return; } // bed: sleep / set spawn
     if(BLOCKS[hit.id].doorHalf){ this._toggleDoor(hit.x,hit.y,hit.z); this._swingOnce(); return; } // door: open/close
+    if(BLOCKS[hit.id].trapBase){ this._toggleTrap(hit.x,hit.y,hit.z); this._swingOnce(); return; } // trapdoor: open/close
     const px = hit.x+hit.normal[0], py = hit.y+hit.normal[1], pz = hit.z+hit.normal[2];
     // stairs go upside-down when you click the underside of a block or the top half of a wall
+    this._placeNormal = hit.normal;
     this._placeFlip = false;
     if(hit.normal[1] < 0) this._placeFlip = true;
     else if(hit.normal[1] === 0){
@@ -7400,7 +7705,13 @@ class Game{
     if(GAME_MODE!=='creative'){
       if((this.inventoryCounts[heldId]||0)<=0) return;
     }
-    const shaped = this._placeShaped(px,py,pz,heldId);
+    // slabs: click the top of a bottom slab (or the underside of a top slab) of the same kind to make a double slab
+    let shaped;
+    const hd = BLOCKS[hit.id];
+    if(SHAPE2.isSlab(heldId) && hd && hd.slabBase===heldId && ((hd.slabHalf==='bottom' && hit.normal[1]>0) || (hd.slabHalf==='top' && hit.normal[1]<0))){
+      this._setShaped(hit.x,hit.y,hit.z, SHAPE2.slab(heldId,'double'));
+      shaped = 1;
+    } else shaped = this._placeShaped(px,py,pz,heldId);
     if(shaped<0) return;
     if(shaped===0){
       this.world.setBlock(px,py,pz,heldId);
@@ -7731,7 +8042,7 @@ class Game{
   }
   // sticks (100), apples (124), bananas (125)
   _spawnLeafBonus(x,y,z,scale,share){
-    for(const [id,chance] of [[100,0.50],[124,0.30],[125,0.22]]){
+    for(const [id,chance] of [[100,0.20],[124,0.08],[125,0.06]]){
       if(Math.random() >= chance*scale) continue;
       const a = Math.random()*Math.PI*2;
       const d = this._spawnDrop(id, 1, undefined, {
@@ -8054,14 +8365,14 @@ class Game{
     // Passive animals: keep a small population loosely near the player, on
     // grass, in daylight-agnostic fashion (they just don't like to spawn at
     // night, matching classic survival-game rules).
-    const maxAnimals = 26, maxHostiles = 12;
+    const maxAnimals = 40, maxHostiles = 24; // was 26 / 12
     const px = Math.floor(this.pos.x), pz = Math.floor(this.pos.z);
     // Roughly one attempt a second (frame-rate independent). Cows are favoured: the area around you
     // is topped up to a handful of cows first, then it's mostly cows with the odd pig.
     this._animalSpawnT = (this._animalSpawnT||0) + (delta||0.016);
-    if(this._animalSpawnT >= 0.5){
+    if(this._animalSpawnT >= 0.25){ // was every 0.5s
       this._animalSpawnT = 0;
-      if(this.animals.length < maxAnimals && !this.isNight && Math.random() < 0.65){
+      if(this.animals.length < maxAnimals && !this.isNight && Math.random() < 0.85){
         let cows = 0, nearCows = 0;
         for(const a of this.animals) if(a.kind==='cow'){ cows++; if(Math.hypot(a.pos.x-this.pos.x, a.pos.z-this.pos.z) < 48) nearCows++; }
         const ang = Math.random()*Math.PI*2, rad = 14 + Math.random()*24;
@@ -8070,7 +8381,7 @@ class Game{
         if(biome==='plains' || biome==='forest'){
           const ay = this.world.heightAt(ax,az)+1;
           if(this.isSolidAt(ax,ay-1,az) && !this.isSolidAt(ax,ay,az)){
-            const wantCow = cows < 16 && (nearCows < 6 || Math.random() < 0.6);
+            const wantCow = cows < 24 && (nearCows < 8 || Math.random() < 0.6);
             this.spawnAnimal(ax+0.5, ay, az+0.5, wantCow ? 'cow' : 'pig');
           }
         }
@@ -8078,9 +8389,9 @@ class Game{
     }
     // Hostiles: only after nightfall, only in genuinely dark spots (light
     // level low), never right on top of the player.
-    if(this.isNight && this.hostiles.length < maxHostiles && Math.random()<0.06){
-      const hx = px + Math.floor((Math.random()-0.5)*36);
-      const hz = pz + Math.floor((Math.random()-0.5)*36);
+    if(this.isNight && this.hostiles.length < maxHostiles && Math.random()<0.15){
+      const hx = px + Math.floor((Math.random()-0.5)*48);
+      const hz = pz + Math.floor((Math.random()-0.5)*48);
       const dist = Math.hypot(hx-this.pos.x, hz-this.pos.z);
       if(dist>10){
         const hy = this.world.heightAt(hx,hz)+1;
