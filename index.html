@@ -905,7 +905,7 @@
       <button class="vf-btn primary" id="createRoomBtn">Create Room</button>
     </div>
     <div class="menu-row" style="margin-top:8px;">
-      <input id="roomCodeInput" class="vf-input" style="margin-bottom:0; text-transform:uppercase; letter-spacing:3px; text-align:center;" placeholder="CODE" maxlength="4" autocomplete="off" autocapitalize="characters">
+      <input id="roomCodeInput" class="vf-input" style="margin-bottom:0; text-transform:uppercase; letter-spacing:3px; text-align:center;" placeholder="CODE" maxlength="22" autocomplete="off" autocapitalize="characters">
       <button class="vf-btn primary" id="joinRoomBtn" style="width:auto; flex:none; padding-left:16px; padding-right:16px;" >Join Room</button>
     </div>
     <div class="menu-row" style="margin-top:8px;">
@@ -4910,20 +4910,14 @@ try{ if(localStorage.getItem('vf_model_unlocked')==='1' && localStorage.getItem(
     try{ localStorage.setItem('vf_model_style', PLAYER_MODEL_STYLE); }catch(e){}
     sync();
   }));
-  let buf = '';
-  document.addEventListener('keydown', e=>{
-    if(menu.style.display === 'none') return;
-    const t = e.target;
-    if(t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return; // only when not typing in a field
-    if(!/^\d$/.test(e.key)) return;
-    buf = (buf + e.key).slice(-CODE.length);
-    if(buf === CODE){
-      buf = '';
-      try{ localStorage.setItem('vf_model_unlocked','1'); }catch(err){}
-      row.style.display = '';
-      row.animate([{transform:'scale(1.06)', filter:'brightness(1.6)'},{transform:'scale(1)', filter:'none'}], {duration:500, easing:'ease-out'});
-    }
-  });
+  // Called by the Join Room button when the room-code box holds the secret code.
+  window.vfTrySecretCode = (value)=>{
+    if(String(value||'').trim() !== CODE) return false;
+    try{ localStorage.setItem('vf_model_unlocked','1'); }catch(err){}
+    row.style.display = '';
+    row.animate([{transform:'scale(1.06)', filter:'brightness(1.6)'},{transform:'scale(1)', filter:'none'}], {duration:500, easing:'ease-out'});
+    return true;
+  };
 })();
 // Stable, human-shareable friend ID — separate from the ever-changing
 // Firebase anonymous auth uid and from the freely-editable display name.
@@ -12920,6 +12914,8 @@ window.addEventListener('DOMContentLoaded', ()=>{
     createRoom();
   });
   document.getElementById('joinRoomBtn').addEventListener('click', ()=>{
+    const rc = document.getElementById('roomCodeInput');
+    if(window.vfTrySecretCode && window.vfTrySecretCode(rc.value)){ rc.value = ''; return; }
     prepOnline();
     joinRoom(document.getElementById('roomCodeInput').value);
   });
@@ -12927,7 +12923,8 @@ window.addEventListener('DOMContentLoaded', ()=>{
     if(e.key==='Enter') document.getElementById('joinRoomBtn').click();
   });
   document.getElementById('roomCodeInput').addEventListener('input', (e)=>{
-    e.target.value = e.target.value.toUpperCase().slice(0,4);
+    const v = e.target.value.toUpperCase();
+    e.target.value = /^\d*$/.test(v) ? v.slice(0,22) : v.slice(0,4); // 22 digits are allowed only so the secret code fits
   });
   document.getElementById('soloBtn').addEventListener('click', ()=>{
     const name = document.getElementById('nameInput').value.trim();
