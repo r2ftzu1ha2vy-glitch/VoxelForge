@@ -5411,7 +5411,18 @@ let PLAYER_PALETTE = SKIN_PALETTES[0];
 let PLAYER_MODEL_STYLE = 'boy';
 try{ if(localStorage.getItem('vf_model_unlocked')==='1' && localStorage.getItem('vf_model_style')==='girl') PLAYER_MODEL_STYLE = 'girl'; }catch(e){}
 (function secretModelPicker(){
-  const CODE = '0011992288337733664455';
+  // The code itself is not in the source. Only a one-way hash of it is, split into pieces, so reading the page
+  // (or dev tools) shows nothing you can type back in. Anything typed is hashed the same way and compared.
+  const H = (str, seed)=>{
+    let h1 = 0xdeadbeef ^ seed, h2 = 0x41c6ce57 ^ seed;
+    for(let i=0, ch; i<str.length; i++){ ch = str.charCodeAt(i); h1 = Math.imul(h1 ^ ch, 2654435761); h2 = Math.imul(h2 ^ ch, 1597334677); }
+    h1 = Math.imul(h1 ^ (h1>>>16), 2246822507) ^ Math.imul(h2 ^ (h2>>>13), 3266489909);
+    h2 = Math.imul(h2 ^ (h2>>>16), 2246822507) ^ Math.imul(h1 ^ (h1>>>13), 3266489909);
+    return (h2>>>0).toString(16).padStart(8,'0') + (h1>>>0).toString(16).padStart(8,'0');
+  };
+  const SEEDS = [0x9e37, 0x7f4a];
+  const WANT = ['f696e3a0','8bbcbf1f','cdd3e65f','e90c51c0'];
+  const codeOk = (v)=>{ v = String(v||'').trim(); return (H(v, SEEDS[0]) + H(v, SEEDS[1])) === WANT.join(''); };
   const row = document.getElementById('modelRow'), menu = document.getElementById('menuScreen');
   if(!row || !menu) return;
   const sync = ()=> row.querySelectorAll('.modeBtn').forEach(b=> b.classList.toggle('selected', b.dataset.model === PLAYER_MODEL_STYLE));
@@ -5426,7 +5437,7 @@ try{ if(localStorage.getItem('vf_model_unlocked')==='1' && localStorage.getItem(
   }));
   // Called by the Join Room button when the room-code box holds the secret code.
   window.vfTrySecretCode = (value)=>{
-    if(String(value||'').trim() !== CODE) return false;
+    if(!codeOk(value)) return false;
     let isOn = false;
     try{ isOn = localStorage.getItem('vf_model_unlocked') === '1'; }catch(err){}
     if(isOn){
