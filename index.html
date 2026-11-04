@@ -4,10 +4,16 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>Voxel Forge</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&display=swap" rel="stylesheet">
+<link rel="preload" href="assets/fonts/VoxelPixel.woff2" as="font" type="font/woff2" crossorigin>
 <style>
+  /* ---------- Pixel font (built from Pixel-Art_Font_Sprite_Sheet.png) ---------- */
+  @font-face{
+    font-family:'VoxelPixel';
+    src:url('assets/fonts/VoxelPixel.woff2') format('woff2'), url('assets/fonts/VoxelPixel.ttf') format('truetype');
+    font-weight:100 900;   /* one weight only -> stops browsers from faux-bolding the pixels */
+    font-style:normal;
+    font-display:swap;
+  }
   :root{
     --vf-orange:#e0742a;
     --vf-dark:#141821;
@@ -15,19 +21,21 @@
     --vf-line:#3a4257;
     --vf-green:#5fbf6a;
     --vf-red:#d1495b;
+    --vf-font:'VoxelPixel','Segoe UI',Verdana,Geneva,sans-serif;
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  button,input,select,textarea{font-family:inherit;}
   html,body{
     margin:0; padding:0; width:100%; height:100%; overflow:hidden;
-    background:#0a0c12; font-family:'Segoe UI', Verdana, Geneva, sans-serif;
+    background:#0a0c12; font-family:var(--vf-font); font-synthesis:none;
     color:#e8ecf5; user-select:none;
   }
   #gameCanvas{position:fixed; inset:0; display:block; outline:none;}
 
   /* ---------- pixel font look for headings ---------- */
   .vf-title{
-    font-family: 'Courier New', monospace;
-    font-weight:900;
+    font-family: var(--vf-font);
+    font-weight:400;
     letter-spacing:2px;
     text-shadow: 3px 3px 0 #00000080;
   }
@@ -127,7 +135,7 @@
 
   #debugPanel{
     position:absolute; top:10px; left:10px; background:#00000090; padding:8px 12px;
-    border-radius:4px; font-size:12px; line-height:1.6; font-family:monospace;
+    border-radius:4px; font-size:12px; line-height:1.6; font-family:var(--vf-font);
     pointer-events:none; color:#d7ffb0;
   }
 
@@ -139,7 +147,7 @@
   .plEntry{display:flex; align-items:center; gap:6px;}
   .plDot{width:8px; height:8px; border-radius:50%; background:var(--vf-green); flex:none;}
   .plEntry{flex-wrap:wrap;}
-  .plPos{flex:1 0 100%; font-family:monospace; font-size:10px; line-height:1.3; color:#9fe3a0; padding-left:14px; margin-bottom:2px; white-space:nowrap;}
+  .plPos{flex:1 0 100%; font-family:var(--vf-font); font-size:10px; line-height:1.3; color:#9fe3a0; padding-left:14px; margin-bottom:2px; white-space:nowrap;}
 
   #dayNightIndicator{
     position:absolute; top:10px; left:50%; transform:translateX(-50%);
@@ -460,7 +468,7 @@
   }
   #loadScene{display:block; width:100%; height:auto; image-rendering:pixelated; image-rendering:crisp-edges; image-rendering:pixelated;
     background:linear-gradient(#202a40,#121722); border:2px solid #0a0c12; border-radius:3px;}
-  .loadPct{margin-top:10px; font:900 26px 'Courier New',monospace; letter-spacing:2px; color:var(--vf-orange); text-shadow:3px 3px 0 #00000080;}
+  .loadPct{margin-top:10px; font:400 26px var(--vf-font); letter-spacing:2px; color:var(--vf-orange); text-shadow:3px 3px 0 #00000080;}
   #loadingScreen .loadLabel{font-size:12px; color:#9aa4c0;}
   #loadingScreen .loadTip{
     font-size:11px; color:#6f7994; max-width:320px; text-align:center;
@@ -524,7 +532,7 @@
   #deathScreen{
     position:fixed; inset:0; z-index:9000; display:none; flex-direction:column; align-items:center; justify-content:center;
     gap:clamp(14px,3vh,30px); padding:24px; box-sizing:border-box; text-align:center; color:#fff;
-    font-family:'Cinzel','Trajan Pro','Palatino Linotype',Georgia,serif;
+    font-family:var(--vf-font);
     background:radial-gradient(ellipse at center, rgba(70,0,0,.45) 0%, rgba(18,0,0,.88) 70%, rgba(6,0,0,.96) 100%);
     opacity:0; transition:opacity 1.6s ease; -webkit-user-select:none; user-select:none;
   }
@@ -542,7 +550,7 @@
   #deathScreen.show .dsCause{animation:dsGrow 3s cubic-bezier(.16,.84,.28,1) 1.1s forwards;}
   @keyframes dsGrow{0%{opacity:0; transform:scale(.2);} 45%{opacity:1;} 100%{opacity:1; transform:scale(1);}}
   #deathScreen .dsBtn{
-    margin-top:clamp(6px,2vh,22px); font:700 clamp(15px,2.6vw,24px) 'Cinzel',Georgia,serif; letter-spacing:.2em; text-transform:uppercase;
+    margin-top:clamp(6px,2vh,22px); font:400 clamp(15px,2.6vw,24px) var(--vf-font); letter-spacing:.2em; text-transform:uppercase;
     color:#fff; background:#00000066; border:2px solid #d8382f; border-radius:3px; padding:.75em 2.4em; cursor:pointer;
     opacity:0; transform:translateY(10px); pointer-events:none; transition:opacity .9s ease, transform .9s ease, background .2s, box-shadow .2s;
     touch-action:manipulation;
@@ -639,7 +647,7 @@
   /* ---------- chat ---------- */
   #chatBox{justify-content:flex-end; overflow:hidden; max-height:230px;}
   .chatMsg{line-height:1.35;}
-  .chatMsg .t{opacity:.5; font-size:10px; margin-right:5px; font-family:monospace;}
+  .chatMsg .t{opacity:.5; font-size:10px; margin-right:5px; font-family:var(--vf-font);}
   .chatMsg.sys{color:#c9d2e8; border-left:3px solid var(--vf-orange); background:#00000085;}
   .chatMsg.act{font-style:italic; color:#e6d9ff;}
   .chatMsg.mention{background:#e0742a66;}
@@ -1240,6 +1248,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 
 <script>
+try{ document.fonts.load("32px 'VoxelPixel'"); }catch(e){}  // so canvas name tags get the pixel font
 /* =========================================================================
    VOXEL FORGE
    A blocky, chunked voxel sandbox with procedural generation, face culling,
@@ -9728,7 +9737,7 @@ class Game{
     // name tag sprite
     const tagCanvas = document.createElement('canvas'); tagCanvas.width=256; tagCanvas.height=64;
     const tctx = tagCanvas.getContext('2d');
-    tctx.font='bold 32px monospace'; tctx.fillStyle='#fff'; tctx.textAlign='center';
+    tctx.font="32px 'VoxelPixel', monospace"; tctx.fillStyle='#fff'; tctx.textAlign='center';
     tctx.strokeStyle='#000'; tctx.lineWidth=4;
     tctx.strokeText(data.name||'Player', 128, 40);
     tctx.fillText(data.name||'Player', 128, 40);
