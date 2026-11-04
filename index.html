@@ -4872,14 +4872,38 @@ function clampBust(v){ v = Number(v); return Number.isFinite(v) ? Math.max(0, Ma
 // radii (skin pixels) for a given size 0..100; shared by the 3D model and the Skin Studio side preview
 function bustDims(size){
   const m = clampBust(size)/100;
-  const rx = 1.6*(0.75+0.5*m+0.3*m*m)*(1+0.16*m*m);
-  return { rx, ry:1.45*(0.7+0.5*m+0.2*m*m)*(1+0.22*m*m), rz:1.4*(0.6+0.9*m+0.8*m*m)*(1+0.28*m*m), gap:Math.max(1.2, Math.min(1.55+0.3*(0.75+0.5*m), 4.1-rx)) };
+  // slider reads 0-100. Natural proportions: base width stays within its half of the chest, projection (rz) is about
+  // as much as the base radius, and larger sizes hang lower the way heavier tissue does (ptosis).
+  const t = Math.pow(m, 2.5);
+  const rx = Math.min(1.6*(0.75+0.5*m+0.3*m*m)*(1+0.16*m*m), 2.7);
+  const ry = 1.45*(0.7+0.5*m+0.2*m*m)*(1+0.22*m*m)*(1+1.1*t);
+  const rz = 1.4*(0.6+0.9*m+0.8*m*m)*(1+0.28*m*m)*(1+0.8*t);
+  const sg = Math.max(0, Math.min(1, (m - 0.3)/0.7)), sag = sg*sg*(3 - 2*sg);
+  return { rx, ry, rz, gap:Math.max(1.2, Math.min(1.55+0.3*(0.75+0.5*m), 4.1-rx)), lower:0.3*Math.max(0, ry-2.5) + 0.6*sag, sag };
 }
 const BUST_JIGGLE_MAX = 2.4;   // px of travel
 function createBust(P, tex, chestUV){
   const root = new THREE.Group();            // lives on the torso mesh
   const sides = [];
-  const geo = new THREE.SphereGeometry(1, 22, 16);   // smooth ellipsoid so it reads as a rounded curve, not a block
+  // Sphere with a natural profile (unit space, front = -z):
+  //  - the back is flat against the ribcage (no volume behind the chest surface)
+  //  - the upper part slopes gently into the chest, the lower part is fuller (teardrop profile)
+  //  - the point of greatest projection sits a little below the middle
+  const geo = new THREE.SphereGeometry(1, 28, 20);
+  geo.rotateY(Math.PI/2);        // put the sphere's UV seam at the back, where it is hidden
+  {
+    const pos = geo.attributes.position;
+    for(let i=0; i<pos.count; i++){
+      let x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+      if(z > 0) z *= 0.12;
+      if(y > 0){ y *= 0.8; z *= 1 - 0.3*y; x *= 1 - 0.12*y; }
+      else { const f = 1 + 0.15*(-y); x *= f; z *= f; }
+      y -= 0.1;
+      pos.setXYZ(i, x, y, z);
+    }
+    pos.needsUpdate = true;
+    geo.computeVertexNormals();
+  }
   { // every vertex samples one pixel of the shirt, so the bust takes the shirt colour from any skin
     const uv = geo.attributes.uv, u = (chestUV[0]+0.5)/64, v = 1 - (chestUV[1]+0.5)/64;
     for(let i=0; i<uv.count; i++) uv.setXY(i, u, v);
@@ -4888,7 +4912,7 @@ function createBust(P, tex, chestUV){
     const pos = geo.attributes.position, col = new Float32Array(pos.count*3);
     for(let i=0; i<pos.count; i++){
       const y = pos.getY(i), z = pos.getZ(i);
-      const k = 0.78 + 0.18*(y*0.5+0.5) + 0.04*Math.max(0, -z);
+      const k = 0.72 + 0.26*Math.max(0, Math.min(1, y*0.6+0.5)) + 0.03*Math.max(0, -z);
       col[i*3] = col[i*3+1] = col[i*3+2] = k;
     }
     geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
@@ -4959,8 +4983,12 @@ function createBust(P, tex, chestUV){
       for(const s of sides){
         s.mesh.scale.set(d.rx*P, d.ry*P, d.rz*P);
         s.pivot.userData.bx = s.sgn*d.gap*P;
-        s.pivot.userData.by = 3.2*P;   // chest height (shoulders are at +6)
-        s.pivot.userData.bz = -(1.9 + 0.42*d.rz)*P;
+        s.pivot.userData.by = (3.2 - d.lower)*P;   // chest height (shoulders are at +6); big sizes sit a bit lower
+        s.pivot.userData.bz = -(1.6 + 0.12*d.rz)*P;   // back of the dome sits just inside the chest wall
+        s.pivot.userData.bx += s.sgn*0.3*d.sag*P;          // heavier tissue spreads slightly outward
+        s.pivot.userData.tx = -0.30*d.sag;                   // projection angles downward with weight
+        s.pivot.userData.tz = s.sgn*0.18*d.sag;              // and a little outward
+        s.pivot.rotation.z = s.pivot.userData.tz;
         s.pivot.position.set(s.pivot.userData.bx, s.pivot.userData.by, s.pivot.userData.bz);
         if(s.armorMesh) s.armorMesh.scale.copy(s.mesh.scale).multiplyScalar(1.14);
       }
@@ -4998,13 +5026,16 @@ function createBust(P, tex, chestUV){
       this.flutter += dt*(34 + Math.min(20, Math.abs(vy)));
       const flutter = airborne ? Math.sin(this.flutter) * Math.min(1, Math.abs(vy)/14) * 0.55 : 0;
       const n = Math.max(1, Math.ceil(dt/0.008)), h = dt/n;
+      const mf = 1 + 1.4*(this.size/100);
       for(let si=0; si<sides.length; si++){
         const s = sides[si];
         s.v -= kick*(si ? 0.93 : 1);                // body goes up -> bust lags down (springs differ a little so the sides drift apart)
         // gravity unloading: while falling the bust floats up a little
         const lift = airborne && vy < -2 ? Math.min(1.1, -vy/22) : 0;
         for(let i=0; i<n; i++){
-          const a = -s.k*(s.x - lift) - s.c*s.v;
+          // tissue mass grows with size: lower natural frequency, damping ratio held near 0.3 (soft tissue is well damped)
+          const kk = s.k/mf, cc = 2*0.3*Math.sqrt(kk)*(si ? 0.92 : 1);
+          const a = -kk*(s.x - lift) - cc*s.v;
           s.v += a*h; s.x += s.v*h;
         }
         if(s.x > BUST_JIGGLE_MAX) { s.x = BUST_JIGGLE_MAX; s.v *= 0.3; }
@@ -5013,7 +5044,8 @@ function createBust(P, tex, chestUV){
         const u = s.pivot.userData;
         s.pivot.position.set(u.bx + s.sgn*off*0.12*P, u.by + off*P, u.bz - Math.abs(off)*0.1*P);
         s.pivot.scale.set(1 + Math.abs(off)*0.035, 1 - off*0.05, 1 + Math.abs(off)*0.035);
-        s.pivot.rotation.x = off*0.06;
+        s.pivot.rotation.x = (u.tx || 0) + off*0.06;
+        s.pivot.rotation.z = u.tz || 0;
       }
     }
   };
@@ -5395,6 +5427,16 @@ try{ if(localStorage.getItem('vf_model_unlocked')==='1' && localStorage.getItem(
   // Called by the Join Room button when the room-code box holds the secret code.
   window.vfTrySecretCode = (value)=>{
     if(String(value||'').trim() !== CODE) return false;
+    let isOn = false;
+    try{ isOn = localStorage.getItem('vf_model_unlocked') === '1'; }catch(err){}
+    if(isOn){
+      // typing the code again locks it: hide the model buttons and go back to the boy model
+      try{ localStorage.removeItem('vf_model_unlocked'); localStorage.setItem('vf_model_style','boy'); }catch(err){}
+      PLAYER_MODEL_STYLE = 'boy';
+      sync();
+      row.style.display = 'none';
+      return true;
+    }
     try{ localStorage.setItem('vf_model_unlocked','1'); }catch(err){}
     row.style.display = '';
     row.animate([{transform:'scale(1.06)', filter:'brightness(1.6)'},{transform:'scale(1)', filter:'none'}], {duration:500, easing:'ease-out'});
@@ -10142,14 +10184,27 @@ class Game{
   }
   cycleView(){
     this.viewMode = (this.viewMode + 1) % 3;
-    this.selfModel.group.visible = this.viewMode !== 0;
+    this._syncSelfVisibility();
     if(this.selfModel.bust) this.selfModel.bust._prevEff = null;   // no phantom kick from time spent in first person
     this._updateHeldItem();
     this.showCenterMsg(['First person','Behind you','In front of you'][this.viewMode], 900);
   }
+  // Third person: whole model. First person: nothing, except a big bust, which you can see when you look down
+  // (then the torso + bust are shown, with head, hair, arms and legs hidden).
+  _syncSelfVisibility(){
+    const m = this.selfModel; if(!m) return;
+    const fp = !this.viewMode, P = m.parts;
+    const showBust = !!(fp && m.bust && m.bust.size >= 35);
+    m.group.visible = !fp || showBust;
+    for(const k of ['head','armL','armR','legL','legR']) if(P[k]) P[k].visible = !fp;
+    if(m.hair) m.hair.pivot.visible = !fp;
+    m._fpOn = showBust;
+  }
   _updateSelfModel(delta){
     const m = this.selfModel;
-    if(!m || !this.viewMode) return;
+    if(!m) return;
+    this._syncSelfVisibility();
+    if(!this.viewMode && !m._fpOn) return;
     const g = m.group, P = m.parts;
     setModelHeld(m, this.selectedBlock); // keep the third-person model's held item in sync
     const speed = Math.hypot(this.vel.x, this.vel.z);
@@ -12850,12 +12905,19 @@ function initSkinStudio(){
     face(0,8,8,8, 4,0);                    // head side
     face(32,8,8,8, 4,0);                   // hair layer
     if(PLAYER_BUST_SIZE > 0){
-      const cx = (10 + (0.42*d.rz - 0.1))*S, cy = (8 + 2.8 - bounce.x)*S;
+      const cx = (10 + (0.12*d.rz - 0.4))*S, cy = (8 + 2.8 + d.lower - bounce.x)*S;
       x.fillStyle = col;
       const bw = d.rz*S*2, bh = d.ry*S*2*(1 + Math.abs(bounce.x)*0.03);
-      x.beginPath(); x.ellipse(Math.round(cx), Math.round(cy), bw/2, bh/2, 0, 0, Math.PI*2); x.fill();
+      // dome on the chest wall: full front, flat back, fuller below; hangs by the same angle as in game
+      const ey = d.ry*S*0.9;
+      x.save(); x.translate(Math.round(cx), Math.round(cy)); x.rotate(0.3*d.sag);
+      x.beginPath();
+      x.ellipse(0, 0, d.rz*S, ey, 0, -Math.PI/2, Math.PI/2);
+      x.ellipse(0, 0, 0.12*d.rz*S, ey, 0, Math.PI/2, Math.PI*1.5);
+      x.closePath(); x.fill();
       x.fillStyle = 'rgba(0,0,0,0.22)';
-      x.beginPath(); x.ellipse(Math.round(cx), Math.round(cy + 2), bw/2 - 1, bh/2 - 2, 0, 0.15*Math.PI, 0.85*Math.PI); x.fill();
+      x.beginPath(); x.ellipse(0, ey*0.3, d.rz*S*0.85, ey*0.62, 0, 0, Math.PI); x.fill();
+      x.restore();
     }
     face(40,20,4,12, 6,8);                 // arm in front of the torso
   }
