@@ -880,6 +880,10 @@
     <input id="nameInput" class="vf-input" placeholder="Your name" maxlength="16">
     <div class="uidNote" id="uidNote"></div>
     <div class="skin-select" id="skinSelect"></div>
+    <div class="modeRow" id="modelRow" style="display:none; margin-bottom:12px;">
+      <div class="modeBtn selected" data-model="boy">BOY MODEL</div>
+      <div class="modeBtn" data-model="girl">GIRL MODEL</div>
+    </div>
     <button class="vf-btn" id="openSkinStudio" style="margin:0 0 12px;"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20l1-4L16.5 4.5a2 2 0 0 1 3 3L8 19z"/></svg>Skin Studio</button>
 
     <div class="modeRow" id="modeRow">
@@ -4670,7 +4674,8 @@ function setModelHeld(rec, rawId){
 
 // Build the blocky player (head, body, 2 arms, 2 legs + outer layers).
 // Returns {group, parts:{head,body,armL,armR,legL,legR}} for animation.
-function buildPlayerModel(palette, skinCanvas){
+function buildPlayerModel(palette, skinCanvas, style){
+  const girl = style === 'girl';
   const canvas = skinCanvas || drawDefaultSkin(palette || SKIN_PALETTES[0]);
   const tex = new THREE.CanvasTexture(canvas);
   tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.NearestFilter;
@@ -4683,13 +4688,14 @@ function buildPlayerModel(palette, skinCanvas){
   group.rotation.order = 'YXZ';
   const parts = {};
 
-  function limb(name, pivot, offset){
+  function limb(name, pivot, offset, sx){
     const def = LIMB_DEFS[name];
     const w = def.w*P, h = def.h*P, d = def.d*P;
     const base = skinBox(w, h, d, faceRects(def, def.uv), 0);
     base.translate(offset[0], offset[1], offset[2]);
     const mesh = new THREE.Mesh(base, matBase);
     mesh.position.set(pivot[0], pivot[1], pivot[2]);
+    if(sx) mesh.scale.x = sx; // narrower torso / slimmer arms for the girl model (UVs stay the same)
     const lay = skinBox(w, h, d, faceRects(def, def.ov), P*0.5);
     lay.translate(offset[0], offset[1], offset[2]);
     mesh.add(new THREE.Mesh(lay, matLayer));
@@ -4700,9 +4706,19 @@ function buildPlayerModel(palette, skinCanvas){
   const legTop = 12*P, shoulder = 24*P;
   limb('legR',  [ 2*P, legTop, 0], [0, -6*P, 0]);
   limb('legL',  [-2*P, legTop, 0], [0, -6*P, 0]);
-  limb('body',  [0, legTop + 6*P, 0], [0, 0, 0]);
-  limb('armR',  [ 6*P, shoulder, 0], [0, -6*P, 0]);
-  limb('armL',  [-6*P, shoulder, 0], [0, -6*P, 0]);
+  limb('body',  [0, legTop + 6*P, 0], [0, 0, 0], girl ? 0.88 : 0);
+  limb('armR',  [ (girl ? 5.1 : 6)*P, shoulder, 0], [0, -6*P, 0], girl ? 0.75 : 0);
+  limb('armL',  [-(girl ? 5.1 : 6)*P, shoulder, 0], [0, -6*P, 0], girl ? 0.75 : 0);
+  if(girl){
+    // modest chest shape: two small blocks on the front of the torso, textured from the shirt so they blend in
+    const sample = [22,23,2,2];
+    const rects = { top:sample, bottom:sample, right:sample, front:sample, left:sample, back:sample };
+    [-1,1].forEach(sgn=>{
+      const g = skinBox(3.6*P, 2.8*P, 1.4*P, rects, 0);
+      g.translate(sgn*1.9*P, 1.6*P, -2.5*P);   // front of the model is -z
+      parts.body.add(new THREE.Mesh(g, matBase));
+    });
+  }
   limb('head',  [0, shoulder, 0], [0, 4*P, 0]);
 
   return { group, parts, canvas };
@@ -4877,6 +4893,38 @@ function applyMiningImagesToGame(){
 const KEY = {};
 let PLAYER_NAME = 'Steve';
 let PLAYER_PALETTE = SKIN_PALETTES[0];
+// Body model: 'boy' (default) or 'girl'. The picker stays hidden until the secret menu code is typed.
+let PLAYER_MODEL_STYLE = 'boy';
+try{ if(localStorage.getItem('vf_model_unlocked')==='1' && localStorage.getItem('vf_model_style')==='girl') PLAYER_MODEL_STYLE = 'girl'; }catch(e){}
+(function secretModelPicker(){
+  const CODE = '0011992288337733664455';
+  const row = document.getElementById('modelRow'), menu = document.getElementById('menuScreen');
+  if(!row || !menu) return;
+  const sync = ()=> row.querySelectorAll('.modeBtn').forEach(b=> b.classList.toggle('selected', b.dataset.model === PLAYER_MODEL_STYLE));
+  let unlocked = false;
+  try{ unlocked = localStorage.getItem('vf_model_unlocked') === '1'; }catch(e){}
+  if(unlocked) row.style.display = '';
+  sync();
+  row.querySelectorAll('.modeBtn').forEach(b=> b.addEventListener('click', ()=>{
+    PLAYER_MODEL_STYLE = b.dataset.model;
+    try{ localStorage.setItem('vf_model_style', PLAYER_MODEL_STYLE); }catch(e){}
+    sync();
+  }));
+  let buf = '';
+  document.addEventListener('keydown', e=>{
+    if(menu.style.display === 'none') return;
+    const t = e.target;
+    if(t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return; // only when not typing in a field
+    if(!/^\d$/.test(e.key)) return;
+    buf = (buf + e.key).slice(-CODE.length);
+    if(buf === CODE){
+      buf = '';
+      try{ localStorage.setItem('vf_model_unlocked','1'); }catch(err){}
+      row.style.display = '';
+      row.animate([{transform:'scale(1.06)', filter:'brightness(1.6)'},{transform:'scale(1)', filter:'none'}], {duration:500, easing:'ease-out'});
+    }
+  });
+})();
 // Stable, human-shareable friend ID — separate from the ever-changing
 // Firebase anonymous auth uid and from the freely-editable display name.
 // Persisted locally so it survives reloads (like a Discord tag / Xbox gamertag).
@@ -9296,7 +9344,7 @@ class Game{
     this._handScene.add(this._handAmb, this._handSun);
     this._handRoot = new THREE.Group();
     this._handScene.add(this._handRoot);
-    const built = buildPlayerModel(PLAYER_PALETTE, activeSkinCanvas());
+    const built = buildPlayerModel(PLAYER_PALETTE, activeSkinCanvas(), PLAYER_MODEL_STYLE);
     this._handArm = built.parts.armR; this._handArm.position.set(0, 0, 0);
     this._handId = -1; this._equip = 1; this._swingOneT = 0; this._swingPh = 0; this._swingActive = false;
     this._handPreset = null;
@@ -9586,7 +9634,7 @@ class Game{
 
   /* ---------------- Own player model (third-person view) ---------------- */
   _initSelfModel(){
-    const built = buildPlayerModel(PLAYER_PALETTE, activeSkinCanvas());
+    const built = buildPlayerModel(PLAYER_PALETTE, activeSkinCanvas(), PLAYER_MODEL_STYLE);
     built.group.visible = false;
     this.scene.add(built.group);
     this.selfModel = built;
@@ -10118,7 +10166,7 @@ class Game{
     });
     // If the database rules don't allow the optional "held" field, the whole write
     // is rejected and multiplayer dies. Detect that once, drop the field, carry on.
-    const stripHeld = (rec)=>{ if(this._noHeldSync){ delete rec.held; delete rec.armor; } return rec; };
+    const stripHeld = (rec)=>{ if(this._noHeldSync){ delete rec.held; delete rec.armor; delete rec.model; } return rec; };
     const onWriteFail = (err, retry)=>{
       const denied = err && /permission|denied|validat/i.test(String(err.code||'') + ' ' + String(err.message||''));
       if(denied && !this._noHeldSync){
@@ -10130,7 +10178,7 @@ class Game{
       }
     };
     const fullRecord = ()=> stripHeld(Object.assign({
-      name: PLAYER_NAME.slice(0,16), playerId: PLAYER_ID, palette: PLAYER_PALETTE, t: Date.now()
+      name: PLAYER_NAME.slice(0,16), playerId: PLAYER_ID, palette: PLAYER_PALETTE, model: PLAYER_MODEL_STYLE, t: Date.now()
     }, motion()));
     // (re)create the record whenever we (re)connect, so a dropped connection that
     // removed it via onDisconnect never leaves us invisible
@@ -10231,7 +10279,7 @@ class Game{
   _addOtherPlayer(uid, data){
     if(this.otherPlayers.has(uid)) return;
     const palette = data.palette || SKIN_PALETTES[0];
-    const built = buildPlayerModel(palette, (this._remoteSkins && this._remoteSkins[uid]) || null);
+    const built = buildPlayerModel(palette, (this._remoteSkins && this._remoteSkins[uid]) || null, data.model === 'girl' ? 'girl' : 'boy');
     this.scene.add(built.group);
 
     // name tag sprite
@@ -10259,7 +10307,7 @@ class Game{
       ryaw: Number.isFinite(data.yaw)?data.yaw:0, rpitch: Number.isFinite(data.pitch)?data.pitch:0, spd:0,
       buf: [{ t: performance.now(), x:x0, y:y0, z:z0, yaw: Number.isFinite(data.yaw)?data.yaw:0, pitch: Number.isFinite(data.pitch)?data.pitch:0 }],
       name: data.name||'Player', playerId: data.playerId||null,
-      heldId: 0, heldObj: null, lastData: data, heldRaw: data.held,
+      style: data.model === 'girl' ? 'girl' : 'boy', heldId: 0, heldObj: null, lastData: data, heldRaw: data.held,
     });
     setModelHeld(this.otherPlayers.get(uid), data.held);
     setModelArmor(this.otherPlayers.get(uid), data.armor);
@@ -10267,6 +10315,7 @@ class Game{
   _updateOtherPlayer(uid, data){
     const p = this.otherPlayers.get(uid);
     if(!p){ this._addOtherPlayer(uid,data); return; }
+    if((data.model === 'girl' ? 'girl' : 'boy') !== (p.style || 'boy')){ this._removeOtherPlayer(uid); this._addOtherPlayer(uid,data); return; }
     // Defend against any missing/NaN fields in the remote payload — a bad
     // Vector3 here propagates through lerp() into the object's world
     // matrix and can throw inside renderer.render(), which kills the
