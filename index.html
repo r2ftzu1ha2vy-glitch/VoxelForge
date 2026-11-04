@@ -689,6 +689,11 @@
     background:repeating-conic-gradient(#2a3042 0% 25%, #222838 0% 50%) 50% / 16px 16px;
   }
   #skinApply{margin-top:10px;}
+  .bustRow{display:flex; align-items:center; gap:10px; margin:10px 0 4px; padding:8px 10px; background:#0e111a; border:2px solid var(--vf-line); border-radius:4px;}
+  .bustRow label{flex:none; font-size:13px; letter-spacing:1px; color:#ffd2a8;}
+  .bustRow input[type=range]{flex:1 1 auto; min-width:0; accent-color:var(--vf-orange);}
+  .bustRow span{flex:none; width:28px; text-align:right; font-size:13px; color:#fff;}
+  #skinPrevSide{cursor:pointer;}
 
   /* ---------- mobile layout ---------- */
   @media (pointer:coarse){
@@ -1084,6 +1089,7 @@
       <div class="skinPrevWrap">
         <canvas id="skinPrevFront" width="80" height="160"></canvas>
         <canvas id="skinPrevBack" width="80" height="160"></canvas>
+        <canvas id="skinPrevSide" width="80" height="160" style="display:none" title="Side view (tap to bounce)"></canvas>
       </div>
       <div class="skinMain">
         <div class="partRow" id="skinParts"></div>
@@ -1099,6 +1105,12 @@
       <button class="toolBtn" id="skinUndo">Undo</button>
     </div>
     <div class="swRow" id="skinSwatches"></div>
+    <div class="bustRow" id="bustRow" style="display:none">
+      <label for="bustSlider">Bust size</label>
+      <input type="range" id="bustSlider" min="0" max="100" step="1" value="50">
+      <span id="bustVal">50</span>
+      <button class="toolBtn" id="bustBounce">Bounce</button>
+    </div>
     <div class="toolRow">
       <button class="toolBtn" id="skinImport">Import PNG</button>
       <button class="toolBtn" id="skinExport">Export PNG</button>
@@ -4366,7 +4378,7 @@ const SKIN_PALETTES = [
 let CUSTOM_SKIN_CANVAS = null;
 let USE_CUSTOM_SKIN = false;
 function activeSkinCanvas(){
-  return (USE_CUSTOM_SKIN && CUSTOM_SKIN_CANVAS) ? CUSTOM_SKIN_CANVAS : drawDefaultSkin(PLAYER_PALETTE);
+  return (USE_CUSTOM_SKIN && CUSTOM_SKIN_CANVAS) ? CUSTOM_SKIN_CANVAS : drawDefaultSkin(PLAYER_PALETTE, PLAYER_MODEL_STYLE === 'girl' ? 'girl' : 'boy');
 }
 
 function cloneCanvas(src){
@@ -4376,59 +4388,172 @@ function cloneCanvas(src){
 }
 
 // Built-in skin, drawn straight into the standard layout.
-function drawDefaultSkin(p){
+// style: 'boy' (default) or 'girl'. Hair is painted on both the base head and the overlay (hat) layer so it has
+// real thickness in 3D; the rest of the sheet is shaded pixel art (face, clothes, boots).
+function drawDefaultSkin(p, style){
   p = p || SKIN_PALETTES[0];
+  const girl = style === 'girl';
   const c = makeCanvas(64);
   const x = c.getContext('2d', { willReadFrequently:true });
   x.imageSmoothingEnabled = false;
-  const R = k => faceRects(LIMB_DEFS[k], LIMB_DEFS[k].uv);
+  const R  = k => faceRects(LIMB_DEFS[k], LIMB_DEFS[k].uv);
+  const RO = k => faceRects(LIMB_DEFS[k], LIMB_DEFS[k].ov);
   const fillR = (r, col) => { x.fillStyle = col; x.fillRect(r[0], r[1], r[2], r[3]); };
   const sub = (r, ox, oy, w, h, col) => { x.fillStyle = col; x.fillRect(r[0]+ox, r[1]+oy, w, h); };
+  const px1 = (r, ox, oy, col) => sub(r, ox, oy, 1, 1, col);
+  const SIDES = ['right','front','left','back'];
 
-  // head
-  const hd = R('head');
-  FACE_NAMES.forEach(f => fillR(hd[f], p.skin));
-  fillR(hd.top, p.hair);
-  sub(hd.front, 0, 0, 8, 2, p.hair); sub(hd.front, 0, 2, 1, 2, p.hair); sub(hd.front, 7, 2, 1, 2, p.hair);
-  sub(hd.right, 0, 0, 8, 2, p.hair); sub(hd.right, 0, 2, 3, 4, p.hair);
-  sub(hd.left,  0, 0, 8, 2, p.hair); sub(hd.left,  5, 2, 3, 4, p.hair);
-  sub(hd.back,  0, 0, 8, 6, p.hair);
-  sub(hd.front, 1, 3, 2, 1, shade(p.hair, 10)); sub(hd.front, 5, 3, 2, 1, shade(p.hair, 10));      // brows
-  sub(hd.front, 1, 4, 2, 1, '#f3f3f3'); sub(hd.front, 5, 4, 2, 1, '#f3f3f3');                       // eye whites
-  sub(hd.front, 2, 4, 1, 1, '#2b3a67'); sub(hd.front, 5, 4, 1, 1, '#2b3a67');                       // pupils
-  sub(hd.front, 3, 5, 2, 1, shade(p.skin, -16));                                                    // nose
-  sub(hd.front, 2, 6, 4, 1, shade(p.skin, -42));                                                    // mouth
+  const skin = p.skin, skinD = shade(p.skin, -18), skinDD = shade(p.skin, -40), skinL = shade(p.skin, 12);
+  const hair = p.hair, hairL = shade(p.hair, 22), hairD = shade(p.hair, -16);
+  const eyeCol = girl ? '#2f7f6f' : '#2f4f93';
+  const _sk = hexToRgb(p.skin), blush = rgbToHex(_sk[0]+6, _sk[1]-26, _sk[2]-22);
+  const lip = girl ? '#c4566a' : skinDD;
 
-  // body
+  // ---------------- head (base layer) ----------------
+  const hd = R('head'), ho = RO('head');
+  FACE_NAMES.forEach(f => fillR(hd[f], skin));
+  // soft jaw / forehead shading
+  sub(hd.front, 0, 7, 8, 1, skinD); sub(hd.front, 0, 6, 1, 2, skinD); sub(hd.front, 7, 6, 1, 2, skinD);
+  sub(hd.right, 0, 7, 8, 1, skinD); sub(hd.left, 0, 7, 8, 1, skinD);
+  fillR(hd.bottom, skinD);
+  // base hair (so no skin ever shows through gaps in the overlay)
+  fillR(hd.top, hair);
+  sub(hd.front, 0, 0, 8, 2, hair);
+  sub(hd.right, 0, 0, 8, 3, hair); sub(hd.left, 0, 0, 8, 3, hair);
+  if(girl){
+    sub(hd.right, 0, 3, 5, 5, hair); sub(hd.left, 3, 3, 5, 5, hair);   // long hair over the ears
+    sub(hd.back, 0, 0, 8, 8, hair);
+    sub(hd.front, 0, 2, 2, 5, hair); sub(hd.front, 6, 2, 2, 5, hair);  // face-framing locks
+  } else {
+    sub(hd.right, 0, 3, 3, 3, hair); sub(hd.left, 5, 3, 3, 3, hair);
+    sub(hd.back, 0, 0, 8, 6, hair);
+    sub(hd.front, 0, 2, 1, 2, hair); sub(hd.front, 7, 2, 1, 2, hair);
+  }
+
+  // ---------------- face ----------------
+  const f = hd.front;
+  // brows
+  if(girl){
+    sub(f, 1, 3, 2, 1, hairD); sub(f, 5, 3, 2, 1, hairD);
+    px1(f, 1, 4, '#1b1b1f'); px1(f, 6, 4, '#1b1b1f');                  // lashes at the outer corners
+  } else {
+    sub(f, 1, 3, 3, 1, hairD); sub(f, 4, 3, 3, 1, hairD);
+  }
+  // eyes: white + iris + pupil, 2x2 each, with a catch-light
+  const eye = (ox, mirror)=>{
+    const wx = mirror ? ox+1 : ox, ix = mirror ? ox : ox+1;
+    px1(f, wx, 4, '#f4f4f6'); px1(f, ix, 4, eyeCol);
+    px1(f, wx, 5, '#d4d6dc'); px1(f, ix, 5, '#161a2a');
+    if(girl) px1(f, ix, 4, shade(eyeCol, 40));                          // brighter, bigger-looking iris
+  };
+  eye(1, false); eye(5, true);
+  // nose, cheeks, mouth
+  px1(f, 3, 5, skinD); px1(f, 4, 5, skinD);
+  if(girl){ px1(f, 1, 5, blush); px1(f, 6, 5, blush); sub(f, 3, 6, 2, 1, lip); }
+  else { sub(f, 3, 6, 2, 1, lip); px1(f, 2, 6, skinD); px1(f, 5, 6, skinD); }
+  // ears
+  px1(hd.right, 7, 4, skinD); px1(hd.left, 0, 4, skinD);
+  if(!girl){ px1(hd.right, 7, 3, skin); px1(hd.left, 0, 3, skin); }
+
+  // ---------------- hair (overlay layer, gives volume) ----------------
+  FACE_NAMES.forEach(n => { x.clearRect(ho[n][0], ho[n][1], ho[n][2], ho[n][3]); });
+  const hs = (r, ox, oy, w, h, col)=> sub(r, ox, oy, w, h, col);
+  fillR(ho.top, hair);
+  hs(ho.top, 0, 0, 8, 1, hairL); hs(ho.top, 2, 2, 4, 1, hairL);                          // top highlight strands
+  hs(ho.top, 1, 5, 1, 2, hairD); hs(ho.top, 5, 4, 1, 3, hairD); hs(ho.top, 3, 6, 1, 2, hairD);
+  if(girl){
+    // long hair with curtain bangs
+    hs(ho.front, 0, 0, 8, 2, hair); hs(ho.front, 1, 0, 3, 1, hairL);
+    hs(ho.front, 0, 2, 3, 1, hair); hs(ho.front, 5, 2, 3, 1, hair);
+    hs(ho.front, 0, 3, 2, 1, hair); hs(ho.front, 6, 3, 2, 1, hair);
+    hs(ho.front, 0, 4, 1, 4, hair); hs(ho.front, 7, 4, 1, 4, hair);
+    ['right','left'].forEach(s=>{ hs(ho[s], 0, 0, 8, 8, hair); hs(ho[s], 0, 0, 8, 1, hairL); hs(ho[s], 2, 3, 1, 5, hairD); hs(ho[s], 5, 2, 1, 6, hairD); });
+    // keep the front column open so the face shows
+    x.clearRect(ho.right[0]+7, ho.right[1]+3, 1, 5); x.clearRect(ho.left[0], ho.left[1]+3, 1, 5);
+    hs(ho.back, 0, 0, 8, 8, hair); hs(ho.back, 1, 1, 1, 7, hairD); hs(ho.back, 3, 0, 1, 8, hairL); hs(ho.back, 5, 1, 1, 7, hairD); hs(ho.back, 7, 2, 1, 6, hairD);
+  } else {
+    // short side-swept hair
+    hs(ho.front, 0, 0, 8, 1, hair); hs(ho.front, 0, 1, 8, 1, hair);
+    hs(ho.front, 0, 2, 4, 1, hair); hs(ho.front, 7, 2, 1, 2, hair); hs(ho.front, 0, 3, 1, 1, hair);
+    hs(ho.front, 2, 0, 3, 1, hairL);
+    ['right','left'].forEach(s=>{ hs(ho[s], 0, 0, 8, 2, hair); hs(ho[s], 0, 0, 8, 1, hairL); });
+    hs(ho.right, 0, 2, 4, 3, hair); hs(ho.left, 4, 2, 4, 3, hair);
+    hs(ho.right, 0, 5, 3, 1, hairD); hs(ho.left, 5, 5, 3, 1, hairD);
+    hs(ho.back, 0, 0, 8, 6, hair); hs(ho.back, 1, 1, 1, 4, hairD); hs(ho.back, 4, 0, 1, 5, hairD); hs(ho.back, 6, 2, 1, 3, hairD);
+  }
+
+  // ---------------- body ----------------
   const b = R('body');
-  FACE_NAMES.forEach(f => fillR(b[f], p.shirt));
-  fillR(b.bottom, shade(p.shirt, -30));
-  sub(b.front, 3, 0, 2, 1, p.skin);
-  sub(b.front, 0, 10, 8, 2, shade(p.shirt, -16)); sub(b.back, 0, 10, 8, 2, shade(p.shirt, -16));
+  const top = p.shirt, topD = shade(p.shirt, -22), topL = shade(p.shirt, 16), trim = shade(p.shirt, -42);
+  const jeans = p.pants, jeansD = shade(p.pants, -18), jeansL = shade(p.pants, 14);
+  FACE_NAMES.forEach(n => fillR(b[n], top));
+  fillR(b.bottom, jeansD);
+  fillR(b.top, topL);
+  // light fold lines + side shading
+  ['front','back'].forEach(n=>{ sub(b[n], 2, 2, 1, 6, topD); sub(b[n], 5, 3, 1, 5, topD); sub(b[n], 3, 1, 2, 1, topL); });
+  ['right','left'].forEach(n=>{ sub(b[n], 1, 1, 1, 7, topD); sub(b[n], 2, 0, 1, 1, topL); });
+  if(girl){
+    // fitted top with a V neckline, then a high-waisted belt and jeans
+    sub(b.front, 2, 0, 4, 1, skin); sub(b.front, 3, 1, 2, 1, skin); px1(b.front, 3, 2, skinD); px1(b.front, 4, 2, skinD);
+    px1(b.front, 1, 0, trim); px1(b.front, 6, 0, trim); px1(b.front, 2, 1, trim); px1(b.front, 5, 1, trim); px1(b.front, 3, 2, trim); px1(b.front, 4, 2, trim);
+    sub(b.back, 2, 0, 4, 1, skin); sub(b.back, 3, 0, 2, 1, skin);
+    sub(b.front, 0, 8, 8, 1, topL); sub(b.back, 0, 8, 8, 1, topL);
+    SIDES.forEach(n=>{ sub(b[n], 0, 9, b[n][2], 1, '#6b4a2e'); sub(b[n], 0, 10, b[n][2], 2, jeans); });
+    px1(b.front, 3, 9, '#e7c65a'); px1(b.front, 4, 9, '#e7c65a');          // buckle
+    sub(b.front, 3, 10, 2, 1, jeansD);
+  } else {
+    // crew-neck tee with a chest pocket, belt and jeans
+    sub(b.front, 2, 0, 4, 1, skin); sub(b.front, 3, 1, 2, 1, skinD);
+    px1(b.front, 1, 0, trim); px1(b.front, 6, 0, trim); px1(b.front, 2, 1, trim); px1(b.front, 5, 1, trim); sub(b.front, 3, 2, 2, 1, trim);
+    sub(b.back, 2, 0, 4, 1, skin); sub(b.back, 3, 0, 2, 1, trim);
+    sub(b.front, 5, 3, 2, 2, topD); sub(b.front, 5, 3, 2, 1, trim);
+    SIDES.forEach(n=>{ sub(b[n], 0, 9, b[n][2], 1, topD); sub(b[n], 0, 10, b[n][2], 1, '#5a3d27'); sub(b[n], 0, 11, b[n][2], 1, jeans); });
+    px1(b.front, 3, 10, '#d9bf5a'); px1(b.front, 4, 10, '#d9bf5a');         // buckle
+  }
 
-  // arms (sleeve on top 4px, skin below)
+  // ---------------- arms ----------------
   ['armR','armL'].forEach(k => {
     const a = R(k);
-    FACE_NAMES.forEach(f => fillR(a[f], p.skin));
-    fillR(a.top, p.shirt);
-    ['right','front','left','back'].forEach(f => sub(a[f], 0, 0, 4, 4, p.shirt));
-    ['right','front','left','back'].forEach(f => sub(a[f], 0, 3, 4, 1, shade(p.shirt, -20)));
+    FACE_NAMES.forEach(n => fillR(a[n], skin));
+    fillR(a.top, top);
+    const sleeve = girl ? 3 : 4;
+    SIDES.forEach(n => { sub(a[n], 0, 0, 4, sleeve, top); sub(a[n], 0, sleeve-1, 4, 1, topD); sub(a[n], 0, 0, 1, sleeve, topD); });
+    SIDES.forEach(n => { sub(a[n], 3, sleeve, 1, 12-sleeve, skinD); sub(a[n], 0, 11, 4, 1, skinD); });   // shaded edge + wrist/hand
+    sub(a.front, 1, 9, 2, 2, skinL);                                                                   // knuckle highlight
+    fillR(a.bottom, skinD);
   });
 
-  // legs (pants, shoes on bottom 3px)
+  // ---------------- legs ----------------
   ['legR','legL'].forEach(k => {
     const l = R(k);
-    FACE_NAMES.forEach(f => fillR(l[f], p.pants));
-    fillR(l.bottom, p.shoe);
-    ['right','front','left','back'].forEach(f => sub(l[f], 0, 9, 4, 3, p.shoe));
+    FACE_NAMES.forEach(n => fillR(l[n], jeans));
+    // side seams + knee shading
+    sub(l.front, 3, 0, 1, 8, jeansD); sub(l.back, 0, 0, 1, 8, jeansD);
+    sub(l.front, 1, 5, 2, 1, jeansL); sub(l.front, 1, 6, 2, 1, jeansD);
+    sub(l.right, 0, 0, 4, 1, jeansD); sub(l.left, 0, 0, 4, 1, jeansD);
+    if(girl){
+      // ankle boots with a folded cuff
+      const boot = shade(p.shoe, 4), cuff = shade(p.shoe, 34);
+      SIDES.forEach(n => { sub(l[n], 0, 7, 4, 1, cuff); sub(l[n], 0, 8, 4, 3, boot); sub(l[n], 0, 11, 4, 1, '#d8d2c6'); });
+      sub(l.front, 1, 9, 2, 1, cuff);
+    } else {
+      // sneakers: dark upper, white sole, tiny lace marks
+      SIDES.forEach(n => { sub(l[n], 0, 9, 4, 2, p.shoe); sub(l[n], 0, 11, 4, 1, '#e9e9ee'); });
+      sub(l.front, 1, 9, 2, 1, shade(p.shoe, 36)); px1(l.front, 1, 10, shade(p.shoe, 18)); px1(l.front, 2, 10, shade(p.shoe, 18));
+    }
+    fillR(l.bottom, girl ? '#d8d2c6' : '#e9e9ee');
+    fillR(l.top, jeansD);
   });
 
+  // clear the unused overlay layers (jacket, sleeves, pants) so they are ready to paint on
+  ['body','armR','armL','legR','legL'].forEach(k => { const o = RO(k); FACE_NAMES.forEach(n => x.clearRect(o[n][0], o[n][1], o[n][2], o[n][3])); });
+
   // gentle noise so flat colors don't look plastic
-  const rnd = mulberry32(hashStr(p.skin + p.shirt + p.pants));
+  const rnd = mulberry32(hashStr(p.skin + p.shirt + p.pants + (girl ? 'g' : 'b')));
   const img = x.getImageData(0, 0, 64, 64);
   for(let i=0; i<img.data.length; i+=4){
     if(img.data[i+3] === 0) continue;
-    const n = Math.floor((rnd()-0.5)*9);
+    const n = Math.floor((rnd()-0.5)*7);
     img.data[i] = Math.max(0, Math.min(255, img.data[i]+n));
     img.data[i+1] = Math.max(0, Math.min(255, img.data[i+1]+n));
     img.data[i+2] = Math.max(0, Math.min(255, img.data[i+2]+n));
@@ -4470,9 +4595,9 @@ function canvasFromImage(img){
 // A box whose six faces each sample their own rectangle of the skin sheet.
 // UVs come from vertex position + face normal, so the layout is exact.
 // The character faces -z (matches the camera at yaw 0); its right side is +x.
-function skinBox(w, h, d, rects, grow){
+function skinBox(w, h, d, rects, grow, hs){
   const W = w + grow*2, H = h + grow*2, D = d + grow*2;
-  const g = new THREE.BoxGeometry(W, H, D);
+  const g = new THREE.BoxGeometry(W, H, D, 1, hs || 1, 1);
   const pos = g.attributes.position, nor = g.attributes.normal, uv = g.attributes.uv;
   for(let i=0; i<pos.count; i++){
     const nx = pos.getX(i)/W, ny = pos.getY(i)/H, nz = pos.getZ(i)/D;
@@ -4636,6 +4761,7 @@ function setModelArmor(model, code){
     m.add(mesh);
   };
   const head=code&3, chest=(code>>2)&3, legs=(code>>4)&3, feet=(code>>6)&3;
+  if(model.bust) model.bust.setArmor(chest, chest ? _armorMat(chest, 1) : null);
   add('head',8,8,8, 4, head, 1.3, 1);
   add('body',8,12,4, 0, chest, 1.2, 1);
   add('armR',4,5,4, -2.5, chest, 1.2, 1);
@@ -4672,11 +4798,127 @@ function setModelHeld(rec, rawId){
   rec.parts.armR.add(rec.heldObj);
 }
 
+/* ---- Bust (girl model only, unlocked with the secret code) ---------------------------------------------
+   Size is 0..100 (0 = none, 50 = default). Each side is a small ellipsoid on the front of the torso, textured from
+   the chest of the shirt so it always matches the skin. A damped spring per side makes it bounce when the body
+   accelerates vertically: take-off, falling, landing, and a light bounce while running. */
+const BUST_DEFAULT = 50;
+let PLAYER_BUST_SIZE = BUST_DEFAULT;
+try{ const v = parseInt(localStorage.getItem('vf_bust_size'), 10); if(v >= 0 && v <= 100) PLAYER_BUST_SIZE = v; }catch(e){}
+function vfBustAllowed(){
+  let ok = false;
+  try{ ok = localStorage.getItem('vf_model_unlocked') === '1'; }catch(e){}
+  return ok && PLAYER_MODEL_STYLE === 'girl';
+}
+function clampBust(v){ v = Number(v); return Number.isFinite(v) ? Math.max(0, Math.min(100, Math.round(v))) : BUST_DEFAULT; }
+// radii (skin pixels) for a given size 0..100; shared by the 3D model and the Skin Studio side preview
+function bustDims(size){
+  const m = clampBust(size)/100;
+  return { rx:1.6*(0.75+0.5*m), ry:1.45*(0.7+0.5*m), rz:1.4*(0.6+0.9*m), gap:1.55+0.3*(0.75+0.5*m) };
+}
+const BUST_JIGGLE_MAX = 2.4;   // px of travel
+function createBust(P, tex, chestUV){
+  const root = new THREE.Group();            // lives on the torso mesh
+  const sides = [];
+  const geo = new THREE.BoxGeometry(2, 2, 2);   // blocky, to match the rest of the model
+  { // every vertex samples one pixel of the shirt, so the bust takes the shirt colour from any skin
+    const uv = geo.attributes.uv, u = (chestUV[0]+0.5)/64, v = 1 - (chestUV[1]+0.5)/64;
+    for(let i=0; i<uv.count; i++) uv.setXY(i, u, v);
+    uv.needsUpdate = true;
+    // soft shading: darker underneath so each side reads as a curve of the shirt, not a separate ball
+    const pos = geo.attributes.position, col = new Float32Array(pos.count*3);
+    for(let i=0; i<pos.count; i++){
+      const y = pos.getY(i), z = pos.getZ(i);
+      const k = 0.74 + 0.20*(y*0.5+0.5) + 0.06*Math.max(0, -z);
+      col[i*3] = col[i*3+1] = col[i*3+2] = k;
+    }
+    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  }
+  const mat = new THREE.MeshLambertMaterial({ map: tex, vertexColors: true });
+  [-1, 1].forEach((sgn, i)=>{
+    const pivot = new THREE.Group();
+    const mesh = new THREE.Mesh(geo, mat);
+    pivot.add(mesh);
+    root.add(pivot);
+    sides.push({ sgn, pivot, mesh, x:0, v:0, k: i ? 255 : 285, c: i ? 7.2 : 8.0, armorMesh:null });
+  });
+  const bust = {
+    root, sides, size: BUST_DEFAULT, armorTier: 0, t: 0, prevVy: null, flutter: 0,
+    setSize(s){ this.size = clampBust(s); this.layout(); },
+    layout(){
+      const d = bustDims(this.size);
+      root.visible = this.size > 0;
+      this.dims = d;
+      for(const s of sides){
+        s.mesh.scale.set(d.rx*P, d.ry*P, d.rz*P);
+        s.pivot.userData.bx = s.sgn*d.gap*P;
+        s.pivot.userData.by = 2.0*P;
+        s.pivot.userData.bz = -(1.9 + 0.42*d.rz)*P;
+        s.pivot.position.set(s.pivot.userData.bx, s.pivot.userData.by, s.pivot.userData.bz);
+        if(s.armorMesh) s.armorMesh.scale.copy(s.mesh.scale).multiplyScalar(1.14);
+      }
+    },
+    // chest armor puts a metal cup over each side; the cloth mesh is hidden underneath
+    setArmor(tier, armorMat){
+      this.armorTier = tier|0;
+      for(const s of sides){
+        if(s.armorMesh){ s.pivot.remove(s.armorMesh); s.armorMesh = null; }
+        s.mesh.visible = !tier;
+        if(tier){
+          s.armorMesh = new THREE.Mesh(geo, armorMat);
+          s.armorMesh.scale.copy(s.mesh.scale).multiplyScalar(1.14);
+          s.pivot.add(s.armorMesh);
+        }
+      }
+    },
+    // dt seconds, vy = vertical velocity (blocks/s), speed = horizontal speed, phase = walk-cycle phase (rad)
+    update(dt, vy, speed, phase){
+      if(!root.visible) { this.prevVy = vy; return; }
+      dt = Math.min(dt, 0.05);
+      if(this.prevVy == null) this.prevVy = vy;
+      this.t += dt;
+      // running adds a small vertical bob so the bust moves with each stride
+      const run = Math.min(1, speed/4.3);
+      const stride = Math.cos(phase*2) * 2.4 * run;
+      const eff = vy + stride;
+      const dv = eff - (this._prevEff == null ? eff : this._prevEff);
+      this._prevEff = eff;
+      this.prevVy = vy;
+      // Δvy -> impulse. Take-off (vy jumps up) pushes it down, landing (vy snaps to 0) throws it down then up.
+      const kick = Math.max(-40, Math.min(40, dv)) * 2.4;
+      const airborne = Math.abs(vy) > 1.2 && Math.abs(dv) < 6;
+      // falling: weightless float, a fast flutter on top that grows with speed
+      this.flutter += dt*(34 + Math.min(20, Math.abs(vy)));
+      const flutter = airborne ? Math.sin(this.flutter) * Math.min(1, Math.abs(vy)/14) * 0.55 : 0;
+      const n = Math.max(1, Math.ceil(dt/0.008)), h = dt/n;
+      for(let si=0; si<sides.length; si++){
+        const s = sides[si];
+        s.v -= kick*(si ? 0.93 : 1);                // body goes up -> bust lags down (springs differ a little so the sides drift apart)
+        // gravity unloading: while falling the bust floats up a little
+        const lift = airborne && vy < -2 ? Math.min(1.1, -vy/22) : 0;
+        for(let i=0; i<n; i++){
+          const a = -s.k*(s.x - lift) - s.c*s.v;
+          s.v += a*h; s.x += s.v*h;
+        }
+        if(s.x > BUST_JIGGLE_MAX) { s.x = BUST_JIGGLE_MAX; s.v *= 0.3; }
+        if(s.x < -BUST_JIGGLE_MAX){ s.x = -BUST_JIGGLE_MAX; s.v *= 0.3; }
+        const off = s.x + flutter*(si ? -1 : 1);
+        const u = s.pivot.userData;
+        s.pivot.position.set(u.bx + s.sgn*off*0.12*P, u.by + off*P, u.bz - Math.abs(off)*0.1*P);
+        s.pivot.scale.set(1 + Math.abs(off)*0.035, 1 - off*0.05, 1 + Math.abs(off)*0.035);
+        s.pivot.rotation.x = off*0.06;
+      }
+    }
+  };
+  bust.layout();
+  return bust;
+}
+
 // Build the blocky player (head, body, 2 arms, 2 legs + outer layers).
-// Returns {group, parts:{head,body,armL,armR,legL,legR}} for animation.
-function buildPlayerModel(palette, skinCanvas, style){
+// Returns {group, parts:{head,body,armL,armR,legL,legR}, bust?, update(dt, vy, speed, phase)} for animation.
+function buildPlayerModel(palette, skinCanvas, style, bustSize){
   const girl = style === 'girl';
-  const canvas = skinCanvas || drawDefaultSkin(palette || SKIN_PALETTES[0]);
+  const canvas = skinCanvas || drawDefaultSkin(palette || SKIN_PALETTES[0], girl ? 'girl' : 'boy');
   const tex = new THREE.CanvasTexture(canvas);
   tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.NearestFilter;
   tex.generateMipmaps = false; tex.needsUpdate = true;
@@ -4688,40 +4930,116 @@ function buildPlayerModel(palette, skinCanvas, style){
   group.rotation.order = 'YXZ';
   const parts = {};
 
+  // torso silhouettes: girl = hourglass (shoulders > waist < hips), boy = a slight V
+  const lerp = (a,b,t)=> a + (b-a)*t;
+  const torsoShape = girl
+    ? (t)=> ({ fx: t > 0.5 ? lerp(0.80, 0.94, (t-0.5)*2) : lerp(0.98, 0.80, t*2), fz: t > 0.5 ? lerp(0.9, 1.0, (t-0.5)*2) : lerp(1.0, 0.9, t*2) })
+    : (t)=> ({ fx: lerp(0.94, 1.0, t), fz: 1 });
+  const deformTorso = (pos, H)=>{
+    for(let i=0; i<pos.count; i++){
+      const t = Math.max(0, Math.min(1, pos.getY(i)/H + 0.5));
+      const s = torsoShape(t);
+      pos.setX(i, pos.getX(i)*s.fx); pos.setZ(i, pos.getZ(i)*s.fz);
+    }
+  };
+
   function limb(name, pivot, offset, sx){
     const def = LIMB_DEFS[name];
     const w = def.w*P, h = def.h*P, d = def.d*P;
-    const base = skinBox(w, h, d, faceRects(def, def.uv), 0);
+    const isBody = name === 'body';
+    const segs = isBody ? 6 : 1;
+    const base = skinBox(w, h, d, faceRects(def, def.uv), 0, segs);
+    if(isBody){ deformTorso(base.attributes.position, h); base.computeVertexNormals(); }
     base.translate(offset[0], offset[1], offset[2]);
     const mesh = new THREE.Mesh(base, matBase);
     mesh.position.set(pivot[0], pivot[1], pivot[2]);
-    if(sx) mesh.scale.x = sx; // narrower torso / slimmer arms for the girl model (UVs stay the same)
-    const lay = skinBox(w, h, d, faceRects(def, def.ov), P*0.5);
+    if(sx) mesh.scale.x = sx; // slimmer arms / legs for the girl model (UVs stay the same)
+    const lay = skinBox(w, h, d, faceRects(def, def.ov), P*0.5, segs);
+    if(isBody){ deformTorso(lay.attributes.position, h + P); lay.computeVertexNormals(); }
     lay.translate(offset[0], offset[1], offset[2]);
     mesh.add(new THREE.Mesh(lay, matLayer));
     mesh.name = name;
+    mesh.userData.px = pivot[0];
     group.add(mesh);
     parts[name] = mesh;
   }
   const legTop = 12*P, shoulder = 24*P;
-  limb('legR',  [ 2*P, legTop, 0], [0, -6*P, 0]);
-  limb('legL',  [-2*P, legTop, 0], [0, -6*P, 0]);
-  limb('body',  [0, legTop + 6*P, 0], [0, 0, 0], girl ? 0.88 : 0);
-  limb('armR',  [ (girl ? 5.1 : 6)*P, shoulder, 0], [0, -6*P, 0], girl ? 0.75 : 0);
-  limb('armL',  [-(girl ? 5.1 : 6)*P, shoulder, 0], [0, -6*P, 0], girl ? 0.75 : 0);
-  if(girl){
-    // modest chest shape: two small blocks on the front of the torso, textured from the shirt so they blend in
-    const sample = [22,23,2,2];
-    const rects = { top:sample, bottom:sample, right:sample, front:sample, left:sample, back:sample };
-    [-1,1].forEach(sgn=>{
-      const g = skinBox(3.6*P, 2.8*P, 1.4*P, rects, 0);
-      g.translate(sgn*1.9*P, 1.6*P, -2.5*P);   // front of the model is -z
-      parts.body.add(new THREE.Mesh(g, matBase));
-    });
-  }
+  limb('legR',  [ (girl ? 1.95 : 2)*P, legTop, 0], [0, -6*P, 0], girl ? 0.92 : 0);
+  limb('legL',  [-(girl ? 1.95 : 2)*P, legTop, 0], [0, -6*P, 0], girl ? 0.92 : 0);
+  limb('body',  [0, legTop + 6*P, 0], [0, 0, 0], 0);
+  limb('armR',  [ (girl ? 5.25 : 6)*P, shoulder, 0], [0, -6*P, 0], girl ? 0.75 : 0);
+  limb('armL',  [-(girl ? 5.25 : 6)*P, shoulder, 0], [0, -6*P, 0], girl ? 0.75 : 0);
   limb('head',  [0, shoulder, 0], [0, 4*P, 0]);
 
-  return { group, parts, canvas };
+  const built = { group, parts, canvas, bust: null, hair: null, update: null };
+
+  if(girl){
+    // ---- long hair hanging behind the head, in the hair colour of the skin ----
+    const pickHair = ()=>{
+      try{
+        const cx = canvas.getContext('2d');
+        for(const [sx, sy] of [[44,3],[12,3],[44,1],[12,1]]){
+          const d = cx.getImageData(sx, sy, 1, 1).data;
+          if(d[3] > 60) return [d[0], d[1], d[2]];
+        }
+      }catch(e){}
+      return [59,42,30];
+    };
+    const hc = pickHair();
+    const hairTex = (()=>{
+      const c = document.createElement('canvas'); c.width = 8; c.height = 12;
+      const x = c.getContext('2d');
+      for(let yy=0; yy<12; yy++) for(let xx=0; xx<8; xx++){
+        const strand = (xx % 3 === 1) ? -16 : (xx % 3 === 2 ? 8 : 0);
+        const fade = yy > 8 ? -(yy-8)*5 : 0;
+        const k = strand + fade + ((xx*7+yy*13) % 5 - 2)*2;
+        x.fillStyle = `rgb(${Math.max(0,Math.min(255,hc[0]+k))},${Math.max(0,Math.min(255,hc[1]+k))},${Math.max(0,Math.min(255,hc[2]+k))})`;
+        x.fillRect(xx, yy, 1, 1);
+      }
+      const t = new THREE.CanvasTexture(c); t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestFilter; t.generateMipmaps = false;
+      return t;
+    })();
+    const hairMat = new THREE.MeshLambertMaterial({ map: hairTex });
+    const hairPivot = new THREE.Group();
+    hairPivot.position.set(0, shoulder + 7*P, 4.85*P);
+    const hairGeo = new THREE.BoxGeometry(8.8*P, 12.5*P, 1.8*P, 1, 3, 1);
+    hairGeo.translate(0, -6*P, 0);
+    hairPivot.add(new THREE.Mesh(hairGeo, hairMat));
+    group.add(hairPivot);
+    built.hair = { pivot: hairPivot, a: 0, v: 0, t: 0 };
+
+    // ---- bust (only for a player who unlocked it; remote players send their size) ----
+    const allowSelf = (bustSize === undefined) ? vfBustAllowed() : true;
+    const size = (bustSize === undefined) ? PLAYER_BUST_SIZE : bustSize;
+    if(allowSelf){
+      const bust = createBust(P, tex, [24, 24]);   // one pixel on the front of the shirt
+      bust.setSize(size);
+      parts.body.add(bust.root);
+      built.bust = bust;
+    }
+  }
+
+  // secondary motion: hair sways behind you, the bust bounces. Safe to call every frame for any model.
+  built.update = function(dt, vy, speed, phase){
+    dt = Math.max(0.0005, Math.min(0.05, dt || 0.016));
+    if(this.bust) this.bust.update(dt, vy || 0, speed || 0, phase || 0);
+    const h = this.hair;
+    if(h){
+      h.t += dt;
+      const run = Math.min(1, (speed||0)/4.5);
+      const falling = (vy||0) < -3 ? Math.min(1, (-(vy||0)-3)/12) : 0;
+      const rising = (vy||0) > 1 ? Math.min(1, (vy||0)/9) : 0;
+      // target angle: streams backward when running, lifts when falling, drops a little when rising
+      const target = -(run*0.30) - falling*0.55 + rising*0.12 + Math.sin(h.t*1.7)*0.015;
+      const k = 70, c = 9.5;
+      const n = Math.max(1, Math.ceil(dt/0.008)), step = dt/n;
+      for(let i=0; i<n; i++){ const a = -k*(h.a - target) - c*h.v; h.v += a*step; h.a += h.v*step; }
+      h.a = Math.max(-1.1, Math.min(0.5, h.a));
+      h.pivot.rotation.x = h.a;
+      h.pivot.rotation.z = Math.sin(h.t*7)*0.03*run + Math.sin(h.t*20)*0.04*falling;
+    }
+  };
+  return built;
 }
 
 // ---- Zombie skin: assets/mobs/zombie.png (standard 64x64 sheet), with the same
@@ -4775,6 +5093,61 @@ function getCowSkinCanvas(){
   };
   tryLoad(0);
   return c;
+}
+
+// ---- Pig skin: painted procedurally (64x64 tile map, same face layout as the cow) -------------------------------
+//   body @0,0 (10x9x16)   head @0,26 (8x7x7)   leg @32,26 (4x6x4)   snout @0,42 (4x3x2)   ear @16,42 (3x3x1)   tail @16,48 (1x1x3)
+let PIG_SKIN_CANVAS = null, PIG_TEX = null;
+function getPigTexture(){
+  if(PIG_TEX) return PIG_TEX;
+  const c = makeCanvas(64), x = c.getContext('2d');
+  x.imageSmoothingEnabled = false;
+  const R = (u,v,w,h,d)=>({ top:[u+d,v,w,d], bottom:[u+d+w,v,w,d], right:[u,v+d,d,h], front:[u+d,v+d,w,h], left:[u+d+w,v+d,d,h], back:[u+2*d+w,v+d,w,h] });
+  const pink = '#f0a8b4', pinkD = shade(pink, -22), pinkL = shade(pink, 14), pinkDD = shade(pink, -46), snoutC = '#e68a9c';
+  const fill = (r, col)=>{ x.fillStyle = col; x.fillRect(r[0], r[1], r[2], r[3]); };
+  const dot = (r, ox, oy, col, w=1, h=1)=>{ x.fillStyle = col; x.fillRect(r[0]+ox, r[1]+oy, w, h); };
+  const all = (faces, col)=> Object.keys(faces).forEach(k=> fill(faces[k], col));
+  const rnd = mulberry32(90210);
+
+  // body: lighter belly, a darker back with a few soft patches
+  const b = R(0,0,10,9,16);
+  all(b, pink);
+  fill(b.top, pinkD); fill(b.bottom, pinkL);
+  ['right','left','front','back'].forEach(k=>{ dot(b[k], 0, 0, pinkD, b[k][2], 1); dot(b[k], 0, b[k][3]-2, pinkL, b[k][2], 2); });
+  [[1,2,3,2],[6,3,3,3],[11,2,2,2]].forEach(([ox,oy,w,h])=>{ dot(b.right, ox, oy, pinkD, w, h); dot(b.left, ox, oy, pinkD, w, h); });
+  dot(b.top, 2, 3, pinkDD, 3, 4); dot(b.top, 5, 9, pinkDD, 3, 3);
+  dot(b.back, 3, 5, pinkL, 4, 2); dot(b.back, 4, 7, pinkD, 2, 1);                       // little rear end
+
+  // head with eyes, cheeks and a soft brow
+  const h = R(0,26,8,7,7);
+  all(h, pink); fill(h.top, pinkD);
+  dot(h.front, 0, 0, pinkD, 8, 1);
+  dot(h.front, 1, 2, '#ffffff'); dot(h.front, 2, 2, '#1d1620'); dot(h.front, 6, 2, '#ffffff'); dot(h.front, 5, 2, '#1d1620');   // eyes
+  dot(h.front, 1, 3, shade(pink,-10)); dot(h.front, 6, 3, shade(pink,-10));
+  dot(h.front, 0, 4, pinkL, 1, 2); dot(h.front, 7, 4, pinkL, 1, 2);                      // cheeks
+  dot(h.right, 2, 2, '#1d1620'); dot(h.left, 4, 2, '#1d1620');
+  fill(h.bottom, pinkL);
+
+  // snout (darker pink disc with two nostrils)
+  const s = R(0,42,4,3,2);
+  all(s, snoutC);
+  fill(s.front, snoutC); dot(s.front, 0, 0, shade(snoutC,10), 4, 1); dot(s.front, 1, 1, pinkDD, 1, 1); dot(s.front, 2, 1, pinkDD, 1, 1);
+  dot(s.front, 0, 2, shade(snoutC,-14), 4, 1);
+
+  // ear, tail, leg
+  const ear = R(16,42,3,3,1); all(ear, pinkD); fill(ear.front, shade(pink,-8)); dot(ear.front, 1, 1, '#e58a9a', 1, 2);
+  const tl = R(16,48,1,1,3); all(tl, pinkD);
+  const l = R(32,26,4,6,4);
+  all(l, pink); fill(l.bottom, '#6a4a52'); fill(l.top, pinkD);
+  ['right','left','front','back'].forEach(k=>{ dot(l[k], 0, 5, '#6a4a52', 4, 1); dot(l[k], 0, 4, shade(pink,-34), 4, 1); dot(l[k], 3, 0, pinkD, 1, 4); });
+  // a touch of noise
+  const img = x.getImageData(0,0,64,64), d = img.data;
+  for(let i=0;i<d.length;i+=4){ if(!d[i+3]) continue; const n = Math.floor((rnd()-0.5)*8); d[i]=Math.max(0,Math.min(255,d[i]+n)); d[i+1]=Math.max(0,Math.min(255,d[i+1]+n)); d[i+2]=Math.max(0,Math.min(255,d[i+2]+n)); }
+  x.putImageData(img,0,0);
+  PIG_SKIN_CANVAS = c;
+  PIG_TEX = new THREE.CanvasTexture(c);
+  PIG_TEX.magFilter = THREE.NearestFilter; PIG_TEX.minFilter = THREE.NearestFilter; PIG_TEX.generateMipmaps = false; PIG_TEX.needsUpdate = true;
+  return PIG_TEX;
 }
 
 // Restore a custom skin saved by Skin Studio.
@@ -8161,23 +8534,39 @@ class Game{
         const m = mk(4,10,4, UX+32,32); m.position.y = -5*P;
         pivot.add(m); group.add(pivot); legs.push(pivot); legMeshes.push(m);
       }
-      group.add(body, head, hornL, hornR);
-      Object.assign(parts,{ body, head, legs, flashMeshes:[body, head, hornL, hornR, ...legMeshes] });
+      // extras: ears, a swishing tail with a dark tuft, and an udder
+      const cm = (w,h,d,color)=> new THREE.Mesh(new THREE.BoxGeometry(w*P,h*P,d*P), new THREE.MeshLambertMaterial({ color }));
+      const earCL = cm(3,2,1, 0x6b5a4c); earCL.position.set(-5.4*P, 20.5*P, -10*P); earCL.rotation.z =  0.45;
+      const earCR = cm(3,2,1, 0x6b5a4c); earCR.position.set( 5.4*P, 20.5*P, -10*P); earCR.rotation.z = -0.45;
+      const udder = cm(5,2,4, 0xe9a9a9);  udder.position.set(0, 9.2*P, 4.2*P);
+      const tail = new THREE.Group(); tail.position.set(0, 19.5*P, 9.3*P);
+      const tailRope = cm(1,9,1, 0x4a372b); tailRope.position.y = -4.5*P;
+      const tuft = cm(2,3,2, 0x1f1812);     tuft.position.y = -10*P;
+      tail.add(tailRope, tuft);
+      group.add(body, head, hornL, hornR, earCL, earCR, udder, tail);
+      Object.assign(parts,{ body, head, legs, tail, flashMeshes:[body, head, hornL, hornR, earCL, earCR, udder, tailRope, tuft, ...legMeshes] });
     } else if(kind==='pig'){
-      const bodyColor = 0xe8a0a8, spotColor = 0xd88090;
-      const body = box(0.55,0.5,0.9, bodyColor);
-      body.position.set(0,0.7,0);
-      const spot = box(0.3,0.2,0.4, spotColor);
-      spot.position.set(0.1,0.85,-0.15);
-      const head = box(0.35,0.32,0.32, bodyColor);
-      head.position.set(0,0.72,-0.55);   // front is -Z
-      const legGeo = ()=>box(0.15,0.4,0.15, bodyColor);
-      const l1=legGeo(); l1.position.set(-0.18,0.2,-0.3);
-      const l2=legGeo(); l2.position.set(0.18,0.2,-0.3);
-      const l3=legGeo(); l3.position.set(0.18,0.2,0.3);
-      const l4=legGeo(); l4.position.set(-0.18,0.2,0.3);
-      group.add(body,spot,head,l1,l2,l3,l4);
-      Object.assign(parts,{body,head,legs:[l1,l2,l3,l4]});
+      // Painted pig, 1 skin pixel = 1/16 block. Front of the pig is -Z (the way it walks).
+      const P = 1/16;
+      const R = (u,v,w,h,d)=>({ top:[u+d,v,w,d], bottom:[u+d+w,v,w,d], right:[u,v+d,d,h], front:[u+d,v+d,w,h], left:[u+d+w,v+d,d,h], back:[u+2*d+w,v+d,w,h] });
+      const tex = getPigTexture();
+      const mat = new THREE.MeshLambertMaterial({ map: tex });
+      const mk = (w,h,d,u,v)=> new THREE.Mesh(skinBox(w*P,h*P,d*P,R(u,v,w,h,d),0), mat);
+      const body = mk(10,9,16, 0,0);   body.position.set(0, 10.5*P, 1*P);
+      const head = mk(8,7,7, 0,26);    head.position.set(0, 11.5*P, -9.5*P);
+      const snout = mk(4,3,2, 0,42);   snout.position.set(0, 10.2*P, -14*P);
+      const earL = mk(3,3,1, 16,42);   earL.position.set(-3.3*P, 15.6*P, -8.5*P); earL.rotation.set(0.5, 0, -0.55);
+      const earR = mk(3,3,1, 16,42);   earR.position.set( 3.3*P, 15.6*P, -8.5*P); earR.rotation.set(0.5, 0,  0.55);
+      const tail = new THREE.Group(); tail.position.set(0, 13*P, 9.2*P);
+      const tailM = mk(1,1,3, 16,48);  tailM.position.set(0, 0.5*P, 1.2*P); tailM.rotation.x = -0.6; tail.add(tailM);
+      const legMeshes = [], legs = [];
+      for(const [lx,lz] of [[-3,-4.5],[3,-4.5],[3,7.5],[-3,7.5]]){   // diagonal pairs in step, front legs at -Z
+        const pivot = new THREE.Group(); pivot.position.set(lx*P, 6*P, lz*P);
+        const m = mk(4,6,4, 32,26); m.position.y = -3*P;
+        pivot.add(m); group.add(pivot); legs.push(pivot); legMeshes.push(m);
+      }
+      group.add(body, head, snout, earL, earR, tail);
+      Object.assign(parts,{ body, head, legs, tail, flashMeshes:[body, head, snout, earL, earR, tailM, ...legMeshes] });
     } else { // hostile: textured zombie built from the standard player rig
       const built = buildPlayerModel(null, getZombieSkinCanvas());
       built.group.traverse(o=>{ if(o.material && o.material.map && !ZOMBIE_SKIN_TEX.includes(o.material.map)) ZOMBIE_SKIN_TEX.push(o.material.map); });
@@ -8185,6 +8574,10 @@ class Game{
       Object.assign(parts, built.parts);
       group.add(built.group);
       parts.armL.rotation.x = parts.armR.rotation.x = 1.45; // arms out in front (model faces -z, so +x swings forward)
+      { const u = 1.8/32; // hunched, shuffling posture: torso leans forward, head and shoulders follow
+        parts.body.rotation.x = 0.17;
+        parts.head.position.set(0, 24*u - 0.2*u, -2.0*u);
+        parts.armL.position.z = parts.armR.position.z = -2.0*u; parts.armL.position.y = parts.armR.position.y = 24*u - 0.2*u; }
     }
     return { group, parts };
   }
@@ -8392,6 +8785,7 @@ class Game{
         g.bobT += dt*6;
         const legBob = Math.sin(g.bobT)*0.35, amt = g.moved > 0.4 ? 1 : 0.15;
         g.parts.legs.forEach((leg,idx)=>{ leg.rotation.x = (idx%2===0?1:-1)*legBob*amt; });
+        if(g.parts.tail){ g.parts.tail.rotation.z = Math.sin(g.bobT*0.7)*0.25*(0.4+amt*0.6); g.parts.tail.rotation.x = 0.15 + Math.sin(g.bobT*1.3)*0.1; }
       }
     }
   }
@@ -8724,6 +9118,7 @@ class Game{
       m.group.rotation.y = m.yaw; // every mob model faces -Z, which is the direction it walks
       const legBob = Math.sin(m.bobT)*0.35;
       if(m.parts.legs) m.parts.legs.forEach((leg,idx)=>{ leg.rotation.x = (idx%2===0?1:-1)*legBob*(m.wandering||m.fleeT>0?1:0.15); });
+      if(m.parts.tail){ const mv = (m.wandering||m.fleeT>0) ? 1 : 0.35; m.parts.tail.rotation.z = Math.sin(m.bobT*0.7)*0.25*mv; m.parts.tail.rotation.x = 0.15 + Math.sin(m.bobT*1.3)*0.1*mv; }
     }
 
     this.updateHostiles(delta);
@@ -9639,6 +10034,7 @@ class Game{
   cycleView(){
     this.viewMode = (this.viewMode + 1) % 3;
     this.selfModel.group.visible = this.viewMode !== 0;
+    if(this.selfModel.bust) this.selfModel.bust._prevEff = null;   // no phantom kick from time spent in first person
     this._updateHeldItem();
     this.showCenterMsg(['First person','Behind you','In front of you'][this.viewMode], 900);
   }
@@ -9657,8 +10053,8 @@ class Game{
       const u = 1.8/32;
       P.body.rotation.x = 0.45*kc;
       P.head.position.set(0, 24*u - 2.5*u*kc, -1.5*u*kc);
-      P.armL.position.set(-6*u, 24*u - 2*u*kc, -1.5*u*kc);
-      P.armR.position.set( 6*u, 24*u - 2*u*kc, -1.5*u*kc);
+      P.armL.position.set(P.armL.userData.px || -6*u, 24*u - 2*u*kc, -1.5*u*kc);
+      P.armR.position.set(P.armR.userData.px ||  6*u, 24*u - 2*u*kc, -1.5*u*kc);
     }
     P.head.rotation.x = Math.max(-1.2, Math.min(1.2, this.pitch)) - g.rotation.x*0.8;
     if(speed > 0.4){
@@ -9668,6 +10064,7 @@ class Game{
     } else {
       P.armL.rotation.x *= 0.8; P.armR.rotation.x *= 0.8; P.legL.rotation.x *= 0.8; P.legR.rotation.x *= 0.8;
     }
+    m.update(delta, this.vel.y, speed, this._selfSwing);   // hair sway + bust jiggle (girl model)
   }
 
   /* ---------------- Dropped items ---------------- */
@@ -10150,17 +10547,21 @@ class Game{
       this.addChatLine(String(v.name||'Player'), String(v.msg||''), false);
     });
 
-    const motion = ()=>({
-      x: round2(this.pos.x), y: round2(this.pos.y), z: round2(this.pos.z),
-      yaw: round2(this.yaw), pitch: round2(this.pitch),
-      moving: (Math.abs(this.vel.x)+Math.abs(this.vel.z))>0.1,
-      swimming: !!this.inWater,
-      held: sanitizeHeldId(this.selectedBlock),
-      armor: this.armorCode(),
-    });
+    const motion = ()=>{
+      const m = {
+        x: round2(this.pos.x), y: round2(this.pos.y), z: round2(this.pos.z),
+        yaw: round2(this.yaw), pitch: round2(this.pitch),
+        moving: (Math.abs(this.vel.x)+Math.abs(this.vel.z))>0.1,
+        swimming: !!this.inWater,
+        held: sanitizeHeldId(this.selectedBlock),
+        armor: this.armorCode(),
+      };
+      if(PLAYER_MODEL_STYLE === 'girl' && vfBustAllowed()) m.bust = clampBust(PLAYER_BUST_SIZE);
+      return m;
+    };
     // If the database rules don't allow the optional "held" field, the whole write
     // is rejected and multiplayer dies. Detect that once, drop the field, carry on.
-    const stripHeld = (rec)=>{ if(this._noHeldSync){ delete rec.held; delete rec.armor; delete rec.model; } return rec; };
+    const stripHeld = (rec)=>{ if(this._noHeldSync){ delete rec.held; delete rec.armor; delete rec.model; delete rec.bust; } return rec; };
     const onWriteFail = (err, retry)=>{
       const denied = err && /permission|denied|validat/i.test(String(err.code||'') + ' ' + String(err.message||''));
       if(denied && !this._noHeldSync){
@@ -10273,7 +10674,7 @@ class Game{
   _addOtherPlayer(uid, data){
     if(this.otherPlayers.has(uid)) return;
     const palette = data.palette || SKIN_PALETTES[0];
-    const built = buildPlayerModel(palette, (this._remoteSkins && this._remoteSkins[uid]) || null, data.model === 'girl' ? 'girl' : 'boy');
+    const built = buildPlayerModel(palette, (this._remoteSkins && this._remoteSkins[uid]) || null, data.model === 'girl' ? 'girl' : 'boy', Number.isFinite(data.bust) ? clampBust(data.bust) : BUST_DEFAULT);
     this.scene.add(built.group);
 
     // name tag sprite
@@ -10294,7 +10695,7 @@ class Game{
     const y0 = Number.isFinite(data.y) ? data.y : 0;
     const z0 = Number.isFinite(data.z) ? data.z : 0;
     this.otherPlayers.set(uid, {
-      group: built.group, parts: built.parts,
+      group: built.group, parts: built.parts, model: built, _vy: 0, _ly: y0,
       target: new THREE.Vector3(x0,y0,z0),
       current: new THREE.Vector3(x0,y0,z0),
       yaw: Number.isFinite(data.yaw)?data.yaw:0, pitch: Number.isFinite(data.pitch)?data.pitch:0, moving:false, animT:0,
@@ -10333,6 +10734,7 @@ class Game{
     }
     if(!p.buf) p.moving = !!data.moving; // otherwise movement is derived from the interpolated path
     p.swimming = !!data.swimming;
+    if(p.model && p.model.bust && Number.isFinite(data.bust) && clampBust(data.bust) !== p.model.bust.size) p.model.bust.setSize(data.bust);
     p.name = data.name||p.name; p.playerId = data.playerId||p.playerId;
     p.lastData = data; p.heldRaw = data.held;
     setModelHeld(p, data.held);
@@ -10497,6 +10899,10 @@ class Game{
         p.current.lerp(p.target, Math.min(1, delta*10));
         p.ryaw = p.yaw; p.rpitch = p.pitch;
       }
+      { // vertical speed derived from the interpolated path (drives hair / bust secondary motion)
+        let dy = p.current.y - p._ly; p._ly = p.current.y; if(Math.abs(dy) > 6) dy = 0;
+        p._vy += (dy/Math.max(0.001, delta) - p._vy) * Math.min(1, delta*14);
+      }
       p.group.position.copy(p.current);
       p.group.rotation.y = p.ryaw;
       p.group.rotation.x += ((p.swimming ? -1.25 : 0) - p.group.rotation.x) * Math.min(1, delta*8);
@@ -10511,6 +10917,7 @@ class Game{
         p.parts.armL.rotation.x *= 0.8; p.parts.armR.rotation.x *= 0.8;
         p.parts.legL.rotation.x *= 0.8; p.parts.legR.rotation.x *= 0.8;
       }
+      if(p.model && p.model.update) p.model.update(delta, p._vy, p.spd, p.animT);
       if(p.mining){
         p.mineT = (p.mineT || 0) + delta*11;
         p.parts.armR.rotation.x = -1.15 + Math.sin(p.mineT)*0.65;
@@ -12197,6 +12604,7 @@ function initSkinStudio(){
       const c = $(id), x = c.getContext('2d'); x.imageSmoothingEnabled = false; x.clearRect(0,0,c.width,c.height);
       PREV[k].forEach(a=> x.drawImage(work, a[0],a[1],a[2],a[3], a[4]*5,a[5]*5,a[2]*5,a[3]*5));
     });
+    drawSide();
   }
 
   const toPx = (e)=>{
@@ -12269,11 +12677,11 @@ function initSkinStudio(){
   view.addEventListener('pointerup', stop); view.addEventListener('pointercancel', stop);
 
   function loadFrom(src){ wctx.clearRect(0,0,64,64); wctx.drawImage(src,0,0); undoStack.length = 0; render(); }
-  function open(){ loadFrom(activeSkinCanvas()); panel.style.display = 'flex'; }
+  function open(){ loadFrom(activeSkinCanvas()); panel.style.display = 'flex'; if(window.vfRefreshBustUI) window.vfRefreshBustUI(); }
   $('openSkinStudio').onclick = open;
   $('closeSkin').onclick = ()=>{ panel.style.display = 'none'; };
 
-  $('skinReset').onclick = ()=>{ pushUndo(); wctx.clearRect(0,0,64,64); wctx.drawImage(drawDefaultSkin(PLAYER_PALETTE),0,0); render(); };
+  $('skinReset').onclick = ()=>{ pushUndo(); wctx.clearRect(0,0,64,64); wctx.drawImage(drawDefaultSkin(PLAYER_PALETTE, PLAYER_MODEL_STYLE === 'girl' ? 'girl' : 'boy'),0,0); render(); };
   $('skinClearPart').onclick = ()=>{ pushUndo(); const r = part.rect; wctx.clearRect(r[0],r[1],r[2],r[3]); render(); };
   $('skinImport').onclick = ()=> $('skinFile').click();
   $('skinFile').onchange = (e)=>{
@@ -12305,6 +12713,64 @@ function initSkinStudio(){
     });
     download(g, 'voxel-forge-skin-guide.png');
   };
+
+  // ---- Bust size: only for the girl model, and only once the secret code has been entered ----
+  var bustReady = false;
+  const bustRow = $('bustRow'), bustSlider = $('bustSlider'), bustVal = $('bustVal'), sideC = $('skinPrevSide');
+  const bounce = { x:0, v:0, raf:0, last:0 };
+  function bustShown(){ return bustReady && vfBustAllowed(); }
+  function drawSide(){
+    if(!bustReady || !sideC || sideC.style.display === 'none') return;
+    const x = sideC.getContext('2d'); x.imageSmoothingEnabled = false; x.clearRect(0,0,sideC.width,sideC.height);
+    const S = 5, d = bustDims(PLAYER_BUST_SIZE);
+    // shirt colour from the chest of the sheet (what the 3D bust is textured with)
+    let col = '#888';
+    try{ const p = wctx.getImageData(24,24,1,1).data; col = `rgb(${p[0]},${p[1]},${p[2]})`; }catch(e){}
+    const face = (sx,sy,w,h,dx,dy)=> x.drawImage(work, sx,sy,w,h, dx*S,dy*S,w*S,h*S);
+    face(0,20,4,12, 6,20);                 // leg
+    face(16,20,4,12, 6,8);                 // torso side
+    face(0,8,8,8, 4,0);                    // head side
+    face(32,8,8,8, 4,0);                   // hair layer
+    if(PLAYER_BUST_SIZE > 0){
+      const cx = (10 + (0.42*d.rz - 0.1))*S, cy = (8 + 4.0 - bounce.x)*S;
+      x.fillStyle = col;
+      const bw = d.rz*S*2, bh = d.ry*S*2*(1 + Math.abs(bounce.x)*0.03);
+      x.fillRect(Math.round(cx - bw/2), Math.round(cy - bh/2), Math.round(bw), Math.round(bh));
+      x.fillStyle = 'rgba(0,0,0,0.25)'; x.fillRect(Math.round(cx - bw/2), Math.round(cy + bh/2 - 4), Math.round(bw), 4);
+    }
+    face(40,20,4,12, 6,8);                 // arm in front of the torso
+  }
+  function bounceStep(t){
+    const dt = Math.min(0.04, Math.max(0.001, (t - (bounce.last || t))/1000)); bounce.last = t;
+    const n = Math.ceil(dt/0.008), h = dt/n;
+    for(let i=0;i<n;i++){ const a = -270*bounce.x - 7.6*bounce.v; bounce.v += a*h; bounce.x += bounce.v*h; }
+    drawSide();
+    if(panel.style.display === 'flex' && bustShown() && (Math.abs(bounce.x) > 0.01 || Math.abs(bounce.v) > 0.05)) bounce.raf = requestAnimationFrame(bounceStep);
+    else { bounce.raf = 0; bounce.x = bounce.v = 0; bounce.last = 0; drawSide(); }
+  }
+  function kickBounce(strength){
+    bounce.v -= (strength || 30);
+    if(!bounce.raf){ bounce.last = 0; bounce.raf = requestAnimationFrame(bounceStep); }
+  }
+  function applyBust(v){
+    PLAYER_BUST_SIZE = clampBust(v);
+    bustVal.textContent = PLAYER_BUST_SIZE;
+    try{ localStorage.setItem('vf_bust_size', String(PLAYER_BUST_SIZE)); }catch(e){}
+    try{ if(typeof gameInstance !== 'undefined' && gameInstance && gameInstance.selfModel && gameInstance.selfModel.bust) gameInstance.selfModel.bust.setSize(PLAYER_BUST_SIZE); }catch(e){}
+    drawSide();
+  }
+  function refreshBustUI(){
+    const on = bustShown();
+    bustRow.style.display = on ? 'flex' : 'none';
+    sideC.style.display = on ? 'block' : 'none';
+    if(on){ bustSlider.value = PLAYER_BUST_SIZE; bustVal.textContent = PLAYER_BUST_SIZE; drawSide(); }
+  }
+  bustSlider.addEventListener('input', ()=>{ applyBust(bustSlider.value); kickBounce(18); });
+  $('bustBounce').onclick = ()=> kickBounce(34);
+  sideC.addEventListener('pointerdown', ()=> kickBounce(34));
+  window.vfRefreshBustUI = refreshBustUI;
+  bustReady = true;
+  refreshBustUI();
   $('skinApply').onclick = ()=>{
     CUSTOM_SKIN_CANVAS = cloneCanvas(work);
     USE_CUSTOM_SKIN = true;
