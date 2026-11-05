@@ -88,12 +88,17 @@
   .menu-row .vf-btn{flex:1;}
   #menuStatus{font-size:11px; color:#8892ab; margin-top:10px; min-height:14px;}
   .skin-select{
-    display:flex; gap:8px; justify-content:center; margin:10px 0 16px;
+    display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin:10px 0 16px;
   }
   .skin-swatch{
-    width:34px; height:34px; border-radius:4px; cursor:pointer;
+    position:relative; width:34px; height:34px; border-radius:4px; cursor:pointer;
     border:2px solid #000; box-shadow:0 0 0 2px #0000;
   }
+  .skin-del{
+    display:none; position:absolute; top:-9px; right:-9px; width:16px; height:16px; border-radius:50%;
+    background:#000; color:#fff; border:1px solid #fff5; font-size:12px; line-height:14px; text-align:center;
+  }
+  .skin-swatch:hover .skin-del, .skin-swatch.selected .skin-del{display:block;}
   .skin-swatch.selected{box-shadow:0 0 0 2px var(--vf-orange);}
 
   /* ---------- HUD ---------- */
@@ -1156,6 +1161,10 @@
       <button class="toolBtn" id="skinReset">Reset</button>
     </div>
     <input type="file" id="skinFile" accept="image/png,image/*" style="display:none">
+    <div class="toolRow">
+      <input type="text" id="skinName" class="vf-input" maxlength="16" placeholder="Skin name" style="flex:1 1 auto; min-width:0; margin:0;">
+      <button class="toolBtn" id="skinSaveNew">Save as new skin</button>
+    </div>
     <button class="vf-btn green" id="skinApply">Use this skin</button>
     <div class="craftHint" style="text-align:left;">
       The sheet is a 64&times;64 tile map in the standard block-game skin layout, so any skin editor or downloaded skin PNG works here.
@@ -4412,8 +4421,48 @@ const SKIN_PALETTES = [
 ];
 
 // A custom skin the player painted / imported in Skin Studio (64x64 canvas).
-let CUSTOM_SKIN_CANVAS = null;
+let CUSTOM_SKIN_CANVAS = null;   // the canvas of the active saved skin (kept when a palette skin is picked, for the swatch)
 let USE_CUSTOM_SKIN = false;
+// Saved skin library: up to SKIN_SLOT_MAX named skins. localStorage: vf_skins = [{id,name,data}], vf_skin_active = id.
+const SKIN_SLOT_MAX = 12;
+let SAVED_SKINS = [];            // [{ id, name, data (png data URL), canvas }]
+let ACTIVE_SKIN_ID = '';
+function vfSkinsPersist(){
+  try{
+    localStorage.setItem('vf_skins', JSON.stringify(SAVED_SKINS.map(k=>({ id:k.id, name:k.name, data:k.data }))));
+    localStorage.setItem('vf_skin_active', (USE_CUSTOM_SKIN && ACTIVE_SKIN_ID) ? ACTIVE_SKIN_ID : '');
+    return true;
+  }catch(e){ return false; }
+}
+function vfSetActiveSkin(id){
+  const k = SAVED_SKINS.find(x=>x.id === id);
+  if(k){ ACTIVE_SKIN_ID = k.id; CUSTOM_SKIN_CANVAS = k.canvas; USE_CUSTOM_SKIN = true; }
+}
+// Save the canvas into slot `id` (update it) or, with no id, into a new slot. Returns { skin, ok } or null if the slots are full.
+function vfSaveSkin(id, name, canvas){
+  name = String(name || '').trim().slice(0, 16);
+  let k = id ? SAVED_SKINS.find(x=>x.id === id) : null;
+  const data = canvas.toDataURL('image/png');
+  if(!k){
+    if(SAVED_SKINS.length >= SKIN_SLOT_MAX) return null;
+    k = { id: 's' + Date.now().toString(36) + Math.floor(Math.random()*1296).toString(36), name: name || ('Skin ' + (SAVED_SKINS.length + 1)), data, canvas: cloneCanvas(canvas) };
+    SAVED_SKINS.push(k);
+  } else {
+    if(name) k.name = name;
+    k.data = data; k.canvas = cloneCanvas(canvas);
+  }
+  vfSetActiveSkin(k.id);
+  return { skin: k, ok: vfSkinsPersist() };
+}
+function vfDeleteSkin(id){
+  const i = SAVED_SKINS.findIndex(x=>x.id === id); if(i < 0) return;
+  SAVED_SKINS.splice(i, 1);
+  if(ACTIVE_SKIN_ID === id){
+    ACTIVE_SKIN_ID = ''; USE_CUSTOM_SKIN = false;
+    CUSTOM_SKIN_CANVAS = SAVED_SKINS.length ? SAVED_SKINS[SAVED_SKINS.length-1].canvas : null;
+  }
+  vfSkinsPersist();
+}
 function activeSkinCanvas(){
   return (USE_CUSTOM_SKIN && CUSTOM_SKIN_CANVAS) ? CUSTOM_SKIN_CANVAS : drawDefaultSkin(PLAYER_PALETTE, PLAYER_MODEL_STYLE === 'girl' ? 'girl' : 'boy');
 }
@@ -5097,13 +5146,19 @@ function createBust(P, tex, chestUV){
     // Soft tissue is an underdamped spring-mass per axis (up/down, front/back, left/right), driven by the body's
     // acceleration, with a weak spring between the two sides and a faster secondary ripple, so it overshoots and
     // settles over a few cycles instead of snapping back.
-    update(dt, vy, speed, phase){
+    // pose = { crouch: 0..1 (eased), swim: bool } so the tissue reacts to bending over and to water
+    update(dt, vy, speed, phase, pose){
       if(!root.visible){ this.prevVy = vy; return; }
       dt = Math.min(dt, 0.05);
       if(this.prevVy == null) this.prevVy = vy;
       this.t += dt;
       const m = this.size/200, A = Math.min(1.3, 0.4 + 0.6*m);       // small sizes move less
       const run = Math.min(1, speed/4.3);
+      const cr = (pose && pose.crouch) ? Math.max(0, Math.min(1, pose.crouch)) : 0;
+      this._sw = (this._sw || 0) + ((pose && pose.swim ? 1 : 0) - (this._sw || 0)) * Math.min(1, dt*6);
+      const sw = this._sw;                                              // 0 = on land, 1 = swimming (eased)
+      const dcr = this._prevCr == null ? 0 : Math.max(-0.3, Math.min(0.3, cr - this._prevCr));
+      this._prevCr = cr;                                                // how fast the crouch is changing
       const stride = Math.cos(phase*2) * 2.4 * run;   // two bobs per full stride
       const eff = vy + stride;
       const dv = eff - (this._prevEff == null ? eff : this._prevEff);
@@ -5118,23 +5173,29 @@ function createBust(P, tex, chestUV){
       // Δv -> impulse. Take-off pushes it down, landing throws it down then up, braking throws it forward.
       const kickY = Math.max(-40, Math.min(40, dv)) * 2.2;
       const kickZ = Math.max(-6, Math.min(6, ds)) * 6;
-      const airborne = Math.abs(vy) > 1.2 && Math.abs(dv) < 6;
+      const airborne = Math.abs(vy) > 1.2 && Math.abs(dv) < 6 && sw < 0.5;
       this.flutter += dt*(34 + Math.min(20, Math.abs(vy)));
       const flutter = airborne ? Math.sin(this.flutter) * Math.min(1, Math.abs(vy)/14) * 0.5 : 0;
       const lift = airborne && vy < -2 ? Math.min(1.1, -vy/22) : 0;      // weightless while falling
+      // resting offsets: bent over it hangs a little lower and further forward; in water it floats up
+      const yRest = lift - 0.5*cr + 0.5*sw, zRest = -0.45*cr;
       const n = Math.max(1, Math.ceil(dt/0.008)), h = dt/n;
       const mf = 1 + 1.4*Math.min(m, 1.5);                                // mass grows with size -> lower frequency
-      const ky0 = 270/mf, kz0 = 330/mf, kx0 = 300/mf, zeta = 0.2;
+      const fl = 1 - 0.4*sw;                                              // water: softer springs, much more damping
+      const ky0 = 270*fl/mf, kz0 = 330*fl/mf, kx0 = 300*fl/mf, zeta = 0.2 + 0.35*sw;
       const k2 = 1500, c2 = 2*0.12*Math.sqrt(k2);
       const L = sides[0], R = sides[1];
       L.vy -= kickY; R.vy -= kickY*0.93;
       L.vz += kickZ; R.vz += kickZ*0.95;
+      // crouch settle: dropping down throws it up and forward, standing up lets it fall back
+      L.vy += dcr*55; R.vy += dcr*55*0.93;
+      L.vz -= dcr*28; R.vz -= dcr*28*0.95;
       for(let i=0; i<n; i++){
         for(let si=0; si<2; si++){
           const s = sides[si], o = sides[1-si], ks = s.kscale;
           const ky = ky0*ks, kz = kz0*ks, kx = kx0*ks;
-          const ay = -ky*(s.y - lift) - 2*zeta*Math.sqrt(ky)*s.vy + 0.12*ky*(o.y - s.y);
-          const az = -kz*s.z - 2*zeta*Math.sqrt(kz)*s.vz + 0.10*kz*(o.z - s.z);
+          const ay = -ky*(s.y - yRest) - 2*zeta*Math.sqrt(ky)*s.vy + 0.12*ky*(o.y - s.y);
+          const az = -kz*(s.z - zRest) - 2*zeta*Math.sqrt(kz)*s.vz + 0.10*kz*(o.z - s.z);
           const ax = -kx*s.x - 2*zeta*Math.sqrt(kx)*s.vx + 0.15*kx*(o.x - s.x) + sway;
           const aw = -k2*(s.w - s.y) - c2*s.vw;
           s.vy += ay*h; s.y += s.vy*h;
@@ -5143,7 +5204,7 @@ function createBust(P, tex, chestUV){
           s.vw += aw*h; s.w += s.vw*h;
         }
       }
-      const breath = Math.sin(this.t*1.5) * 0.05;
+      const breath = Math.sin(this.t*1.5) * 0.05 + sw*(Math.sin(this.t*2.3)*0.3 + Math.sin(phase)*0.2);   // slow drift + stroke sway in water
       for(let si=0; si<2; si++){
         const s = sides[si], u = s.pivot.userData;
         // hard stops stay as a safety net; what is drawn is a soft-saturated version so it never hits a wall
@@ -5286,9 +5347,9 @@ function buildPlayerModel(palette, skinCanvas, style, bustSize, bustColor){
   }
 
   // secondary motion: hair sways behind you, the bust bounces. Safe to call every frame for any model.
-  built.update = function(dt, vy, speed, phase){
+  built.update = function(dt, vy, speed, phase, pose){
     dt = Math.max(0.0005, Math.min(0.05, dt || 0.016));
-    if(this.bust) this.bust.update(dt, vy || 0, speed || 0, phase || 0);
+    if(this.bust) this.bust.update(dt, vy || 0, speed || 0, phase || 0, pose);
     const h = this.hair;
     if(h){
       h.t += dt;
@@ -5416,18 +5477,38 @@ function getPigTexture(){
   return PIG_TEX;
 }
 
-// Restore a custom skin saved by Skin Studio.
-(function loadStoredSkin(){
+// Restore the saved skins (and migrate the old single-skin slot into the library).
+(function loadStoredSkins(){
   try{
-    const data = localStorage.getItem('vf_skin_custom');
-    if(!data) return;
-    const img = new Image();
-    img.onload = ()=>{
-      CUSTOM_SKIN_CANVAS = canvasFromImage(img);
-      USE_CUSTOM_SKIN = localStorage.getItem('vf_skin_use') === '1';
+    let list = [];
+    const raw = localStorage.getItem('vf_skins');
+    if(raw){ try{ list = JSON.parse(raw) || []; }catch(e){ list = []; } }
+    let active = localStorage.getItem('vf_skin_active') || '';
+    if(!list.length && raw === null){   // only migrate the pre-library single skin once
+      const old = localStorage.getItem('vf_skin_custom');
+      if(old){
+        list = [{ id:'s0', name:'My skin', data:old }];
+        active = localStorage.getItem('vf_skin_use') === '1' ? 's0' : '';
+      }
+    }
+    list = list.filter(k=>k && typeof k.id === 'string' && typeof k.data === 'string' && k.data.indexOf('data:image/png') === 0).slice(0, SKIN_SLOT_MAX);
+    if(!list.length) return;
+    let left = list.length;
+    const done = ()=>{
+      if(--left > 0) return;
+      SAVED_SKINS = list.filter(k=>k.canvas).map(k=>({ id:k.id, name:String(k.name||'Skin').slice(0,16), data:k.data, canvas:k.canvas }));
+      if(!SAVED_SKINS.length) return;
+      const act = SAVED_SKINS.find(k=>k.id === active);
+      if(act) vfSetActiveSkin(act.id); else { CUSTOM_SKIN_CANVAS = SAVED_SKINS[0].canvas; USE_CUSTOM_SKIN = false; }
+      vfSkinsPersist();   // writes the migrated library
       if(typeof buildSkinSelector === 'function' && document.getElementById('skinSelect')) buildSkinSelector();
     };
-    img.src = data;
+    list.forEach(k=>{
+      const img = new Image();
+      img.onload = ()=>{ try{ k.canvas = canvasFromImage(img); }catch(e){} done(); };
+      img.onerror = ()=> done();
+      img.src = k.data;
+    });
   }catch(e){}
 })();
 
@@ -10334,7 +10415,7 @@ class Game{
   cycleView(){
     this.viewMode = (this.viewMode + 1) % 3;
     this._syncSelfVisibility();
-    if(this.selfModel.bust) this.selfModel.bust._prevEff = null;   // no phantom kick from time spent in first person
+    if(this.selfModel.bust){ this.selfModel.bust._prevEff = null; this.selfModel.bust._prevCr = null; }   // no phantom kick from time spent in first person
     this._updateHeldItem();
     this.showCenterMsg(['First person','Behind you','In front of you'][this.viewMode], 900);
   }
@@ -10378,7 +10459,7 @@ class Game{
     } else {
       P.armL.rotation.x *= 0.8; P.armR.rotation.x *= 0.8; P.legL.rotation.x *= 0.8; P.legR.rotation.x *= 0.8;
     }
-    m.update(delta, this.vel.y, speed, this._selfSwing);   // hair sway + bust jiggle (girl model)
+    m.update(delta, this.vel.y, speed, this._selfSwing, { crouch: this._crouchPose, swim: swimming });   // hair sway + bust jiggle (girl model)
   }
 
   /* ---------------- Dropped items ---------------- */
@@ -11304,7 +11385,7 @@ class Game{
         p.parts.armL.rotation.x *= 0.8; p.parts.armR.rotation.x *= 0.8;
         p.parts.legL.rotation.x *= 0.8; p.parts.legR.rotation.x *= 0.8;
       }
-      if(p.model && p.model.update) p.model.update(delta, p._vy, p.spd, p.animT);
+      if(p.model && p.model.update) p.model.update(delta, p._vy, p.spd, p.animT, { crouch: p._crouchPose, swim: !!p.swimming });
       if(p.mining){
         p.mineT = (p.mineT || 0) + delta*11;
         p.parts.armR.rotation.x = -1.15 + Math.sin(p.mineT)*0.65;
@@ -12858,25 +12939,36 @@ function buildSkinSelector(){
     wrap.querySelectorAll('.skin-swatch').forEach(s=>s.classList.remove('selected'));
     el.classList.add('selected');
   };
-  if(CUSTOM_SKIN_CANVAS){
-    const sw = document.createElement('div');
-    sw.className = 'skin-swatch custom' + (USE_CUSTOM_SKIN ? ' selected' : '');
-    sw.title = 'Your custom skin';
+  const faceUrl = (cv)=>{
     // face crop (front of head, with the hat layer on top) as the swatch picture
     const f = makeCanvas(8); const fx = f.getContext('2d'); fx.imageSmoothingEnabled = false;
     const hr = faceRects(LIMB_DEFS.head, LIMB_DEFS.head.uv).front, ho = faceRects(LIMB_DEFS.head, LIMB_DEFS.head.ov).front;
-    fx.drawImage(CUSTOM_SKIN_CANVAS, hr[0], hr[1], 8, 8, 0, 0, 8, 8);
-    fx.drawImage(CUSTOM_SKIN_CANVAS, ho[0], ho[1], 8, 8, 0, 0, 8, 8);
-    sw.style.backgroundImage = `url(${f.toDataURL()})`;
-    sw.onclick = ()=>{ USE_CUSTOM_SKIN = true; try{ localStorage.setItem('vf_skin_use','1'); }catch(e){} select(sw); };
+    fx.drawImage(cv, hr[0], hr[1], 8, 8, 0, 0, 8, 8);
+    fx.drawImage(cv, ho[0], ho[1], 8, 8, 0, 0, 8, 8);
+    return f.toDataURL();
+  };
+  SAVED_SKINS.forEach(k=>{
+    const sw = document.createElement('div');
+    sw.className = 'skin-swatch custom' + ((USE_CUSTOM_SKIN && ACTIVE_SKIN_ID === k.id) ? ' selected' : '');
+    sw.title = k.name;
+    sw.style.backgroundImage = `url(${faceUrl(k.canvas)})`;
+    sw.onclick = ()=>{ vfSetActiveSkin(k.id); vfSkinsPersist(); select(sw); };
+    const del = document.createElement('span');
+    del.className = 'skin-del'; del.textContent = '\u00d7'; del.title = 'Delete ' + k.name;
+    del.onclick = (e)=>{
+      e.stopPropagation();
+      if(!confirm('Delete the skin "' + k.name + '"?')) return;
+      vfDeleteSkin(k.id); buildSkinSelector();
+    };
+    sw.appendChild(del);
     wrap.appendChild(sw);
-  }
+  });
   SKIN_PALETTES.forEach((p, i)=>{
     const sw = document.createElement('div');
     sw.className = 'skin-swatch' + ((!USE_CUSTOM_SKIN && (sameP(p, PLAYER_PALETTE) || (!PLAYER_PALETTE && i===0))) ? ' selected' : '');
     sw.style.background = `linear-gradient(135deg, ${p.shirt} 50%, ${p.skin} 50%)`;
     sw.onclick = ()=>{
-      USE_CUSTOM_SKIN = false; try{ localStorage.setItem('vf_skin_use','0'); }catch(e){}
+      USE_CUSTOM_SKIN = false; vfSkinsPersist();
       select(sw);
       PLAYER_PALETTE = p;
     };
@@ -13064,7 +13156,13 @@ function initSkinStudio(){
   view.addEventListener('pointerup', stop); view.addEventListener('pointercancel', stop);
 
   function loadFrom(src){ wctx.clearRect(0,0,64,64); wctx.drawImage(src,0,0); undoStack.length = 0; render(); }
-  function open(){ loadFrom(activeSkinCanvas()); panel.style.display = 'flex'; if(window.vfRefreshBustUI) window.vfRefreshBustUI(); }
+  let editingId = '';   // the saved skin this session updates ('' = the next save creates a new slot)
+  function open(){
+    editingId = (USE_CUSTOM_SKIN && ACTIVE_SKIN_ID) ? ACTIVE_SKIN_ID : '';
+    const cur = SAVED_SKINS.find(k=>k.id === editingId);
+    $('skinName').value = cur ? cur.name : '';
+    loadFrom(activeSkinCanvas()); panel.style.display = 'flex'; if(window.vfRefreshBustUI) window.vfRefreshBustUI();
+  }
   $('openSkinStudio').onclick = open;
   $('closeSkin').onclick = ()=>{ panel.style.display = 'none'; };
 
@@ -13334,12 +13432,19 @@ function initSkinStudio(){
   window.vfRefreshBustUI = refreshBustUI;
   bustReady = true;
   refreshBustUI();
-  $('skinApply').onclick = ()=>{
-    CUSTOM_SKIN_CANVAS = cloneCanvas(work);
-    USE_CUSTOM_SKIN = true;
-    try{ localStorage.setItem('vf_skin_custom', work.toDataURL('image/png')); localStorage.setItem('vf_skin_use','1'); }catch(e){}
+  // saves into the skin being edited (or a new slot if it started from a built-in look), selects it, closes the studio
+  function saveSkinFromStudio(asNew){
+    const r = vfSaveSkin(asNew ? '' : editingId, $('skinName').value, work);
+    if(!r){ alert('All ' + SKIN_SLOT_MAX + ' skin slots are used. Delete one (the \u00d7 on its swatch) first.'); return false; }
+    if(!r.ok) alert('The skin is applied, but the browser could not store it (storage full), so it will be gone after a reload.');
+    editingId = r.skin.id; $('skinName').value = r.skin.name;
     buildSkinSelector();
-    panel.style.display = 'none';
+    return true;
+  }
+  $('skinApply').onclick = ()=>{ if(saveSkinFromStudio(false)) panel.style.display = 'none'; };
+  $('skinSaveNew').onclick = ()=>{
+    if(!saveSkinFromStudio(true)) return;
+    const b = $('skinSaveNew'), t = b.textContent; b.textContent = 'Saved!'; setTimeout(()=>{ b.textContent = t; }, 1100);
   };
 }
 
