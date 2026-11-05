@@ -4885,9 +4885,11 @@ try{
 let PLAYER_BUST_COLOR = null;
 function clampBustColor(c){ return (typeof c === 'string' && /^#[0-9a-fA-F]{6}$/.test(c)) ? c.toLowerCase() : null; }
 try{ PLAYER_BUST_COLOR = clampBustColor(localStorage.getItem('vf_bust_color')); }catch(e){}
-// Hand-painted bust texture: 32x16 (left half = left side as seen from the front, right half = right side). Local only.
+// Hand-painted bust texture: 32x16 (left half = left side as seen from the front, right half = right side). Synced to the room via worlds/<room>/bustpaints.
 const BUST_PAINT_W = 32, BUST_PAINT_H = 16;
 let BUST_PAINT_CANVAS = null;
+// Called whenever the hand-painted bust changes; the game (when online) re-publishes it so other players see it.
+window.vfBustPaintChanged = function(){ try{ if(typeof gameInstance !== 'undefined' && gameInstance && gameInstance._publishMyBustPaint) gameInstance._publishMyBustPaint(); }catch(e){} };
 try{
   const d = localStorage.getItem('vf_bust_paint');
   if(d && d.indexOf('data:image/png') === 0){
@@ -4898,6 +4900,7 @@ try{
       BUST_PAINT_CANVAS = cv;
       try{ if(gameInstance && gameInstance.selfModel && gameInstance.selfModel.bust) gameInstance.selfModel.bust.setPaint(cv); }catch(e){}
       try{ if(window.vfRefreshBustUI) window.vfRefreshBustUI(); }catch(e){}
+      try{ window.vfBustPaintChanged && window.vfBustPaintChanged(); }catch(e){}
     };
     im.src = d;
   }
@@ -10851,6 +10854,13 @@ class Game{
     skinsRef.on('child_changed', snap=>this._onRemoteSkin(snap.key, snap.val()));
     skinsRef.on('child_removed', snap=>this._onRemoteSkin(snap.key, null));
 
+    // listen for hand-painted busts (own path, like skins, so the image is not re-sent with every position update)
+    this._remoteBustPaints = {};
+    const bpRef = fbDB.ref(`worlds/${WORLD_ID}/bustpaints`);
+    bpRef.on('child_added',   snap=>this._onRemoteBustPaint(snap.key, snap.val()));
+    bpRef.on('child_changed', snap=>this._onRemoteBustPaint(snap.key, snap.val()));
+    bpRef.on('child_removed', snap=>this._onRemoteBustPaint(snap.key, null));
+
     // listen for chat
     fbDB.ref(`worlds/${WORLD_ID}/chat`).limitToLast(20).on('child_added', snap=>{
       const v = snap.val();
@@ -10866,13 +10876,14 @@ class Game{
         swimming: !!this.inWater,
         held: sanitizeHeldId(this.selectedBlock),
         armor: this.armorCode(),
+        crouch: this.crouching ? 1 : 0,
       };
       if(PLAYER_MODEL_STYLE === 'girl' && vfBustAllowed()){ m.bust = Math.min(vfBustMax(), clampBust(PLAYER_BUST_SIZE)); if(PLAYER_BUST_COLOR) m.bustColor = PLAYER_BUST_COLOR; }
       return m;
     };
     // If the database rules don't allow the optional "held" field, the whole write
     // is rejected and multiplayer dies. Detect that once, drop the field, carry on.
-    const stripHeld = (rec)=>{ if(this._noHeldSync){ delete rec.held; delete rec.armor; delete rec.model; delete rec.bust; delete rec.bustColor; } return rec; };
+    const stripHeld = (rec)=>{ if(this._noHeldSync){ delete rec.held; delete rec.armor; delete rec.model; delete rec.bust; delete rec.bustColor; delete rec.crouch; } return rec; };
     const onWriteFail = (err, retry)=>{
       const denied = err && /permission|denied|validat/i.test(String(err.code||'') + ' ' + String(err.message||''));
       if(denied && !this._noHeldSync){
@@ -10895,6 +10906,7 @@ class Game{
         const writeFull = ()=> myRef.set(fullRecord()).catch(err=>onWriteFail(err, writeFull));
         writeFull();
         this._publishMySkin();
+        this._publishMyBustPaint(true);
       }
     });
     this._presenceInterval = setInterval(()=>{
@@ -10939,6 +10951,52 @@ class Game{
     img.src = url;
   }
 
+  // Publish my hand-painted bust (32x16 PNG, well under 2 KB) or clear it. Debounced so a brush stroke is one write.
+  _publishMyBustPaint(now){
+    if(!ONLINE_MODE || !fbDB || !fbUID) return;
+    clearTimeout(this._bpPubT);
+    const go = ()=>{
+      const ref = fbDB.ref(`worlds/${WORLD_ID}/bustpaints/${fbUID}`);
+      try{
+        if(PLAYER_MODEL_STYLE === 'girl' && vfBustAllowed() && BUST_PAINT_CANVAS){
+          const url = BUST_PAINT_CANVAS.toDataURL('image/png');
+          if(url.length < 20000){
+            ref.onDisconnect().remove();
+            ref.set(url).catch(err=>console.warn('Bust paint sync rejected — add a "bustpaints" rule to your database rules.', err));
+          }
+        } else {
+          ref.remove().catch(()=>{});
+        }
+      }catch(e){ console.warn('bust paint publish failed', e); }
+    };
+    if(now) go(); else this._bpPubT = setTimeout(go, 500);
+  }
+
+  // Another player's painted bust arrived / changed / was removed.
+  _onRemoteBustPaint(uid, url){
+    if(uid === fbUID) return;
+    if(!this._remoteBustPaints) this._remoteBustPaints = {};
+    const apply = (cv)=>{
+      const p = this.otherPlayers.get(uid);
+      if(p && p.model && p.model.bust) p.model.bust.setPaint(cv);
+    };
+    if(typeof url !== 'string' || url.indexOf('data:image/png;base64,') !== 0 || url.length > 20000){
+      delete this._remoteBustPaints[uid]; apply(null); return;
+    }
+    const img = new Image();
+    img.onload = ()=>{
+      const cv = this._remoteBustPaints[uid] || document.createElement('canvas');
+      cv.width = BUST_PAINT_W; cv.height = BUST_PAINT_H;
+      const c = cv.getContext('2d'); c.clearRect(0,0,BUST_PAINT_W,BUST_PAINT_H); c.drawImage(img, 0, 0, BUST_PAINT_W, BUST_PAINT_H);
+      this._remoteBustPaints[uid] = cv;
+      const p = this.otherPlayers.get(uid);
+      if(p && p.model && p.model.bust){
+        p.model.bust.setPaint(cv);
+      }
+    };
+    img.src = url;
+  }
+
   _rebuildOtherPlayer(uid){
     const p = this.otherPlayers.get(uid);
     if(!p) return; // model not created yet — _addOtherPlayer will pick the skin up
@@ -10955,7 +11013,7 @@ class Game{
     if(!ONLINE_MODE || !fbDB) return;
     try{
       const base = `worlds/${WORLD_ID}`;
-      ['blocks','players','chat','skins','drops','mining','mobs'].forEach(p=> fbDB.ref(`${base}/${p}`).off());
+      ['blocks','players','chat','skins','bustpaints','drops','mining','mobs'].forEach(p=> fbDB.ref(`${base}/${p}`).off());
       fbDB.ref(`${base}/hits/${fbUID}`).off();
       fbDB.ref(`${base}/mobhits/${fbUID}`).off();
       const myMobs = fbDB.ref(`${base}/mobs/${fbUID}`);
@@ -10968,6 +11026,10 @@ class Game{
       mySkin.onDisconnect().cancel();
       mySkin.remove().catch(()=>{});
       this._remoteSkins = {};
+      clearTimeout(this._bpPubT);
+      const myBp = fbDB.ref(`${base}/bustpaints/${fbUID}`);
+      myBp.onDisconnect().cancel(); myBp.remove().catch(()=>{});
+      this._remoteBustPaints = {};
       if(this._connRef) this._connRef.off();
       const me = fbDB.ref(`${base}/players/${fbUID}`);
       me.onDisconnect().cancel();
@@ -10985,7 +11047,9 @@ class Game{
   _addOtherPlayer(uid, data){
     if(this.otherPlayers.has(uid)) return;
     const palette = data.palette || SKIN_PALETTES[0];
-    const built = buildPlayerModel(palette, (this._remoteSkins && this._remoteSkins[uid]) || null, data.model === 'girl' ? 'girl' : 'boy', Number.isFinite(data.bust) ? clampBust(data.bust) : BUST_DEFAULT, clampBustColor(data.bustColor));
+    const built = buildPlayerModel(palette, (this._remoteSkins && this._remoteSkins[uid]) || null, data.model === 'girl' ? 'girl' : 'boy', Number.isFinite(data.bust) ? clampBust(data.bust) : 0, clampBustColor(data.bustColor));
+    const _bpc = this._remoteBustPaints && this._remoteBustPaints[uid];
+    if(built.bust && _bpc) built.bust.setPaint(_bpc);
     this.scene.add(built.group);
 
     // name tag sprite
@@ -11014,6 +11078,7 @@ class Game{
       buf: [{ t: performance.now(), x:x0, y:y0, z:z0, yaw: Number.isFinite(data.yaw)?data.yaw:0, pitch: Number.isFinite(data.pitch)?data.pitch:0 }],
       name: data.name||'Player', playerId: data.playerId||null,
       style: data.model === 'girl' ? 'girl' : 'boy', heldId: 0, heldObj: null, lastData: data, heldRaw: data.held,
+      crouching: !!data.crouch, _crouchPose: data.crouch ? 1 : 0, tag: tagSprite,
     });
     setModelHeld(this.otherPlayers.get(uid), data.held);
     setModelArmor(this.otherPlayers.get(uid), data.armor);
@@ -11045,6 +11110,7 @@ class Game{
     }
     if(!p.buf) p.moving = !!data.moving; // otherwise movement is derived from the interpolated path
     p.swimming = !!data.swimming;
+    p.crouching = !!data.crouch;
     if(p.model && p.model.bust && Number.isFinite(data.bust) && clampBust(data.bust) !== p.model.bust.size) p.model.bust.setSize(data.bust);
     if(p.model && p.model.bust && p.model.bust.color !== clampBustColor(data.bustColor)) p.model.bust.setColor(data.bustColor);
     p.name = data.name||p.name; p.playerId = data.playerId||p.playerId;
@@ -11219,6 +11285,15 @@ class Game{
       p.group.rotation.y = p.ryaw;
       p.group.rotation.x += ((p.swimming ? -1.25 : 0) - p.group.rotation.x) * Math.min(1, delta*8);
       p.group.position.y += (-p.group.rotation.x)*0.35;
+      {
+        const P = p.parts, kc = p._crouchPose = (p._crouchPose||0) + ((p.crouching && !p.swimming ? 1 : 0) - (p._crouchPose||0)) * Math.min(1, delta*12);
+        const u = 1.8/32;
+        P.body.rotation.x = 0.45*kc;
+        P.head.position.set(0, 24*u - 2.5*u*kc, -1.5*u*kc);
+        P.armL.position.set(P.armL.userData.px || -6*u, 24*u - 2*u*kc, -1.5*u*kc);
+        P.armR.position.set(P.armR.userData.px ||  6*u, 24*u - 2*u*kc, -1.5*u*kc);
+        if(p.tag) p.tag.position.y = 2.15 - 0.3*kc;
+      }
       p.parts.head.rotation.x = Math.max(-1.2, Math.min(1.2, p.rpitch)) - p.group.rotation.x*0.8;
       if(p.moving){
         p.animT += delta*8;
@@ -13117,6 +13192,7 @@ function initSkinStudio(){
     BUST_PAINT_CANVAS = null;
     try{ localStorage.removeItem('vf_bust_paint'); }catch(e){}
     try{ if(typeof gameInstance !== 'undefined' && gameInstance && gameInstance.selfModel && gameInstance.selfModel.bust) gameInstance.selfModel.bust.setPaint(null); }catch(e){}
+    try{ window.vfBustPaintChanged(); }catch(e){}
     applyBustColor(null); kickBounce(14);
   };
 
@@ -13161,7 +13237,7 @@ function initSkinStudio(){
     bustPaintState.textContent = bustStateText();
     drawSide();
   }
-  function bpSave(){ try{ localStorage.setItem('vf_bust_paint', bpWork.toDataURL('image/png')); }catch(e){} }
+  function bpSave(){ try{ localStorage.setItem('vf_bust_paint', bpWork.toDataURL('image/png')); }catch(e){} try{ window.vfBustPaintChanged(); }catch(e){} }
   function bpPush(){ bpUndo.push(bpw.getImageData(0,0,BW,BH)); if(bpUndo.length > 40) bpUndo.shift(); }
   function bpPx(x, y, c){
     if(x<0||y<0||x>=BW||y>=BH) return;
