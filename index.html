@@ -4963,14 +4963,6 @@ function createBust(P, tex, chestUV){
   const root = new THREE.Group();            // lives on the torso mesh
   const sides = [];
   const geos = [buildBustGeo(1), buildBustGeo(-1)];     // index 0 = sgn -1 (inner edge faces +x), index 1 = sgn +1
-  { // every vertex samples one pixel of the shirt, so the bust takes the shirt colour from any skin
-    const u = (chestUV[0]+0.5)/64, v = 1 - (chestUV[1]+0.5)/64;
-    for(const g of geos){
-      const uv = g.attributes.uv;
-      for(let i=0; i<uv.count; i++) uv.setXY(i, u, v);
-      uv.needsUpdate = true;
-    }
-  }
   const mat = new THREE.MeshLambertMaterial({ map: tex, vertexColors: true });
   [-1, 1].forEach((sgn, i)=>{
     const pivot = new THREE.Group();
@@ -4983,6 +4975,28 @@ function createBust(P, tex, chestUV){
   // own paint: a 1x1 texture so it goes through the same pipeline as the shirt texture (colours match the editor)
   let paintMat = null, paintCv = null, paintTex = null;
   let paintGeos = null, paintTex2 = null, paintMat2 = null;   // hand-painted look (own UV projection per side)
+  // pixel-exact shirt: every vertex is projected front-on onto the torso front face (sheet rect 20,20 8x12), so the bust
+  // copies the real pixels of the shirt; coordinates are clamped to the face so the sides repeat the edge pixels
+  const SHIRT_FRONT = [20, 20, 8, 12];
+  function projectShirtUV(d){
+    if(!d) return;
+    const fx = SHIRT_FRONT[0], fy = SHIRT_FRONT[1], fw = SHIRT_FRONT[2], fh = SHIRT_FRONT[3];
+    const mx = fw/2 - 0.02, my = fh/2 - 0.02;
+    for(const s of sides){
+      const g = s.geo, pos = g.attributes.position, uv = g.attributes.uv, u = s.pivot.userData;
+      const cx = u.bx/P, cy = u.by/P;
+      for(let i=0; i<uv.count; i++){
+        let xp = cx + pos.getX(i)*d.rx;
+        let yp = cy + pos.getY(i)*d.ry;
+        xp = Math.max(-mx, Math.min(mx, xp));
+        yp = Math.max(-my, Math.min(my, yp));
+        const col = fx + fw/2 - xp;
+        const row = fy + fh/2 - yp;
+        uv.setXY(i, col/64, 1 - row/64);
+      }
+      uv.needsUpdate = true;
+    }
+  }
   const bust = {
     root, sides, size: BUST_DEFAULT, armorTier: 0, t: 0, prevVy: null, flutter: 0, color: null, paint: null,
     setSize(s){ this.size = clampBust(s); this.layout(); },
@@ -5059,6 +5073,7 @@ function createBust(P, tex, chestUV){
         s.pivot.position.set(u.bx, u.by, u.bz);
         if(s.armorMesh) s.armorMesh.scale.copy(s.mesh.scale).multiplyScalar(d.k);
       }
+      projectShirtUV(d);
       if(this.heldRec && this.heldRec.heldObj) vfPlaceHeld(this.heldRec);
     },
     // chest armor puts a metal cup over each side; the cloth mesh is hidden underneath
@@ -13043,6 +13058,22 @@ function initSkinStudio(){
       x.beginPath(); x.rect(0, 0, Z, 2*R);
       x.closePath();
       x.fillStyle = col; x.fill();
+      if(!PLAYER_BUST_COLOR && !BUST_PAINT_CANVAS){ // matches torso: paint the real shirt pixels along the outer edge of the cube
+        try{
+          const outer = Math.min(3.98, d.gap + d.rx), by = 3.2 - d.lower;
+          const cxp = 24 - outer;                                  // sheet column the cube side samples (edge pixel of the shirt)
+          const colPx = wctx.getImageData(Math.max(20, Math.min(27, Math.floor(cxp))), 20, 1, 12).data;
+          x.save(); x.beginPath(); x.rect(0, 0, Z, 2*R); x.clip();
+          const steps = Math.max(1, Math.ceil(2*R));
+          for(let j=0; j<steps; j++){
+            const yp = by + d.ry - ((j + 0.5)/steps)*2*d.ry;       // skin px height of this strip
+            const row = Math.max(0, Math.min(11, Math.floor(26 - yp)));
+            x.fillStyle = `rgb(${colPx[row*4]},${colPx[row*4+1]},${colPx[row*4+2]})`;
+            x.fillRect(0, (j/steps)*2*R, Z, 2*R/steps + 0.6);
+          }
+          x.restore();
+        }catch(e){}
+      }
       const gr = x.createLinearGradient(0, 0, 0, 2*R);
       gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(1, 'rgba(0,0,0,0.28)');
       x.fillStyle = gr; x.fill();
