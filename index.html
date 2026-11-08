@@ -901,6 +901,8 @@
       <div class="modeBtn" data-model="girl">GIRL MODEL</div>
     </div>
     <button class="vf-btn" id="openSkinStudio" style="margin:0 0 12px;"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20l1-4L16.5 4.5a2 2 0 0 1 3 3L8 19z"/></svg>Skin Studio</button>
+    <button class="vf-btn" id="importSkinMenu" style="margin:0 0 12px;">Import skin PNG</button>
+    <input type="file" id="importSkinMenuFile" accept="image/png,image/*" multiple style="display:none">
 
     <div class="modeRow" id="modeRow">
       <div class="modeBtn selected" data-mode="survival">SURVIVAL</div>
@@ -1751,7 +1753,7 @@ function buildBlockTexture(name, seed){
   return canvasToTexture(c);
 }
 
-/* ---- Build-battle block painters (ids 186-199, 211-241) ---- */
+/* ---- Additional block painters (ids 186-199, 211-241) ---- */
 (function(){
   const P = TexturePainters;
   const plank = (base, dark)=> function(ctx, seed){
@@ -1975,7 +1977,7 @@ const BLOCKS = {
   184: { name:'carpet_purple', tex:{all:'wool_purple'}, texFrom:168, transparent:true, noCollide:true, boxes:[[0,0,0,1,1/16,1]], hardness:0.1 },
   185: { name:'carpet_brown', tex:{all:'wool_brown'}, texFrom:169, transparent:true, noCollide:true, boxes:[[0,0,0,1,1/16,1]], hardness:0.1 },
 };
-// ---- Build-battle blocks: ids 186-199 and 211-241 (200-210 are reserved for hidden shaped variants, see SHAPE) ----
+// ---- Additional blocks: ids 186-199 and 211-241 (200-210 are reserved for hidden shaped variants, see SHAPE) ----
 (function(){
   const add = (id, def)=>{ BLOCKS[id] = def; };
   add(186,{ name:'spruce_planks',   tex:{all:'spruce_planks'},   hardness:1.0, tool:'axe' });
@@ -4661,7 +4663,32 @@ function mirrorLimb(ctx, srcCanvas, def, srcUV, dstUV){
   mirrorFaceTo(ctx, srcCanvas, s.right, d.left);
   mirrorFaceTo(ctx, srcCanvas, s.left, d.right);
 }
-// Any image -> 64x64 skin canvas (handles legacy 2:1 sheets and bigger HD sheets).
+// Slim ("Alex" style) skins use 3px-wide arms. Detected by the always-empty last column of both base arm fronts.
+function skinIsSlim(c){
+  const x = c.getContext('2d', { willReadFrequently:true });
+  const empty = (px, py)=>{ const d = x.getImageData(px, py, 1, 12).data; for(let i=3;i<d.length;i+=4) if(d[i] > 8) return false; return true; };
+  return empty(47, 20) && empty(39, 52);
+}
+// Stretch the four slim arm strips (3px wide faces) into the classic 4px layout this model uses.
+function slimToWide(c){
+  const x = c.getContext('2d', { willReadFrequently:true });
+  x.imageSmoothingEnabled = false;
+  const src = cloneCanvas(c);
+  [[40,16],[40,32],[32,48],[48,48]].forEach(([u,v])=>{
+    x.clearRect(u, v, 16, 16);
+    const map = [ // [sx, sy, sw, sh, dx, dy, dw, dh]
+      [u+4,  v,   3, 4,  u+4,  v,   4, 4],   // top
+      [u+7,  v,   3, 4,  u+8,  v,   4, 4],   // bottom
+      [u,    v+4, 4, 12, u,    v+4, 4, 12],  // right
+      [u+4,  v+4, 3, 12, u+4,  v+4, 4, 12],  // front
+      [u+7,  v+4, 4, 12, u+8,  v+4, 4, 12],  // left
+      [u+11, v+4, 3, 12, u+12, v+4, 4, 12],  // back
+    ];
+    map.forEach(m => x.drawImage(src, m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7]));
+  });
+  return c;
+}
+// Any image -> 64x64 skin canvas (handles legacy 2:1 sheets, bigger HD sheets and slim-arm skins).
 function canvasFromImage(img){
   const c = makeCanvas(64);
   const x = c.getContext('2d', { willReadFrequently:true });
@@ -4674,8 +4701,24 @@ function canvasFromImage(img){
     mirrorLimb(x, copy, LIMB_DEFS.legR, LIMB_DEFS.legR.uv, LIMB_DEFS.legL.uv);
   } else {
     x.drawImage(img, 0, 0, w, h, 0, 0, 64, 64);
+    if(skinIsSlim(c)) slimToWide(c);
   }
   return c;
+}
+// Import a skin PNG straight into the saved-skin library and make it the active skin.
+function vfImportSkinFile(file){
+  if(!file || !/^image\//.test(file.type || 'image/png')) return;
+  const url = URL.createObjectURL(file), img = new Image();
+  img.onload = ()=>{
+    URL.revokeObjectURL(url);
+    const nm = String(file.name || '').replace(/\.[^.]+$/, '').slice(0, 16);
+    const r = vfSaveSkin('', nm, canvasFromImage(img));
+    if(!r){ alert('All ' + SKIN_SLOT_MAX + ' skin slots are used. Delete one (the \u00d7 on its swatch) first.'); return; }
+    if(!r.ok) alert('The skin is applied, but the browser could not store it (storage full), so it will be gone after a reload.');
+    if(typeof buildSkinSelector === 'function') buildSkinSelector();
+  };
+  img.onerror = ()=>{ URL.revokeObjectURL(url); alert('That file could not be read as an image.'); };
+  img.src = url;
 }
 
 // A box whose six faces each sample their own rectangle of the skin sheet.
@@ -5247,7 +5290,7 @@ function buildPlayerModel(palette, skinCanvas, style, bustSize, bustColor){
   const tex = new THREE.CanvasTexture(canvas);
   tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.NearestFilter;
   tex.generateMipmaps = false; tex.needsUpdate = true;
-  const matBase = new THREE.MeshLambertMaterial({ map: tex });
+  const matBase = new THREE.MeshLambertMaterial({ map: tex, alphaTest:0.5 }); // skins with empty base pixels stay see-through
   const matLayer = new THREE.MeshLambertMaterial({ map: tex, transparent:true, alphaTest:0.4 });
 
   const P = 1.8/32; // blocks per skin pixel -> 1.8 blocks tall
@@ -5798,7 +5841,7 @@ const RECIPES = [
   { pattern:[[168,168,0],[0,0,0],[0,0,0]], out:{id:184,count:3} },
   { pattern:[[169,169,0],[0,0,0],[0,0,0]], out:{id:185,count:3} },
 
-  // build-battle blocks
+  // additional block recipes
   { pattern:[[31,5,26],[0,0,0],[0,0,0]], out:{id:211,count:2} },
   { pattern:[[32,5,26],[0,0,0],[0,0,0]], out:{id:212,count:2} },
   { pattern:[[33,5,26],[0,0,0],[0,0,0]], out:{id:213,count:2} },
@@ -13169,6 +13212,15 @@ function initSkinStudio(){
   $('skinReset').onclick = ()=>{ pushUndo(); wctx.clearRect(0,0,64,64); wctx.drawImage(drawDefaultSkin(PLAYER_PALETTE, PLAYER_MODEL_STYLE === 'girl' ? 'girl' : 'boy'),0,0); render(); };
   $('skinClearPart').onclick = ()=>{ pushUndo(); const r = part.rect; wctx.clearRect(r[0],r[1],r[2],r[3]); render(); };
   $('skinImport').onclick = ()=> $('skinFile').click();
+  // main-menu import + drag & drop of skin PNGs
+  $('importSkinMenu').onclick = ()=> $('importSkinMenuFile').click();
+  $('importSkinMenuFile').onchange = (e)=>{ Array.from(e.target.files || []).forEach(vfImportSkinFile); e.target.value = ''; };
+  const menuVisible = ()=> { const n = $('nameInput'); return !!(n && n.offsetParent !== null); };
+  window.addEventListener('dragover', (e)=>{ if(menuVisible() && e.dataTransfer && Array.from(e.dataTransfer.types||[]).includes('Files')) e.preventDefault(); });
+  window.addEventListener('drop', (e)=>{
+    if(!menuVisible() || !e.dataTransfer || !e.dataTransfer.files || !e.dataTransfer.files.length) return;
+    e.preventDefault(); Array.from(e.dataTransfer.files).forEach(vfImportSkinFile);
+  });
   $('skinFile').onchange = (e)=>{
     const f = e.target.files && e.target.files[0]; if(!f) return;
     const url = URL.createObjectURL(f), img = new Image();
