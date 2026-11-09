@@ -1828,6 +1828,20 @@ function buildBlockTexture(name, seed){
     P['leaves_'+k] = (ctx,seed)=> paintNoise(ctx, T.leaf, seed, {variance:26, speckleChance:0.25, speckleColor:T.leafSpeck, speckleVariance:20});
   });
   P.jungle_planks = plank('#a0703a', '#74502a');
+  // build_battle: red vs blue halves split by a gold stripe, with a dark frame
+  P.build_battle = function(ctx, seed){
+    const rnd = mulberry32(seed);
+    for(let y=0;y<TEX_SIZE;y++) for(let x=0;x<TEX_SIZE;x++){
+      const base = x < TEX_SIZE/2 ? [200,50,50] : [50,90,200];
+      const j = Math.floor((rnd()-0.5)*14);
+      ctx.fillStyle = rgbToHex(base[0]+j, base[1]+j, base[2]+j);
+      ctx.fillRect(x,y,1,1);
+    }
+    ctx.fillStyle = '#f2c230'; ctx.fillRect(TEX_SIZE/2-1, 0, 2, TEX_SIZE);
+    ctx.fillStyle = '#2a2a2a';
+    ctx.fillRect(0,0,TEX_SIZE,1); ctx.fillRect(0,TEX_SIZE-1,TEX_SIZE,1);
+    ctx.fillRect(0,0,1,TEX_SIZE); ctx.fillRect(TEX_SIZE-1,0,1,TEX_SIZE);
+  };
   // trapdoors: planks with a dark frame and slats / iron with bars
   const trap = (base, dark)=> function(ctx, seed){
     paintNoise(ctx, base, seed, {variance:8});
@@ -2037,6 +2051,7 @@ const LEAF_IDS = new Set([7,263,264,265,266,267]);
     BLOCKS[263+i] = { name:k+'_leaves', tex:{all:'leaves_'+k}, transparent:true, leafy:true, hardness:0.15 };
   });
   BLOCKS[268] = { name:'jungle_planks', tex:{all:'jungle_planks'}, hardness:1.0, tool:'axe' };
+  BLOCKS[269] = { name:'build_battle', tex:{all:'build_battle'}, hardness:1.0, tool:'axe' };
 })();
 // Non-block hand items (tools, sticks) — id space 100+ so they never collide
 // with placeable block ids. These live in the same inventory/hotbar system
