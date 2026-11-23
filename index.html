@@ -1147,6 +1147,11 @@
       <span id="bustVal">100%</span>
       <button class="toolBtn" id="bustBounce">Bounce</button>
     </div>
+    <div class="bustRow" id="backRow" style="display:none">
+      <label for="backSlider">Back curve</label>
+      <input type="range" id="backSlider" min="0" max="1000" step="10" value="100">
+      <span id="backVal">100%</span>
+    </div>
     <div class="bustPaintRow" id="bustPaintRow" style="display:none">
       <label for="bustColor">Bust paint</label>
       <input type="color" id="bustColor" value="#e0742a" aria-label="Bust colour">
@@ -5017,6 +5022,11 @@ function vfBustAllowed(){
   try{ ok = localStorage.getItem('vf_model_unlocked') === '1'; }catch(e){}
   return ok && PLAYER_MODEL_STYLE === 'girl';
 }
+// Back curve size (girl model): percent, 100 = the default curve, 0 = flat back, up to 1000%.
+const BACK_DEFAULT = 100, BACK_PCT_MAX = 1000;
+let PLAYER_BACK_SIZE = BACK_DEFAULT;
+function clampBack(v){ v = Number(v); return Number.isFinite(v) ? Math.max(0, Math.min(BACK_PCT_MAX, Math.round(v))) : BACK_DEFAULT; }
+try{ const bkv = parseInt(localStorage.getItem('vf_back_pct'), 10); if(bkv >= 0 && bkv <= BACK_PCT_MAX) PLAYER_BACK_SIZE = bkv; }catch(e){}
 function clampBust(v){ v = Number(v); return Number.isFinite(v) ? Math.max(0, Math.min(BUST_PCT_MAX_XL, Math.round(v))) : BUST_DEFAULT; }
 // Half-width (skin px) of the girl torso at height y (0 = middle of the torso, +6 = shoulders). Same hourglass as torsoShape.
 function torsoHalfAt(y){
@@ -5299,7 +5309,7 @@ function createBust(P, tex, chestUV){
 
 // Build the blocky player (head, body, 2 arms, 2 legs + outer layers).
 // Returns {group, parts:{head,body,armL,armR,legL,legR}, bust?, update(dt, vy, speed, phase)} for animation.
-function buildPlayerModel(palette, skinCanvas, style, bustSize, bustColor){
+function buildPlayerModel(palette, skinCanvas, style, bustSize, bustColor, backSize){
   const girl = style === 'girl';
   const canvas = skinCanvas || drawDefaultSkin(palette || SKIN_PALETTES[0], girl ? 'girl' : 'boy');
   const tex = new THREE.CanvasTexture(canvas);
@@ -5322,8 +5332,12 @@ function buildPlayerModel(palette, skinCanvas, style, bustSize, bustColor){
   // swells out over the hips (t ~ 0.14, about 1.5 skin px). Only the back half (z > 0) moves, so the front and the bust are untouched.
   // Amounts are in skin px; the bump is a smooth cosine so there are no hard steps between the 6 torso segments.
   const bump = (t, c, w)=>{ const d = Math.abs(t - c)/w; return d >= 1 ? 0 : 0.5*(1 + Math.cos(Math.PI*d)); };
+  // backK = slider / 100. The hip swell scales fully (up to 10x); the lower-back dip is capped at 1.2 px so the
+  // back face can never get close to the front face of the torso.
+  let backK = clampBack(backSize === undefined ? PLAYER_BACK_SIZE : backSize)/100;
+  const bodyGeos = [];   // {geo, H, orig}: the undeformed torso vertices, so the curve can be re-applied live
   const backCurve = girl
-    ? (t)=> 2.6*bump(t, 0.13, 0.34) - 1.0*bump(t, 0.5, 0.22)
+    ? (t)=> 2.6*backK*bump(t, 0.13, 0.34) - 1.0*Math.min(backK, 1.2)*bump(t, 0.5, 0.22)
     : ()=> 0;
   const deformTorso = (pos, H)=>{
     for(let i=0; i<pos.count; i++){
@@ -5340,13 +5354,13 @@ function buildPlayerModel(palette, skinCanvas, style, bustSize, bustColor){
     const isBody = name === 'body';
     const segs = isBody ? 6 : 1;
     const base = skinBox(w, h, d, faceRects(def, def.uv), 0, segs);
-    if(isBody){ deformTorso(base.attributes.position, h); base.computeVertexNormals(); }
+    if(isBody){ bodyGeos.push({ geo: base, H: h, orig: base.attributes.position.array.slice() }); deformTorso(base.attributes.position, h); base.computeVertexNormals(); }
     base.translate(offset[0], offset[1], offset[2]);
     const mesh = new THREE.Mesh(base, matBase);
     mesh.position.set(pivot[0], pivot[1], pivot[2]);
     if(sx) mesh.scale.x = sx; // slimmer arms / legs for the girl model (UVs stay the same)
     const lay = skinBox(w, h, d, faceRects(def, def.ov), P*0.5, segs);
-    if(isBody){ deformTorso(lay.attributes.position, h + P); lay.computeVertexNormals(); }
+    if(isBody){ bodyGeos.push({ geo: lay, H: h + P, orig: lay.attributes.position.array.slice() }); deformTorso(lay.attributes.position, h + P); lay.computeVertexNormals(); }
     lay.translate(offset[0], offset[1], offset[2]);
     mesh.add(new THREE.Mesh(lay, matLayer));
     mesh.name = name;
@@ -5362,7 +5376,17 @@ function buildPlayerModel(palette, skinCanvas, style, bustSize, bustColor){
   limb('armL',  [-(girl ? 5.25 : 6)*P, shoulder, 0], [0, -6*P, 0], girl ? 0.75 : 0);
   limb('head',  [0, shoulder, 0], [0, 4*P, 0]);
 
-  const built = { group, parts, canvas, bust: null, hair: null, update: null };
+  const built = { group, parts, canvas, bust: null, hair: null, update: null, backSize: girl ? clampBack(backK*100) : 0 };
+  // re-shapes the torso for a new back-curve percent (0..1000) without rebuilding the model
+  built.setBack = (pct)=>{
+    if(!girl) return;
+    built.backSize = clampBack(pct); backK = built.backSize/100;
+    for(const b of bodyGeos){
+      const pos = b.geo.attributes.position;
+      pos.array.set(b.orig); deformTorso(pos, b.H);
+      pos.needsUpdate = true; b.geo.computeVertexNormals();
+    }
+  };
 
   if(girl){
     // ---- long hair hanging behind the head, in the hair colour of the skin ----
@@ -11026,6 +11050,7 @@ class Game{
         crouch: this.crouching ? 1 : 0,
       };
       if(PLAYER_MODEL_STYLE === 'girl' && vfBustAllowed()){ m.bust = Math.min(vfBustMax(), clampBust(PLAYER_BUST_SIZE)); if(PLAYER_BUST_COLOR) m.bustColor = PLAYER_BUST_COLOR; }
+      if(PLAYER_MODEL_STYLE === 'girl') m.back = clampBack(PLAYER_BACK_SIZE);
       return m;
     };
     // If the database rules don't allow the optional "held" field, the whole write
@@ -11194,7 +11219,7 @@ class Game{
   _addOtherPlayer(uid, data){
     if(this.otherPlayers.has(uid)) return;
     const palette = data.palette || SKIN_PALETTES[0];
-    const built = buildPlayerModel(palette, (this._remoteSkins && this._remoteSkins[uid]) || null, data.model === 'girl' ? 'girl' : 'boy', Number.isFinite(data.bust) ? clampBust(data.bust) : 0, clampBustColor(data.bustColor));
+    const built = buildPlayerModel(palette, (this._remoteSkins && this._remoteSkins[uid]) || null, data.model === 'girl' ? 'girl' : 'boy', Number.isFinite(data.bust) ? clampBust(data.bust) : 0, clampBustColor(data.bustColor), Number.isFinite(data.back) ? clampBack(data.back) : BACK_DEFAULT);
     const _bpc = this._remoteBustPaints && this._remoteBustPaints[uid];
     if(built.bust && _bpc) built.bust.setPaint(_bpc);
     this.scene.add(built.group);
@@ -11259,6 +11284,7 @@ class Game{
     p.swimming = !!data.swimming;
     p.crouching = !!data.crouch;
     if(p.model && p.model.bust && Number.isFinite(data.bust) && clampBust(data.bust) !== p.model.bust.size) p.model.bust.setSize(data.bust);
+    if(p.model && p.model.setBack && Number.isFinite(data.back) && clampBack(data.back) !== p.model.backSize) p.model.setBack(data.back);
     if(p.model && p.model.bust && p.model.bust.color !== clampBustColor(data.bustColor)) p.model.bust.setColor(data.bustColor);
     p.name = data.name||p.name; p.playerId = data.playerId||p.playerId;
     p.lastData = data; p.heldRaw = data.held;
@@ -13341,6 +13367,13 @@ function initSkinStudio(){
     bounce.v -= (strength || 30);
     if(!bounce.raf){ bounce.last = 0; bounce.raf = requestAnimationFrame(bounceStep); }
   }
+  const backRow = $('backRow'), backSlider = $('backSlider'), backVal = $('backVal');
+  function applyBack(v){
+    PLAYER_BACK_SIZE = clampBack(v);
+    backVal.textContent = PLAYER_BACK_SIZE + '%';
+    try{ localStorage.setItem('vf_back_pct', String(PLAYER_BACK_SIZE)); }catch(e){}
+    try{ if(typeof gameInstance !== 'undefined' && gameInstance && gameInstance.selfModel && gameInstance.selfModel.setBack) gameInstance.selfModel.setBack(PLAYER_BACK_SIZE); }catch(e){}
+  }
   function applyBust(v){
     PLAYER_BUST_SIZE = Math.min(vfBustMax(), clampBust(v));
     bustVal.textContent = PLAYER_BUST_SIZE + '%';
@@ -13494,6 +13527,8 @@ function initSkinStudio(){
     const on = bustShown();
     bustRow.style.display = on ? 'flex' : 'none';
     bustPaintRow.style.display = on ? 'flex' : 'none';
+    backRow.style.display = on ? 'flex' : 'none';
+    if(on){ backSlider.value = PLAYER_BACK_SIZE; backVal.textContent = PLAYER_BACK_SIZE + '%'; }
     if(on){ if(PLAYER_BUST_COLOR) bustColorIn.value = PLAYER_BUST_COLOR; bustPaintState.textContent = bustStateText(); drawSide(); }
     sideC.style.display = on ? 'block' : 'none';
     // the second secret code raises the top of the slider from 250% to 1000% (and locks it back when typed again)
@@ -13502,6 +13537,7 @@ function initSkinStudio(){
     if(on){ bustSlider.value = PLAYER_BUST_SIZE; bustVal.textContent = PLAYER_BUST_SIZE + '%'; drawSide(); }
   }
   bustSlider.addEventListener('input', ()=>{ applyBust(bustSlider.value); kickBounce(18); });
+  backSlider.addEventListener('input', ()=> applyBack(backSlider.value));
   $('bustBounce').onclick = ()=> kickBounce(34);
   sideC.addEventListener('pointerdown', ()=> kickBounce(34));
   window.vfRefreshBustUI = refreshBustUI;
