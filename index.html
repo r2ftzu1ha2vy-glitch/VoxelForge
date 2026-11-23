@@ -5337,7 +5337,7 @@ function buildPlayerModel(palette, skinCanvas, style, bustSize, bustColor, backS
   let backK = clampBack(backSize === undefined ? PLAYER_BACK_SIZE : backSize)/100;
   const bodyGeos = [];   // {geo, H, orig}: the undeformed torso vertices, so the curve can be re-applied live
   const backCurve = girl
-    ? (t)=> 2.6*backK*bump(t, 0.13, 0.34) - 1.0*Math.min(backK, 1.2)*bump(t, 0.5, 0.22)
+    ? (t)=> 5.2*backK*bump(t, 0.12, 0.38) - 1.0*Math.min(backK, 1.2)*bump(t, 0.52, 0.22)
     : ()=> 0;
   const deformTorso = (pos, H)=>{
     for(let i=0; i<pos.count; i++){
@@ -5352,7 +5352,7 @@ function buildPlayerModel(palette, skinCanvas, style, bustSize, bustColor, backS
     const def = LIMB_DEFS[name];
     const w = def.w*P, h = def.h*P, d = def.d*P;
     const isBody = name === 'body';
-    const segs = isBody ? 6 : 1;
+    const segs = isBody ? 12 : 1;   // 12 rows so the back curve is smooth
     const base = skinBox(w, h, d, faceRects(def, def.uv), 0, segs);
     if(isBody){ bodyGeos.push({ geo: base, H: h, orig: base.attributes.position.array.slice() }); deformTorso(base.attributes.position, h); base.computeVertexNormals(); }
     base.translate(offset[0], offset[1], offset[2]);
