@@ -5318,11 +5318,19 @@ function buildPlayerModel(palette, skinCanvas, style, bustSize, bustColor){
   const torsoShape = girl
     ? (t)=> ({ fx: t > 0.5 ? lerp(0.80, 0.94, (t-0.5)*2) : lerp(0.98, 0.80, t*2), fz: t > 0.5 ? lerp(0.9, 1.0, (t-0.5)*2) : lerp(1.0, 0.9, t*2) })
     : (t)=> ({ fx: lerp(0.94, 1.0, t), fz: 1 });
+  // girl back curve: side-profile S-curve of the spine. The back dips in a little at the lower back (t ~ 0.46) and
+  // swells out over the hips (t ~ 0.14, about 1.5 skin px). Only the back half (z > 0) moves, so the front and the bust are untouched.
+  // Amounts are in skin px; the bump is a smooth cosine so there are no hard steps between the 6 torso segments.
+  const bump = (t, c, w)=>{ const d = Math.abs(t - c)/w; return d >= 1 ? 0 : 0.5*(1 + Math.cos(Math.PI*d)); };
+  const backCurve = girl
+    ? (t)=> 1.5*bump(t, 0.14, 0.3) - 0.6*bump(t, 0.5, 0.2)
+    : ()=> 0;
   const deformTorso = (pos, H)=>{
     for(let i=0; i<pos.count; i++){
       const t = Math.max(0, Math.min(1, pos.getY(i)/H + 0.5));
       const s = torsoShape(t);
       pos.setX(i, pos.getX(i)*s.fx); pos.setZ(i, pos.getZ(i)*s.fz);
+      if(girl && pos.getZ(i) > 0) pos.setZ(i, pos.getZ(i) + backCurve(t)*P);
     }
   };
 
