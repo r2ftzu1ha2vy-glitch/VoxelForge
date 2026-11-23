@@ -4980,7 +4980,7 @@ function setModelHeld(rec, rawId){
 // Size is a PERCENT now: 100% = the old default, 250% = normal cap, 1000% = cap after the second secret code.
 const BUST_DEFAULT = 100;
 const BUST_PCT_MAX = 250, BUST_PCT_MAX_XL = 1000;
-function vfBustXL(){ try{ return localStorage.getItem('vf_bust_xl') === '1'; }catch(e){ return false; } }
+function vfBustXL(){ return true; }   // XL limit always on, no code needed
 function vfBustMax(){ return vfBustXL() ? BUST_PCT_MAX_XL : BUST_PCT_MAX; }
 let PLAYER_BUST_SIZE = BUST_DEFAULT;
 try{
@@ -5323,7 +5323,7 @@ function buildPlayerModel(palette, skinCanvas, style, bustSize, bustColor){
   // Amounts are in skin px; the bump is a smooth cosine so there are no hard steps between the 6 torso segments.
   const bump = (t, c, w)=>{ const d = Math.abs(t - c)/w; return d >= 1 ? 0 : 0.5*(1 + Math.cos(Math.PI*d)); };
   const backCurve = girl
-    ? (t)=> 1.5*bump(t, 0.14, 0.3) - 0.6*bump(t, 0.5, 0.2)
+    ? (t)=> 2.6*bump(t, 0.13, 0.34) - 1.0*bump(t, 0.5, 0.22)
     : ()=> 0;
   const deformTorso = (pos, H)=>{
     for(let i=0; i<pos.count; i++){
