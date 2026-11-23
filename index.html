@@ -5307,6 +5307,84 @@ function createBust(P, tex, chestUV){
   return bust;
 }
 
+
+// Rear (girl model): built like the bust. Two real cubes on the back at hip height, sized by the same tiered
+// percent curve (100% = 3 px cube, 1000% = 8 px cube), with their own spring-mass jiggle driven by the same body motion.
+// The cubes are the colour of the pants (sampled from the skin sheet).
+function rearRadius(pct){
+  const p = clampBack(pct);
+  return p <= 100 ? 0.5 + p/100 : (p <= 250 ? 1.5 + 0.7*(p - 100)/150 : (p <= 500 ? 2.2 + 0.7*(p - 250)/250 : (p <= 750 ? 2.9 + 0.4*(p - 500)/250 : 3.3 + 0.7*(p - 750)/250)));
+}
+function createRear(P, canvas){
+  const root = new THREE.Group();
+  const geo = new THREE.BoxGeometry(2, 2, 2);
+  let col = '#555566';
+  try{ const d = canvas.getContext('2d').getImageData(6, 26, 1, 1).data; if(d[3] > 20) col = `rgb(${d[0]},${d[1]},${d[2]})`; }catch(e){}
+  const mat = new THREE.MeshLambertMaterial({ color: new THREE.Color(col) });
+  const sides = [-1, 1].map(sgn=>{
+    const mesh = new THREE.Mesh(geo, mat);
+    root.add(mesh);
+    return { sgn, mesh, x:0, vx:0, y:0, vy:0, z:0, vz:0, kscale: sgn > 0 ? 0.93 : 1 };
+  });
+  const rear = {
+    root, sides, size: BACK_DEFAULT, r: 1.5, base: null, prevEff: null, prevSpd: null, t: 0,
+    setSize(pct){ this.size = clampBack(pct); this.layout(); },
+    layout(){
+      const r = rearRadius(this.size);
+      this.r = r;
+      root.visible = this.size > 0;
+      // front face of each cube sits 0.35 px inside the torso's back wall; hangs lower as it grows
+      const yc = -1.6 - 0.9*r, zc = 1.55 + r, xc = r + 0.25;
+      this.base = { x: xc, y: yc, z: zc };
+      for(const s of sides){
+        s.mesh.scale.set(r*P, r*P, r*P);
+        s.mesh.position.set(s.sgn*xc*P, yc*P, zc*P);
+      }
+    },
+    // same drive signals as the bust: take-off / landing / braking / crouch kick the springs
+    update(dt, vy, speed, phase, pose){
+      if(!root.visible) return;
+      dt = Math.min(dt, 0.05); this.t += dt;
+      const m = this.size/200, A = Math.min(1.3, 0.4 + 0.6*m);
+      const run = Math.min(1, speed/4.3);
+      const eff = vy + Math.cos(phase*2)*2.4*run;
+      const dv = this.prevEff == null ? 0 : eff - this.prevEff; this.prevEff = eff;
+      const ds = this.prevSpd == null ? 0 : speed - this.prevSpd; this.prevSpd = speed;
+      const cr = (pose && pose.crouch) ? Math.max(0, Math.min(1, pose.crouch)) : 0;
+      const kickY = Math.max(-40, Math.min(40, dv))*2.0, kickZ = Math.max(-6, Math.min(6, ds))*5;
+      const mf = 1 + 1.4*Math.min(m, 1.5);
+      const ky0 = 250/mf, kz0 = 300/mf, kx0 = 280/mf, zeta = 0.22;
+      const sway = Math.sin(phase)*run*2.2;
+      const [L, R] = sides;
+      L.vy -= kickY; R.vy -= kickY*0.93; L.vz -= kickZ; R.vz -= kickZ*0.95;
+      const n = Math.max(1, Math.ceil(dt/0.008)), h = dt/n;
+      for(let i=0; i<n; i++){
+        for(let si=0; si<2; si++){
+          const s = sides[si], o = sides[1-si], ks = s.kscale;
+          const ky = ky0*ks, kz = kz0*ks, kx = kx0*ks;
+          s.vy += (-ky*s.y - 2*zeta*Math.sqrt(ky)*s.vy + 0.12*ky*(o.y - s.y))*h; s.y += s.vy*h;
+          s.vz += (-kz*s.z - 2*zeta*Math.sqrt(kz)*s.vz + 0.10*kz*(o.z - s.z))*h; s.z += s.vz*h;
+          s.vx += (-kx*s.x - 2*zeta*Math.sqrt(kx)*s.vx + 0.15*kx*(o.x - s.x) + sway)*h; s.x += s.vx*h;
+        }
+      }
+      const b = this.base, r = this.r;
+      for(const s of sides){
+        if(Math.abs(s.y) > 4){ s.y = Math.sign(s.y)*4; s.vy *= 0.3; }
+        if(Math.abs(s.z) > 3){ s.z = Math.sign(s.z)*3; s.vz *= 0.3; }
+        if(Math.abs(s.x) > 2.5){ s.x = Math.sign(s.x)*2.5; s.vx *= 0.3; }
+        const dy = 1.4*Math.tanh(s.y/1.4)*A, dz = 1.0*Math.tanh(s.z/1.0)*A, dx = 1.0*Math.tanh(s.x/1.0)*A;
+        let px = s.sgn*b.x + dx*0.5;
+        if(Math.abs(px) < r + 0.05) px = s.sgn*(r + 0.05);          // the two cubes never merge
+        s.mesh.position.set(px*P, (b.y + dy - 0.4*cr)*P, (b.z + Math.max(0, dz)*0.4)*P);
+        const sq = 1 + Math.abs(dy)*0.03;
+        s.mesh.scale.set(r*P*sq, r*P/sq, r*P);
+      }
+    }
+  };
+  rear.layout();
+  return rear;
+}
+
 // Build the blocky player (head, body, 2 arms, 2 legs + outer layers).
 // Returns {group, parts:{head,body,armL,armR,legL,legR}, bust?, update(dt, vy, speed, phase)} for animation.
 function buildPlayerModel(palette, skinCanvas, style, bustSize, bustColor, backSize){
@@ -5332,12 +5410,11 @@ function buildPlayerModel(palette, skinCanvas, style, bustSize, bustColor, backS
   // swells out over the hips (t ~ 0.14, about 1.5 skin px). Only the back half (z > 0) moves, so the front and the bust are untouched.
   // Amounts are in skin px; the bump is a smooth cosine so there are no hard steps between the 6 torso segments.
   const bump = (t, c, w)=>{ const d = Math.abs(t - c)/w; return d >= 1 ? 0 : 0.5*(1 + Math.cos(Math.PI*d)); };
-  // backK = slider / 100. The hip swell scales fully (up to 10x); the lower-back dip is capped at 1.2 px so the
-  // back face can never get close to the front face of the torso.
+  // The rear itself is now two cubes (createRear, built like the bust); the torso only keeps a small fixed lower-back dip.
   let backK = clampBack(backSize === undefined ? PLAYER_BACK_SIZE : backSize)/100;
   const bodyGeos = [];   // {geo, H, orig}: the undeformed torso vertices, so the curve can be re-applied live
   const backCurve = girl
-    ? (t)=> 5.2*backK*bump(t, 0.12, 0.38) - 1.0*Math.min(backK, 1.2)*bump(t, 0.52, 0.22)
+    ? (t)=> -0.6*bump(t, 0.52, 0.22)
     : ()=> 0;
   const deformTorso = (pos, H)=>{
     for(let i=0; i<pos.count; i++){
@@ -5376,16 +5453,12 @@ function buildPlayerModel(palette, skinCanvas, style, bustSize, bustColor, backS
   limb('armL',  [-(girl ? 5.25 : 6)*P, shoulder, 0], [0, -6*P, 0], girl ? 0.75 : 0);
   limb('head',  [0, shoulder, 0], [0, 4*P, 0]);
 
-  const built = { group, parts, canvas, bust: null, hair: null, update: null, backSize: girl ? clampBack(backK*100) : 0 };
-  // re-shapes the torso for a new back-curve percent (0..1000) without rebuilding the model
+  const built = { group, parts, canvas, bust: null, hair: null, update: null, backSize: girl ? clampBack(backK*100) : 0, rear: null };
+  // new rear size in percent (0..1000); the rear is two cubes like the bust
   built.setBack = (pct)=>{
-    if(!girl) return;
-    built.backSize = clampBack(pct); backK = built.backSize/100;
-    for(const b of bodyGeos){
-      const pos = b.geo.attributes.position;
-      pos.array.set(b.orig); deformTorso(pos, b.H);
-      pos.needsUpdate = true; b.geo.computeVertexNormals();
-    }
+    if(!girl || !built.rear) return;
+    built.backSize = clampBack(pct);
+    built.rear.setSize(built.backSize);
   };
 
   if(girl){
@@ -5434,12 +5507,20 @@ function buildPlayerModel(palette, skinCanvas, style, bustSize, bustColor, backS
       parts.body.add(bust.root);
       built.bust = bust;
     }
+    // ---- rear: same unlock as the bust, built the same way ----
+    if(allowSelf){
+      const rear = createRear(P, canvas);
+      rear.setSize(built.backSize);
+      parts.body.add(rear.root);
+      built.rear = rear;
+    }
   }
 
   // secondary motion: hair sways behind you, the bust bounces. Safe to call every frame for any model.
   built.update = function(dt, vy, speed, phase, pose){
     dt = Math.max(0.0005, Math.min(0.05, dt || 0.016));
     if(this.bust) this.bust.update(dt, vy || 0, speed || 0, phase || 0, pose);
+    if(this.rear) this.rear.update(dt, vy || 0, speed || 0, phase || 0, pose);
     const h = this.hair;
     if(h){
       h.t += dt;
@@ -11219,7 +11300,7 @@ class Game{
   _addOtherPlayer(uid, data){
     if(this.otherPlayers.has(uid)) return;
     const palette = data.palette || SKIN_PALETTES[0];
-    const built = buildPlayerModel(palette, (this._remoteSkins && this._remoteSkins[uid]) || null, data.model === 'girl' ? 'girl' : 'boy', Number.isFinite(data.bust) ? clampBust(data.bust) : 0, clampBustColor(data.bustColor), Number.isFinite(data.back) ? clampBack(data.back) : BACK_DEFAULT);
+    const built = buildPlayerModel(palette, (this._remoteSkins && this._remoteSkins[uid]) || null, data.model === 'girl' ? 'girl' : 'boy', Number.isFinite(data.bust) ? clampBust(data.bust) : 0, clampBustColor(data.bustColor), Number.isFinite(data.back) ? clampBack(data.back) : 0);
     const _bpc = this._remoteBustPaints && this._remoteBustPaints[uid];
     if(built.bust && _bpc) built.bust.setPaint(_bpc);
     this.scene.add(built.group);
